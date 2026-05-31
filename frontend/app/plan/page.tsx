@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, lazy, Suspense, useCallback } from 'react';
+import { useState, lazy, Suspense, useCallback, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Globe, Sparkles } from 'lucide-react';
 import TripWizard from '@/components/TripWizard';
@@ -32,6 +32,24 @@ export default function PlanPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [replanningDay, setReplanningDay] = useState<number | null>(null);
+  const [elapsed, setElapsed] = useState(0);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    if (loading || replanningDay !== null) {
+      setElapsed(0);
+      intervalRef.current = setInterval(() => {
+        setElapsed(prev => prev + 1);
+      }, 1000);
+    } else {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+      intervalRef.current = null;
+      setElapsed(0);
+    }
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
+  }, [loading, replanningDay]);
 
   const handlePlan = async (data: PlanRequest) => {
     setFormData(data);
@@ -175,6 +193,10 @@ export default function PlanPage() {
                     Crafting your perfect itinerary for{' '}
                     <span className="text-white font-medium">{formData?.destination}</span>…
                   </p>
+                  <p className="text-xs text-muted-foreground/60 mt-2">
+                    This typically takes 60–90 seconds{' '}
+                    <span className="text-white/40">(waiting {elapsed}s…)</span>
+                  </p>
                 </div>
                 <LoadingSkeleton />
               </motion.div>
@@ -200,6 +222,10 @@ export default function PlanPage() {
                     Replanning day{' '}
                     <span className="text-white font-medium">{replanningDay}</span>
                     {' '}with Gemini…
+                  </p>
+                  <p className="text-xs text-muted-foreground/60 mt-2">
+                    This typically takes 30–60 seconds{' '}
+                    <span className="text-white/40">(waiting {elapsed}s…)</span>
                   </p>
                 </div>
                 <LoadingSkeleton />
