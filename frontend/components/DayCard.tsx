@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Sunrise,
@@ -96,12 +96,26 @@ function TimeSlotCard({
 export default function DayCard({ day, index, onReplan, replanLoading }: DayCardProps) {
   const [showReplan, setShowReplan] = useState(false);
   const [reason, setReason] = useState('');
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (showReplan && textareaRef.current) {
+      textareaRef.current.focus();
+    }
+  }, [showReplan]);
 
   const handleReplan = () => {
     if (reason.trim()) {
       onReplan(day.day, reason);
       setReason('');
       setShowReplan(false);
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Escape') {
+      setShowReplan(false);
+      setReason('');
     }
   };
 
@@ -209,10 +223,12 @@ export default function DayCard({ day, index, onReplan, replanLoading }: DayCard
                 >
                   <div className="pt-3 space-y-2.5">
                     <Textarea
+                      ref={textareaRef}
                       id={`replan-reason-${day.day}`}
                       placeholder="What would you like changed? e.g., More outdoor activities..."
                       value={reason}
                       onChange={(e) => setReason(e.target.value)}
+                      onKeyDown={handleKeyDown}
                       className="bg-white/[0.05] border-white/10 min-h-[70px] text-sm resize-none placeholder:text-white/20"
                       aria-label={`Reason to replan day ${day.day}`}
                     />

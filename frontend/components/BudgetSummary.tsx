@@ -11,6 +11,7 @@ import {
   Eye,
   Sun,
 } from 'lucide-react';
+import { memo } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
@@ -42,7 +43,7 @@ const statusConfig = {
   },
 };
 
-export default function BudgetSummary({ itinerary, budget }: BudgetSummaryProps) {
+const BudgetSummary = memo(function BudgetSummary({ itinerary, budget }: BudgetSummaryProps) {
   const config = statusConfig[itinerary.budget_status];
   const userBudget = budget ?? itinerary.estimated_total_cost_usd;
   const budgetPercent = Math.min(
@@ -153,4 +154,6 @@ export default function BudgetSummary({ itinerary, budget }: BudgetSummaryProps)
       </Card>
     </motion.div>
   );
-}
+});
+
+export default BudgetSummary;

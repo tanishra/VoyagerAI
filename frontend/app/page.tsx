@@ -2,11 +2,14 @@
 
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { lazy, Suspense } from 'react';
 import { Globe, Sparkles } from 'lucide-react';
 import PlanForm from '@/components/PlanForm';
-import ItineraryView from '@/components/ItineraryView';
 import LoadingSkeleton from '@/components/LoadingSkeleton';
+import ErrorBoundary from '@/components/ErrorBoundary';
 import type { Itinerary, PlanRequest } from '@/lib/types';
+
+const ItineraryView = lazy(() => import('@/components/ItineraryView'));
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -187,13 +190,17 @@ export default function Home() {
                 exit={{ opacity: 0 }}
                 transition={{ duration: 0.4 }}
               >
-                <ItineraryView
-                  itinerary={itinerary}
-                  onReplanDay={handleReplanDay}
-                  replanLoading={replanningDay !== null}
-                  onReset={handleReset}
-                  budget={formData?.budget_usd}
-                />
+                <ErrorBoundary>
+                  <Suspense fallback={<LoadingSkeleton />}>
+                    <ItineraryView
+                      itinerary={itinerary}
+                      onReplanDay={handleReplanDay}
+                      replanLoading={replanningDay !== null}
+                      onReset={handleReset}
+                      budget={formData?.budget_usd}
+                    />
+                  </Suspense>
+                </ErrorBoundary>
               </motion.div>
             )}
 
