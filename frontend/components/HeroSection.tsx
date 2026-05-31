@@ -7,22 +7,10 @@ import Link from 'next/link';
 export default function HeroSection() {
   return (
     <section className="relative min-h-[90vh] flex items-center justify-center overflow-hidden pt-16">
-      <div className="absolute inset-0 pointer-events-none">
-        <motion.div
-          animate={{ y: [0, -15, 0] }}
-          transition={{ repeat: Infinity, duration: 8, ease: 'easeInOut' }}
-          className="absolute top-1/4 left-1/3 w-[700px] h-[700px] bg-sky-500/[0.06] rounded-full blur-[140px]"
-        />
-        <motion.div
-          animate={{ y: [0, 15, 0] }}
-          transition={{ repeat: Infinity, duration: 10, ease: 'easeInOut' }}
-          className="absolute bottom-1/4 right-1/4 w-[500px] h-[500px] bg-blue-500/[0.04] rounded-full blur-[120px]"
-        />
-        <motion.div
-          animate={{ scale: [1, 1.05, 1] }}
-          transition={{ repeat: Infinity, duration: 12, ease: 'easeInOut' }}
-          className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[900px] h-[400px] bg-indigo-500/[0.03] rounded-full blur-[160px]"
-        />
+      <div className="absolute inset-0 pointer-events-none overflow-hidden">
+        <div className="absolute top-1/4 left-1/3 w-[700px] h-[700px] bg-sky-500/[0.06] rounded-full blur-[140px] animate-hero-float-slow" />
+        <div className="absolute bottom-1/4 right-1/4 w-[500px] h-[500px] bg-blue-500/[0.04] rounded-full blur-[120px] animate-hero-float-slower" />
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[900px] h-[400px] bg-indigo-500/[0.03] rounded-full blur-[160px] animate-hero-pulse" />
       </div>
 
       <div

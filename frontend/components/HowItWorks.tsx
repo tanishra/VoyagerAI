@@ -58,7 +58,7 @@ export default function HowItWorks() {
               key={step.number}
               initial={{ opacity: 0, y: 30 }}
               whileInView={{ opacity: 1, y: 0 }}
-              whileHover={{ y: -4 }}
+              whileHover={{ y: -4, transition: { duration: 0.15 } }}
               viewport={{ once: true, margin: '-50px' }}
               transition={{ duration: 0.6, delay: i * 0.15, ease: 'easeOut' }}
               className={`relative h-full p-6 rounded-2xl bg-gradient-to-br ${step.gradient} border ${step.border} backdrop-blur-xl group cursor-default`}
