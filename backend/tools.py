@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import textwrap
+import time
 from collections.abc import Callable
 from functools import lru_cache
 
@@ -12,6 +14,7 @@ from google.genai import types
 
 from config import (
     MODEL_ID,
+    ENRICH_MODEL_ID,
     CREATION_TEMPERATURE,
     ENRICH_TEMPERATURE,
     CACHE_MAXSIZE,
@@ -35,7 +38,12 @@ async def tool_generate_itinerary(
 ) -> dict:
     """Generate a complete structured itinerary via a Gemini sub-call."""
     logger.info(
-        "generate_itinerary — destination=%s, days=%d, budget=%d", destination, days, budget_usd
+        "generate_itinerary started — destination=%s, days=%d, budget=%d, model=Gemini Pro",
+        destination, days, budget_usd,
+    )
+    logger.info(
+        "  This is the heaviest step: Gemini Pro generates the full %d-day itinerary (~40-60s)...",
+        days,
     )
 
     prompt = textwrap.dedent(f"""\
@@ -81,18 +89,28 @@ async def tool_generate_itinerary(
     """)
 
     try:
-        response = client.models.generate_content(
-            model=MODEL_ID,
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-                temperature=CREATION_TEMPERATURE,
-            ),
+        t0 = time.perf_counter()
+        response = await asyncio.to_thread(
+            lambda: client.models.generate_content(
+                model=MODEL_ID,
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    temperature=CREATION_TEMPERATURE,
+                ),
+            )
         )
+        elapsed = time.perf_counter() - t0
         raw_text = response.text
         if not raw_text:
             raise RuntimeError("Gemini returned an empty response for itinerary generation.")
-        return json.loads(raw_text)
+        result = json.loads(raw_text)
+        day_count = len(result.get("days", []))
+        logger.info(
+            "generate_itinerary done in %.1fs — itinerary has %d days, total cost $%d",
+            elapsed, day_count, result.get("estimated_total_cost_usd", 0),
+        )
+        return result
     except json.JSONDecodeError as exc:
         logger.error("Failed to parse itinerary JSON: %s", exc)
         raise RuntimeError(f"Gemini returned invalid JSON: {exc}") from exc
@@ -176,10 +194,23 @@ def tool_validate_constraints(
     constraints: str | None = None,
 ) -> dict:
     """Validate itinerary against budget, day-count, and cost consistency. Uses LRU cache."""
-    logger.info("validate_constraints — budget=%d", budget_usd)
+    t0 = time.perf_counter()
     serialized = json.dumps(itinerary_json, sort_keys=True)
     result_str = _cached_validate(serialized, budget_usd, dietary or "", constraints or "")
-    return json.loads(result_str)
+    result = json.loads(result_str)
+    elapsed = time.perf_counter() - t0
+    budget_status = result.get("budget_status", "?")
+    issue_count = len(result.get("issues", []))
+    logger.info(
+        "validate_constraints — budget_status=%s, issues=%d, valid=%s (%.1fms, pure Python)",
+        budget_status, issue_count, result.get("valid"), elapsed * 1000,
+    )
+    return result
+
+
+TIMEOUT_ENRICH: int = 20
+MAX_ENRICH_RETRIES: int = 2
+RETRY_DELAY: int = 2
 
 
 async def tool_enrich_day(
@@ -188,7 +219,7 @@ async def tool_enrich_day(
     day_number: int,
 ) -> dict:
     """Enrich a single day with practical tips via a Gemini sub-call."""
-    logger.info("enrich_day — destination=%s, day=%d", destination, day_number)
+    logger.info("  enrich_day [day %d]: calling Gemini Flash...", day_number)
 
     prompt = textwrap.dedent(f"""\
         You are a local travel expert for {destination}.
@@ -208,25 +239,51 @@ async def tool_enrich_day(
         Keep existing fields unchanged; only enhance the "tips" list.
     """)
 
-    try:
-        response = client.models.generate_content(
-            model=MODEL_ID,
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-                temperature=ENRICH_TEMPERATURE,
-            ),
-        )
-        raw_text = response.text
-        if not raw_text:
-            raise RuntimeError("Gemini returned an empty response for day enrichment.")
-        return json.loads(raw_text)
-    except json.JSONDecodeError as exc:
-        logger.error("Failed to parse enriched-day JSON: %s", exc)
-        raise RuntimeError(f"Enrichment JSON parse error: {exc}") from exc
-    except Exception as exc:
-        logger.error("Day enrichment failed: %s", exc)
-        raise RuntimeError(f"Day enrichment error: {exc}") from exc
+    for attempt in range(MAX_ENRICH_RETRIES):
+        try:
+            t0 = time.perf_counter()
+            response = await asyncio.wait_for(
+                asyncio.to_thread(
+                    lambda: client.models.generate_content(
+                        model=ENRICH_MODEL_ID,
+                        contents=prompt,
+                        config=types.GenerateContentConfig(
+                            response_mime_type="application/json",
+                            temperature=ENRICH_TEMPERATURE,
+                        ),
+                    )
+                ),
+                timeout=TIMEOUT_ENRICH,
+            )
+            elapsed = time.perf_counter() - t0
+            raw_text = response.text
+            if not raw_text:
+                raise RuntimeError("Gemini returned an empty response for day enrichment.")
+            result = json.loads(raw_text)
+            tip_count = len(result.get("tips", []))
+            logger.info(
+                "  enrich_day [day %d]: ✓ done in %.1fs (%d tips added)",
+                day_number, elapsed, tip_count,
+            )
+            return result
+        except json.JSONDecodeError as exc:
+            logger.error("Failed to parse enriched-day JSON: %s", exc)
+            raise RuntimeError(f"Enrichment JSON parse error: {exc}") from exc
+        except Exception as exc:
+            logger.warning(
+                "  enrich_day [day %d]: attempt %d/%d failed (%s) — %s",
+                day_number, attempt + 1, MAX_ENRICH_RETRIES,
+                type(exc).__name__, exc,
+            )
+            if attempt < MAX_ENRICH_RETRIES - 1:
+                await asyncio.sleep(RETRY_DELAY)
+                logger.info("  enrich_day [day %d]: retrying...", day_number)
+                continue
+            logger.error(
+                "  enrich_day [day %d]: failed after %d attempts",
+                day_number, MAX_ENRICH_RETRIES,
+            )
+            raise RuntimeError(f"Day enrichment error: {exc}") from exc
 
 
 TOOL_DISPATCH: dict[str, Callable] = {

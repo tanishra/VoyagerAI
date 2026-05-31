@@ -14,8 +14,10 @@ Architecture:
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
+import time
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -23,6 +25,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from config import logger
 from models import Itinerary, PlanRequest, PlanResponse, ReplanRequest
 from agent import run_agent, AGENT_SYSTEM_PROMPT, REPLAN_SYSTEM_PROMPT
+from tools import tool_enrich_day
 
 # ---------------------------------------------------------------------------
 # FastAPI Application
@@ -47,6 +50,48 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ---------------------------------------------------------------------------
+# Parallel Day Enrichment
+# ---------------------------------------------------------------------------
+
+
+async def enrich_all_days_parallel(itinerary: dict) -> dict:
+    """Enrich all days in the itinerary in parallel via asyncio.gather()."""
+    days = itinerary.get("days", [])
+    if not days:
+        return itinerary
+
+    destination = itinerary.get("destination", "")
+    t0 = time.perf_counter()
+
+    logger.info(
+        "=== STEP 2/3: Enriching %d days in parallel via Gemini Flash ===",
+        len(days),
+    )
+
+    tasks = [
+        tool_enrich_day(day, destination, day["day"])
+        for day in days
+    ]
+    enriched = await asyncio.gather(*tasks, return_exceptions=True)
+
+    success_count = 0
+    for i, result in enumerate(enriched):
+        if isinstance(result, Exception):
+            logger.error("Day %d enrichment failed after retries: %s", days[i]["day"], result)
+        else:
+            days[i] = result
+            success_count += 1
+
+    itinerary["days"] = days
+    elapsed = time.perf_counter() - t0
+    logger.info(
+        "✓ Enrichment done: %d/%d days succeeded in %.1fs",
+        success_count, len(days), elapsed,
+    )
+    return itinerary
+
 
 # ---------------------------------------------------------------------------
 # Endpoints
@@ -87,9 +132,21 @@ async def plan(request: PlanRequest) -> PlanResponse:
         f"Constraints: {request.constraints or 'None'}."
     )
 
+    total_t0 = time.perf_counter()
+
     try:
+        logger.info("=== STEP 1/3: Agent loop started — Gemini Pro generates & validates itinerary ===")
+        t0 = time.perf_counter()
         raw_itinerary = await run_agent(AGENT_SYSTEM_PROMPT, user_message)
-        itinerary = Itinerary.model_validate(raw_itinerary)
+        logger.info("✓ Step 1/3 done: Agent loop completed in %.1fs", time.perf_counter() - t0)
+
+        enriched = await enrich_all_days_parallel(raw_itinerary)
+
+        itinerary = Itinerary.model_validate(enriched)
+        logger.info(
+            "✓ Total request completed in %.1fs",
+            time.perf_counter() - total_t0,
+        )
         return PlanResponse(success=True, itinerary=itinerary)
     except HTTPException:
         raise
@@ -133,9 +190,21 @@ async def replan_day(request: ReplanRequest) -> PlanResponse:
         f"Return the COMPLETE updated itinerary (all days) as JSON."
     )
 
+    total_t0 = time.perf_counter()
+
     try:
+        logger.info("=== STEP 1/3: Replan agent loop started ===")
+        t0 = time.perf_counter()
         raw_itinerary = await run_agent(REPLAN_SYSTEM_PROMPT, user_message)
-        itinerary = Itinerary.model_validate(raw_itinerary)
+        logger.info("✓ Step 1/3 done: Replan agent loop completed in %.1fs", time.perf_counter() - t0)
+
+        enriched = await enrich_all_days_parallel(raw_itinerary)
+
+        itinerary = Itinerary.model_validate(enriched)
+        logger.info(
+            "✓ Total replan request completed in %.1fs",
+            time.perf_counter() - total_t0,
+        )
         return PlanResponse(success=True, itinerary=itinerary)
     except HTTPException:
         raise

@@ -21,6 +21,7 @@ if not GEMINI_API_KEY:
     raise RuntimeError("GEMINI_API_KEY is not set in the environment.")
 
 MODEL_ID: str = "gemini-2.5-pro"
+ENRICH_MODEL_ID: str = "gemini-2.5-flash"
 
 MAX_AGENT_ITERATIONS: int = 5
 

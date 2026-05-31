@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
 import inspect
 import json
 import logging
 import textwrap
+import time
 
 from fastapi import HTTPException
 from google.genai import types
@@ -34,16 +36,15 @@ AGENT_SYSTEM_PROMPT = textwrap.dedent("""\
     3. If validation shows any issues, adjust the itinerary mentally and call
        `generate_itinerary` again with tighter budget guidance, then re-validate.
        Repeat until valid (max 3 attempts).
-    4. Once the itinerary is valid, call `enrich_day` for EACH day in the itinerary
-       (call it separately for every day[0], day[1], ..., day[N]) to add practical tips,
-       weather context, and local custom advice.
-    5. Return the fully enriched itinerary JSON as plain text
-       (no markdown fences, no commentary — just the JSON object).
+    4. Once the itinerary is valid, return the itinerary JSON as plain text
+       immediately. Do NOT call enrich_day — enrichment happens in a separate
+       parallel step outside this loop.
+    5. Your final response must be ONLY the valid JSON itinerary object — nothing else.
 
     **Rules:**
     - Always call generate_itinerary FIRST.
     - Always call validate_constraints AFTER generating.
-    - Call enrich_day ONCE PER DAY after validation passes.
+    - Do NOT call enrich_day — it is handled externally.
     - If the validation shows issues, regenerate with corrections.
     - Your final text response must be ONLY the valid JSON itinerary object — nothing else.
 """)
@@ -58,13 +59,13 @@ REPLAN_SYSTEM_PROMPT = textwrap.dedent("""\
        the user's concerns while keeping other days intact.
     3. Call `validate_constraints` to verify the updated itinerary is still valid.
     4. If validation fails, regenerate with corrections.
-    5. Once valid, call `enrich_day` for the replanned day to add practical tips.
-    6. Return the COMPLETE updated itinerary (all days, not just the changed day)
-       as plain JSON text — no markdown fences, no commentary.
+    5. Once valid, return the COMPLETE updated itinerary (all days, not just the
+       changed day) as plain JSON text immediately. Do NOT call enrich_day —
+       enrichment happens in a separate parallel step.
 
     **Rules:**
     - Keep all other days unchanged unless the budget rebalance requires it.
-    - Call enrich_day on at least the replanned day.
+    - Do NOT call enrich_day — it is handled externally.
     - Your final text response must be ONLY the valid JSON itinerary object.
 """)
 
@@ -74,21 +75,30 @@ async def _execute_tool_call(function_call: types.FunctionCall) -> str:
     name = function_call.name
     args = dict(function_call.args) if function_call.args else {}
 
-    logger.info("Executing tool: %s with args keys: %s", name, list(args.keys()))
-
     handler = TOOL_DISPATCH.get(name)
     if handler is None:
         logger.warning("Unknown tool requested: %s", name)
         return json.dumps({"error": f"Unknown tool requested: {name}"})
+
+    t0 = time.perf_counter()
+    tool_desc = {
+        "generate_itinerary": "Generating full itinerary (this is the slowest step, ~40-60s)...",
+        "validate_constraints": "Validating budget & cost consistency...",
+    }.get(name, f"Running {name}...")
+
+    logger.info("  → Tool: %s — %s", name, tool_desc)
 
     try:
         if inspect.iscoroutinefunction(handler):
             result = await handler(**args)
         else:
             result = handler(**args)
+        elapsed = time.perf_counter() - t0
+        logger.info("  ← Tool: %s completed in %.1fs", name, elapsed)
         return json.dumps(result, default=str)
     except Exception as exc:
-        logger.error("Tool %s raised: %s", name, exc)
+        elapsed = time.perf_counter() - t0
+        logger.error("  ✗ Tool: %s failed after %.1fs: %s", name, elapsed, exc)
         return json.dumps({"error": str(exc)})
 
 
@@ -140,6 +150,9 @@ async def _execute_function_calls(
     return contents, validation_failures
 
 
+TIMEOUT_AGENT: int = 30
+
+
 async def _make_gemini_call(
     contents: list[types.Content],
     system_prompt: str,
@@ -147,14 +160,19 @@ async def _make_gemini_call(
 ) -> types.GenerateContentResponse:
     """Make a single Gemini API call with the given contents and config."""
     try:
-        return client.models.generate_content(
-            model=MODEL_ID,
-            contents=contents,
-            config=types.GenerateContentConfig(
-                system_instruction=system_prompt,
-                tools=[AGENT_TOOLS],
-                temperature=temperature,
+        return await asyncio.wait_for(
+            asyncio.to_thread(
+                lambda: client.models.generate_content(
+                    model=MODEL_ID,
+                    contents=contents,
+                    config=types.GenerateContentConfig(
+                        system_instruction=system_prompt,
+                        tools=[AGENT_TOOLS],
+                        temperature=temperature,
+                    ),
+                )
             ),
+            timeout=TIMEOUT_AGENT,
         )
     except Exception as exc:
         logger.error("Gemini API call failed: %s", exc)
@@ -192,6 +210,7 @@ async def run_agent(system_prompt: str, user_message: str) -> dict:
     Raises:
         HTTPException: On Gemini errors, parse failures, or iteration exhaustion.
     """
+    t_loop_start = time.perf_counter()
     logger.info("Agent loop starting. User message length: %d chars", len(user_message))
 
     contents: list[types.Content] = [
@@ -201,13 +220,15 @@ async def run_agent(system_prompt: str, user_message: str) -> dict:
     validation_failures = 0
 
     for iteration in range(1, MAX_AGENT_ITERATIONS + 1):
-        logger.info("Agent iteration %d/%d", iteration, MAX_AGENT_ITERATIONS)
+        logger.info("Agent iteration %d/%d — asking Gemini Pro to respond...", iteration, MAX_AGENT_ITERATIONS)
 
         temperature = (
             VALIDATION_REGEN_TEMPERATURE if validation_failures > 0 else AGENT_TEMPERATURE
         )
 
+        t0 = time.perf_counter()
         response = await _make_gemini_call(contents, system_prompt, temperature)
+        gemini_elapsed = time.perf_counter() - t0
 
         if not response.candidates:
             logger.error("Gemini returned no candidates on iteration %d", iteration)
@@ -218,6 +239,11 @@ async def run_agent(system_prompt: str, user_message: str) -> dict:
         function_calls = [p.function_call for p in parts if p.function_call]
 
         if function_calls:
+            tool_names = [fc.name for fc in function_calls]
+            logger.info(
+                "  Gemini responded in %.1fs → calling tool(s): %s",
+                gemini_elapsed, tool_names,
+            )
             contents, validation_failures = await _execute_function_calls(
                 function_calls, candidate.content, contents, validation_failures
             )
@@ -225,6 +251,14 @@ async def run_agent(system_prompt: str, user_message: str) -> dict:
 
         parsed = _parse_text_response(parts)
         if parsed is not None:
+            logger.info(
+                "  Gemini responded in %.1fs → returning final itinerary JSON ✓",
+                gemini_elapsed,
+            )
+            logger.info(
+                "Agent loop completed in %d iterations (%.1fs total)",
+                iteration, time.perf_counter() - t_loop_start,
+            )
             return parsed
 
         logger.warning("Empty text response on iteration %d; continuing.", iteration)
