@@ -35,20 +35,35 @@ const steps = [
 
 export default function HowItWorks() {
   return (
-    <section className="py-20 md:py-28">
-      <div className="max-w-5xl mx-auto px-4">
+    <section className="relative py-20 md:py-28 overflow-hidden">
+      <div className="absolute inset-0 pointer-events-none">
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[900px] h-[900px] bg-gradient-to-br from-sky-500/5 via-amber-500/5 to-emerald-500/5 rounded-full blur-3xl" />
+        <div className="absolute top-0 left-1/4 right-1/4 h-px bg-gradient-to-r from-transparent via-white/5 to-transparent" />
+      </div>
+
+      <div className="max-w-5xl mx-auto px-4 relative">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true, margin: '-100px' }}
           transition={{ duration: 0.6 }}
-          className="text-center mb-14"
+          className="text-center mb-16"
         >
-          <h2 className="text-3xl md:text-4xl font-bold text-white mb-3">
-            How It Works
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9 }}
+            whileInView={{ opacity: 1, scale: 1 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.4 }}
+            className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/[0.04] border border-white/10 text-xs font-medium text-white/50 mb-5 tracking-wider uppercase"
+          >
+            <Sparkles className="w-3 h-3" />
+            How it works
+          </motion.div>
+          <h2 className="text-3xl md:text-4xl lg:text-5xl font-bold text-white mb-4 leading-tight">
+            Three Steps to Your Perfect Trip
           </h2>
-          <p className="text-muted-foreground max-w-lg mx-auto">
-            Three simple steps to your perfect trip
+          <p className="text-muted-foreground max-w-xl mx-auto text-sm md:text-base">
+            From your preferences to a complete itinerary in minutes
           </p>
         </motion.div>
 
@@ -58,21 +73,26 @@ export default function HowItWorks() {
               key={step.number}
               initial={{ opacity: 0, y: 30 }}
               whileInView={{ opacity: 1, y: 0 }}
-              whileHover={{ y: -4, transition: { duration: 0.15 } }}
+              whileHover={{ y: -8, transition: { duration: 0.15 } }}
               viewport={{ once: true, margin: '-50px' }}
-              transition={{ duration: 0.6, delay: i * 0.15, ease: 'easeOut' }}
-              className={`relative h-full p-6 rounded-2xl bg-gradient-to-br ${step.gradient} border ${step.border} backdrop-blur-xl group cursor-default`}
+              transition={{ duration: 0.5, delay: i * 0.1, ease: 'easeOut' }}
+              className="group relative"
             >
-              <div className="flex items-center gap-3 mb-4">
-                <div className={`p-2.5 rounded-xl bg-white/5 border ${step.border} group-hover:scale-110 transition-transform duration-200`}>
-                  <step.icon className={`w-5 h-5 ${step.textColor}`} />
+              <div className={`absolute -inset-2 rounded-3xl opacity-0 group-hover:opacity-100 transition-opacity duration-500 blur-2xl bg-gradient-to-br ${step.gradient}`} />
+
+              <div className={`relative h-full p-6 rounded-2xl bg-gradient-to-br ${step.gradient} border ${step.border} backdrop-blur-xl cursor-default overflow-hidden`}>
+                <div className="flex items-start justify-between mb-5">
+                  <div className={`flex items-center justify-center w-10 h-10 rounded-full border ${step.border} bg-white/[0.04] group-hover:scale-110 transition-transform duration-200`}>
+                    <step.icon className={`w-5 h-5 ${step.textColor}`} />
+                  </div>
+                  <span className={`text-5xl font-black ${step.textColor} opacity-[0.07] select-none leading-none`}>
+                    {String(step.number).padStart(2, '0')}
+                  </span>
                 </div>
-                <span className={`text-xs font-bold ${step.textColor}`}>
-                  Step {step.number}
-                </span>
+
+                <h3 className="text-lg font-semibold text-white mb-2 leading-snug">{step.title}</h3>
+                <p className="text-sm text-white/60 leading-relaxed">{step.desc}</p>
               </div>
-              <h3 className="text-lg font-semibold text-white mb-2">{step.title}</h3>
-              <p className="text-sm text-white/60 leading-relaxed">{step.desc}</p>
             </motion.div>
           ))}
         </div>

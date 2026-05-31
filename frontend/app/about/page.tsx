@@ -80,26 +80,62 @@ export default function AboutPage() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6, delay: 0.3 }}
-          className="rounded-2xl border border-white/10 bg-white/[0.03] backdrop-blur-2xl p-8"
+          className="rounded-2xl border border-white/10 bg-white/[0.03] backdrop-blur-2xl p-8 md:p-10 relative overflow-hidden"
         >
-          <h2 className="text-xl font-bold text-white mb-4">How It Works — Behind the Scenes</h2>
-          <div className="space-y-4 text-sm text-white/60 leading-relaxed">
-            <p>
-              When you submit your trip preferences, our backend uses Google&apos;s Gemini through
-              a structured agent workflow. The agent:
-            </p>
-            <ol className="space-y-2 list-decimal list-inside">
-              <li>Generates a complete itinerary using the <code className="text-sky-400">generate_itinerary</code> tool</li>
-              <li>Validates it against your budget using <code className="text-sky-400">validate_constraints</code></li>
-              <li>If validation fails, regenerates with tighter budget guidance</li>
-              <li>Once valid, enriches each day with local tips via <code className="text-sky-400">enrich_day</code></li>
-              <li>Returns a fully structured JSON itinerary</li>
-            </ol>
-            <p>
-              The frontend then renders this data as a beautiful, interactive timeline with
-              budget tracking, warnings, and packing essentials — all styled with a dark
-              glassmorphism theme.
-            </p>
+          <div className="absolute -top-24 -right-24 w-48 h-48 bg-sky-500/10 rounded-full blur-3xl pointer-events-none" />
+          <div className="absolute -bottom-24 -left-24 w-48 h-48 bg-violet-500/10 rounded-full blur-3xl pointer-events-none" />
+
+          <div className="relative z-10">
+            <div className="flex items-center gap-3 mb-6">
+              <div className="p-2 rounded-lg bg-gradient-to-br from-sky-500/20 to-blue-500/20 border border-sky-500/20">
+                <Cpu className="w-5 h-5 text-sky-400" />
+              </div>
+              <h2 className="text-xl font-bold text-white">How It Works — Behind the Scenes</h2>
+            </div>
+
+            <div className="p-4 rounded-xl bg-white/[0.03] border border-white/5 mb-8">
+              <p className="text-sm text-white/60 leading-relaxed">
+                When you submit your trip preferences, our backend uses Google&apos;s Gemini through
+                a structured agent workflow. The agent:
+              </p>
+            </div>
+
+            <div className="relative pl-10">
+              <div className="absolute left-[19px] top-1 bottom-1 w-px bg-gradient-to-b from-sky-500/30 via-amber-500/30 via-red-500/30 via-emerald-500/30 to-violet-500/30" />
+
+              <div className="space-y-5">
+                {([
+                  { text: <>Generates a complete itinerary using the <code className="text-sky-400">generate_itinerary</code> tool</>, border: 'border-sky-500/20', bg: 'bg-sky-500/10', textColor: 'text-sky-400' },
+                  { text: <>Validates it against your budget using <code className="text-amber-400">validate_constraints</code></>, border: 'border-amber-500/20', bg: 'bg-amber-500/10', textColor: 'text-amber-400' },
+                  { text: <>If validation fails, regenerates with tighter budget guidance</>, border: 'border-red-500/20', bg: 'bg-red-500/10', textColor: 'text-red-400' },
+                  { text: <>Once valid, enriches each day with local tips via <code className="text-emerald-400">enrich_day</code></>, border: 'border-emerald-500/20', bg: 'bg-emerald-500/10', textColor: 'text-emerald-400' },
+                  { text: <>Returns a fully structured JSON itinerary</>, border: 'border-violet-500/20', bg: 'bg-violet-500/10', textColor: 'text-violet-400' },
+                ] as const).map((step, i) => (
+                  <motion.div
+                    key={i}
+                    initial={{ opacity: 0, x: -20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ duration: 0.4, delay: 0.1 * i }}
+                    className="relative group"
+                  >
+                    <div className={`absolute -left-10 top-1 w-7 h-7 rounded-full border-2 flex items-center justify-center z-10 transition-all duration-200 group-hover:scale-110 ${step.border} ${step.bg}`}>
+                      <span className={`text-[11px] font-bold ${step.textColor}`}>{i + 1}</span>
+                    </div>
+                    <div className={`ml-3 p-4 rounded-xl border transition-all duration-200 group-hover:border-white/20 group-hover:bg-white/[0.06] ${step.border} bg-white/[0.03]`}>
+                      <p className="text-sm text-white/80 leading-relaxed">{step.text}</p>
+                    </div>
+                  </motion.div>
+                ))}
+              </div>
+            </div>
+
+            <div className="mt-8 p-4 rounded-xl bg-gradient-to-r from-sky-500/5 to-violet-500/5 border border-white/5">
+              <p className="text-sm text-white/60 leading-relaxed">
+                The frontend then renders this data as a beautiful, interactive timeline with
+                budget tracking, warnings, and packing essentials — all styled with a dark
+                glassmorphism theme.
+              </p>
+            </div>
           </div>
         </motion.div>
       </div>

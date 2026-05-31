@@ -3,9 +3,14 @@ import { render, screen } from '@testing-library/react';
 import HowItWorks from '@/components/HowItWorks';
 
 describe('HowItWorks', () => {
-  it('renders section title', () => {
+  it('renders section heading', () => {
     render(<HowItWorks />);
-    expect(screen.getByText('How It Works')).toBeInTheDocument();
+    expect(screen.getByText('Three Steps to Your Perfect Trip')).toBeInTheDocument();
+  });
+
+  it('renders pill badge', () => {
+    render(<HowItWorks />);
+    expect(screen.getByText('How it works')).toBeInTheDocument();
   });
 
   it('renders all step titles', () => {
@@ -15,11 +20,11 @@ describe('HowItWorks', () => {
     expect(screen.getByText('Explore & Customize')).toBeInTheDocument();
   });
 
-  it('renders step numbers', () => {
+  it('renders step numbers 01, 02, 03', () => {
     render(<HowItWorks />);
-    expect(screen.getByText('Step 1')).toBeInTheDocument();
-    expect(screen.getByText('Step 2')).toBeInTheDocument();
-    expect(screen.getByText('Step 3')).toBeInTheDocument();
+    expect(screen.getByText('01')).toBeInTheDocument();
+    expect(screen.getByText('02')).toBeInTheDocument();
+    expect(screen.getByText('03')).toBeInTheDocument();
   });
 
   it('renders step descriptions', () => {

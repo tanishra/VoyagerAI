@@ -63,6 +63,8 @@ export default function TripWizard({ onSubmit, loading }: TripWizardProps) {
     constraints: '',
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [dayStr, setDayStr] = useState('5');
+  const [budgetStr, setBudgetStr] = useState('2000');
 
   const updateField = <K extends keyof PlanRequest>(key: K, value: PlanRequest[K]) => {
     setFormData(prev => ({ ...prev, [key]: value }));
@@ -79,8 +81,9 @@ export default function TripWizard({ onSubmit, loading }: TripWizardProps) {
     const newErrors: Record<string, string> = {};
     if (step === 0) {
       if (!formData.destination.trim()) newErrors.destination = 'Enter a destination';
-      if (formData.days < 1 || formData.days > 30) newErrors.days = 'Between 1-30 days';
-      if (formData.budget_usd < 50) newErrors.budget_usd = 'Minimum $50';
+      if (!formData.days || formData.days < 1 || formData.days > 30) newErrors.days = 'Between 1-30 days';
+      if (!formData.budget_usd || formData.budget_usd < 50) newErrors.budget_usd = 'Minimum $50';
+      if (formData.budget_usd > 100000) newErrors.budget_usd = 'Maximum $100,000';
     }
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -179,7 +182,7 @@ export default function TripWizard({ onSubmit, loading }: TripWizardProps) {
                     <Input
                       placeholder="e.g. Tokyo, Japan"
                       value={formData.destination}
-                      onChange={e => updateField('destination', e.target.value)}
+                       onChange={e => updateField('destination', e.target.value.replace(/[0-9]/g, ''))}
                       className="bg-white/5 border-white/10 focus:border-sky-500/50 h-12 text-base placeholder:text-white/20"
                       aria-label="Travel destination"
                     />
@@ -217,9 +220,30 @@ export default function TripWizard({ onSubmit, loading }: TripWizardProps) {
                         Days
                       </label>
                       <Input
-                        type="number" min={1} max={30}
-                        value={formData.days}
-                        onChange={e => updateField('days', parseInt(e.target.value) || 1)}
+                        type="text" inputMode="numeric"
+                        value={dayStr}
+                        onChange={e => {
+                          const v = e.target.value;
+                          setDayStr(v);
+                          const parsed = parseInt(v);
+                          if (!isNaN(parsed) && parsed >= 1 && parsed <= 30) {
+                            updateField('days', parsed);
+                          }
+                          if (errors.days) {
+                            setErrors(prev => { const n = { ...prev }; delete n.days; return n; });
+                          }
+                        }}
+                        onBlur={() => {
+                          const parsed = parseInt(dayStr);
+                          if (isNaN(parsed) || parsed < 1 || parsed > 30) {
+                            setErrors(prev => ({ ...prev, days: 'Enter a number between 1-30' }));
+                            setFormData(prev => ({ ...prev, days: 0 }));
+                          } else {
+                            const clean = String(parsed);
+                            setDayStr(clean);
+                            updateField('days', parsed);
+                          }
+                        }}
                         className="bg-white/5 border-white/10 focus:border-blue-500/50 h-12 text-base"
                         aria-label="Number of travel days"
                       />
@@ -231,9 +255,30 @@ export default function TripWizard({ onSubmit, loading }: TripWizardProps) {
                         Budget (USD)
                       </label>
                       <Input
-                        type="number" min={50}
-                        value={formData.budget_usd}
-                        onChange={e => updateField('budget_usd', parseInt(e.target.value) || 50)}
+                        type="text" inputMode="numeric"
+                        value={budgetStr}
+                        onChange={e => {
+                          const v = e.target.value;
+                          setBudgetStr(v);
+                          const parsed = parseInt(v);
+                          if (!isNaN(parsed) && parsed >= 50 && parsed <= 100000) {
+                            updateField('budget_usd', parsed);
+                          }
+                          if (errors.budget_usd) {
+                            setErrors(prev => { const n = { ...prev }; delete n.budget_usd; return n; });
+                          }
+                        }}
+                        onBlur={() => {
+                          const parsed = parseInt(budgetStr);
+                          if (isNaN(parsed) || parsed < 50 || parsed > 100000) {
+                            setErrors(prev => ({ ...prev, budget_usd: 'Enter $50-$100,000' }));
+                            setFormData(prev => ({ ...prev, budget_usd: 0 }));
+                          } else {
+                            const clean = String(parsed);
+                            setBudgetStr(clean);
+                            updateField('budget_usd', parsed);
+                          }
+                        }}
                         className="bg-white/5 border-white/10 focus:border-emerald-500/50 h-12 text-base"
                         aria-label="Budget in US dollars"
                       />
@@ -249,7 +294,7 @@ export default function TripWizard({ onSubmit, loading }: TripWizardProps) {
                         <button
                           key={amt}
                           type="button"
-                          onClick={() => updateField('budget_usd', amt)}
+                          onClick={() => { updateField('budget_usd', amt); setBudgetStr(String(amt)); }}
                           className={`flex-1 py-2 text-xs font-medium rounded-lg border transition-all duration-200 cursor-pointer hover:scale-105 ${
                             formData.budget_usd === amt
                               ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300'
