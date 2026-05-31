@@ -56,7 +56,7 @@ export default function BudgetGauge({ percent, status, size = 120 }: BudgetGauge
           transition={{ delay: 0.6, type: 'spring', stiffness: 200 }}
           className={`text-xl font-bold tabular-nums ${colors.text}`}
         >
-          {percent}%
+          {Math.min(percent, 100)}%
         </motion.span>
         <span className="text-[10px] text-muted-foreground -mt-0.5">used</span>
       </div>
