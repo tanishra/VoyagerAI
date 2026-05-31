@@ -57,6 +57,7 @@ export default function PlanPage() {
   const handleReplanDay = useCallback(async (dayNumber: number, reason: string) => {
     if (!itinerary) return;
     setReplanningDay(dayNumber);
+    setError(null);
 
     try {
       const result = await fetchJSON<{ success: boolean; itinerary?: Itinerary; error?: string }>(
@@ -127,35 +128,33 @@ export default function PlanPage() {
 
         {/* Main content */}
         <div className="flex-1 px-4 pb-12">
-          <AnimatePresence mode="wait">
-            {error && (
-              <motion.div
-                key="error"
-                initial={{ opacity: 0, y: -10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                className="max-w-2xl mx-auto mb-6"
+          {error && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="max-w-2xl mx-auto mb-6"
+            >
+              <div
+                className="p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-300 text-sm flex items-start gap-3"
+                role="alert"
               >
-                <div
-                  className="p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-300 text-sm flex items-start gap-3"
-                  role="alert"
-                >
-                  <span className="text-red-400 text-lg leading-none">⚠</span>
-                  <div className="flex-1">
-                    <p className="font-medium mb-0.5">Something went wrong</p>
-                    <p className="text-red-300/70">{error}</p>
-                  </div>
-                  <button
-                    onClick={() => setError(null)}
-                    className="ml-auto text-red-400 hover:text-red-300 transition-colors shrink-0 cursor-pointer"
-                    aria-label="Dismiss error"
-                  >
-                    ✕
-                  </button>
+                <span className="text-red-400 text-lg leading-none">⚠</span>
+                <div className="flex-1">
+                  <p className="font-medium mb-0.5">Something went wrong</p>
+                  <p className="text-red-300/70">{error}</p>
                 </div>
-              </motion.div>
-            )}
+                <button
+                  onClick={() => setError(null)}
+                  className="ml-auto text-red-400 hover:text-red-300 transition-colors shrink-0 cursor-pointer"
+                  aria-label="Dismiss error"
+                >
+                  ✕
+                </button>
+              </div>
+            </motion.div>
+          )}
 
+          <AnimatePresence mode="wait">
             {loading && (
               <motion.div
                 key="loading"
@@ -181,7 +180,33 @@ export default function PlanPage() {
               </motion.div>
             )}
 
-            {!loading && itinerary && (
+            {!loading && replanningDay !== null && (
+              <motion.div
+                key="replan-loading"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.3 }}
+              >
+                <div className="text-center mb-6">
+                  <motion.div
+                    animate={{ rotate: 360 }}
+                    transition={{ repeat: Infinity, duration: 2, ease: 'linear' }}
+                    className="inline-block mb-3"
+                  >
+                    <Globe className="w-8 h-8 text-sky-400" />
+                  </motion.div>
+                  <p className="text-sm text-muted-foreground">
+                    Replanning day{' '}
+                    <span className="text-white font-medium">{replanningDay}</span>
+                    {' '}with Gemini…
+                  </p>
+                </div>
+                <LoadingSkeleton />
+              </motion.div>
+            )}
+
+            {!loading && replanningDay === null && itinerary && (
               <motion.div
                 key="itinerary"
                 initial={{ opacity: 0 }}
@@ -203,7 +228,7 @@ export default function PlanPage() {
               </motion.div>
             )}
 
-            {!loading && !itinerary && (
+            {!loading && replanningDay === null && !itinerary && (
               <motion.div
                 key="form"
                 initial={{ opacity: 0 }}
