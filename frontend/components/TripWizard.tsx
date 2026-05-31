@@ -197,7 +197,7 @@ export default function TripWizard({ onSubmit, loading }: TripWizardProps) {
                           key={city}
                           type="button"
                           onClick={() => updateField('destination', city)}
-                          className={`px-3 py-1.5 text-xs rounded-full border transition-all cursor-pointer ${
+                          className={`px-3 py-1.5 text-xs rounded-full border transition-all duration-200 cursor-pointer hover:scale-105 ${
                             formData.destination === city
                               ? 'bg-sky-500/20 border-sky-500/40 text-sky-300'
                               : 'border-white/10 text-white/50 hover:border-white/30 hover:text-white/70'
@@ -250,7 +250,7 @@ export default function TripWizard({ onSubmit, loading }: TripWizardProps) {
                           key={amt}
                           type="button"
                           onClick={() => updateField('budget_usd', amt)}
-                          className={`flex-1 py-2 text-xs font-medium rounded-lg border transition-all cursor-pointer ${
+                          className={`flex-1 py-2 text-xs font-medium rounded-lg border transition-all duration-200 cursor-pointer hover:scale-105 ${
                             formData.budget_usd === amt
                               ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300'
                               : 'border-white/10 text-white/40 hover:border-white/30'

@@ -64,7 +64,7 @@ export default function DestinationHero({ destination, totalDays }: DestinationH
               </span>
               <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
                 <MapPin className="w-4 h-4 text-blue-400" />
-                AI-Generated Itinerary
+                Gemini-Generated Itinerary
               </span>
             </motion.div>
           </div>

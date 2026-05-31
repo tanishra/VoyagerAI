@@ -46,7 +46,7 @@ const themeAccents: Record<string, string> = {
 
 function TimeSlotBadge({ data, config }: { data: TimeSlot; config: typeof timeSlotConfig[number] }) {
   return (
-    <div className={`p-3 rounded-xl bg-gradient-to-br ${config.gradient} border ${config.borderColor}`}>
+    <motion.div whileHover={{ scale: 1.02 }} className={`p-3 rounded-xl bg-gradient-to-br ${config.gradient} border ${config.borderColor}`}>
       <div className="flex items-center gap-2 mb-1.5">
         <config.icon className={`w-3.5 h-3.5 ${config.textColor}`} />
         <span className={`text-xs font-semibold ${config.textColor}`}>{config.label}</span>
@@ -57,7 +57,7 @@ function TimeSlotBadge({ data, config }: { data: TimeSlot; config: typeof timeSl
         <span className="flex items-center gap-1"><DollarSign className="w-3 h-3" />{data.cost_usd}</span>
         <span className="flex items-center gap-1"><Timer className="w-3 h-3" />{data.duration}</span>
       </div>
-    </div>
+    </motion.div>
   );
 }
 

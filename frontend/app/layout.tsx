@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
+import Navbar from "@/components/Navbar";
+import Footer from "@/components/Footer";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "TravelAI — Smart Trip Planner",
+  title: "VoyagerAI — Smart Trip Planner",
   description:
     "Plan your perfect trip with AI-powered itineraries. Get personalized day-by-day travel plans, budget tracking, packing lists, and local tips — all generated in seconds.",
 };
@@ -21,9 +23,11 @@ export default function RootLayout({
         >
           Skip to main content
         </a>
+        <Navbar />
         <div id="main-content" className="flex-1 flex flex-col">
           {children}
         </div>
+        <Footer />
       </body>
     </html>
   );

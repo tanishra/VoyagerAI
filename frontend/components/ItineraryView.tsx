@@ -49,7 +49,7 @@ export default function ItineraryView({
         </Button>
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <Plane className="w-4 h-4 text-sky-400" />
-          <span>AI-Generated Itinerary</span>
+          <span>Gemini-Generated Itinerary</span>
         </div>
       </motion.div>
 

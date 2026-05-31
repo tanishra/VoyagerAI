@@ -99,27 +99,27 @@ const BudgetSummary = memo(function BudgetSummary({ itinerary, budget }: BudgetS
 
               {/* Stats row */}
               <div className="grid grid-cols-3 gap-4">
-                <div className="p-3 rounded-lg bg-white/[0.03] border border-white/5">
+                <motion.div whileHover={{ y: -2 }} className="p-3 rounded-lg bg-white/[0.03] border border-white/5 hover:border-white/20 transition-colors">
                   <p className="text-xs text-muted-foreground">Per Day Avg</p>
                   <p className="text-lg font-semibold text-white/80 tabular-nums">
                     ${Math.round(itinerary.estimated_total_cost_usd / itinerary.total_days).toLocaleString()}
                   </p>
-                </div>
-                <div className="p-3 rounded-lg bg-white/[0.03] border border-white/5">
+                </motion.div>
+                <motion.div whileHover={{ y: -2 }} className="p-3 rounded-lg bg-white/[0.03] border border-white/5 hover:border-white/20 transition-colors">
                   <p className="text-xs text-muted-foreground">Duration</p>
                   <p className="text-lg font-semibold text-white/80 flex items-center gap-1.5">
                     <Calendar className="w-4 h-4 text-sky-400" />
                     <AnimatedNumber value={itinerary.total_days} />
                     <span className="text-sm text-muted-foreground">days</span>
                   </p>
-                </div>
-                <div className="p-3 rounded-lg bg-white/[0.03] border border-white/5">
+                </motion.div>
+                <motion.div whileHover={{ y: -2 }} className="p-3 rounded-lg bg-white/[0.03] border border-white/5 hover:border-white/20 transition-colors">
                   <p className="text-xs text-muted-foreground">{budget ? 'Your Budget' : 'Total'}</p>
                   <p className="text-lg font-semibold text-white/80 tabular-nums flex items-center gap-1">
                     <DollarSign className="w-4 h-4 text-emerald-400" />
                     <AnimatedNumber value={userBudget} />
                   </p>
-                </div>
+                </motion.div>
               </div>
 
               {/* Notes */}

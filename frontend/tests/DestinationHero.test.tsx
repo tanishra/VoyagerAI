@@ -18,9 +18,9 @@ describe('DestinationHero', () => {
     expect(screen.getByText('1 day')).toBeInTheDocument();
   });
 
-  it('shows AI-Generated Itinerary label', () => {
+  it('shows Gemini-Generated Itinerary label', () => {
     render(<DestinationHero destination="Bali" totalDays={3} />);
-    expect(screen.getByText('AI-Generated Itinerary')).toBeInTheDocument();
+    expect(screen.getByText('Gemini-Generated Itinerary')).toBeInTheDocument();
   });
 
   it('renders plane icon (svg with lucide-plane class)', () => {

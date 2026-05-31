@@ -34,9 +34,9 @@ describe('ItineraryView', () => {
     expect(kyotoElements.length).toBeGreaterThanOrEqual(1);
   });
 
-  it('renders AI-Generated Itinerary badge', () => {
+  it('renders Gemini-Generated Itinerary badge', () => {
     render(<ItineraryView itinerary={mockItinerary} onReplanDay={vi.fn()} replanLoading={false} onReset={vi.fn()} />);
-    const badges = screen.getAllByText('AI-Generated Itinerary');
+    const badges = screen.getAllByText('Gemini-Generated Itinerary');
     expect(badges.length).toBeGreaterThanOrEqual(1);
   });
 

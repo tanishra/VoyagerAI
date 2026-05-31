@@ -114,7 +114,7 @@ export default function WarningsSection({ warnings, packingEssentials }: Warning
                       >
                         <Badge
                           variant="secondary"
-                          className="bg-white/[0.06] border border-white/10 text-white/70 hover:bg-white/10 transition-colors"
+                          className="bg-white/[0.06] border border-white/10 text-white/70 hover:bg-white/10 hover:scale-105 transition-all duration-200"
                         >
                           {item}
                         </Badge>
