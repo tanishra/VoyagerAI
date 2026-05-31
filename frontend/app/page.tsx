@@ -1,10 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, lazy, Suspense } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { lazy, Suspense } from 'react';
 import { Globe, Sparkles } from 'lucide-react';
-import PlanForm from '@/components/PlanForm';
+import TripWizard from '@/components/TripWizard';
 import LoadingSkeleton from '@/components/LoadingSkeleton';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import type { Itinerary, PlanRequest } from '@/lib/types';
@@ -31,16 +30,14 @@ export default function Home() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       });
-
       const result = await res.json();
-
       if (result.success && result.itinerary) {
         setItinerary(result.itinerary);
       } else {
-        setError(result.error || 'Failed to generate itinerary. Please try again.');
+        setError(result.error || 'Failed to generate itinerary.');
       }
     } catch {
-      setError('Unable to connect to the server. Make sure the backend is running on port 8000.');
+      setError('Unable to connect to the server. Make sure the backend is running.');
     } finally {
       setLoading(false);
     }
@@ -48,7 +45,6 @@ export default function Home() {
 
   const handleReplanDay = async (dayNumber: number, reason: string) => {
     if (!itinerary) return;
-
     setReplanningDay(dayNumber);
 
     try {
@@ -57,16 +53,14 @@ export default function Home() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ itinerary, day_number: dayNumber, reason }),
       });
-
       const result = await res.json();
-
       if (result.success && result.itinerary) {
         setItinerary(result.itinerary);
       } else {
-        setError(result.error || 'Failed to replan day. Please try again.');
+        setError(result.error || 'Failed to replan day.');
       }
     } catch {
-      setError('Unable to connect to the server. Please try again.');
+      setError('Unable to connect to the server.');
     } finally {
       setReplanningDay(null);
     }
@@ -81,12 +75,12 @@ export default function Home() {
     <main className="relative min-h-screen overflow-hidden">
       {/* Background gradients */}
       <div className="pointer-events-none fixed inset-0">
-        <div className="absolute top-0 left-1/4 w-[600px] h-[600px] bg-purple-500/[0.07] rounded-full blur-[120px]" />
+        <div className="absolute top-0 left-1/4 w-[600px] h-[600px] bg-sky-500/[0.07] rounded-full blur-[120px]" />
         <div className="absolute bottom-0 right-1/4 w-[500px] h-[500px] bg-blue-500/[0.05] rounded-full blur-[100px]" />
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[400px] bg-cyan-500/[0.03] rounded-full blur-[140px]" />
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[400px] bg-indigo-500/[0.03] rounded-full blur-[140px]" />
       </div>
 
-      {/* Subtle grid overlay */}
+      {/* Grid overlay */}
       <div
         className="pointer-events-none fixed inset-0 opacity-[0.015]"
         style={{
@@ -108,9 +102,9 @@ export default function Home() {
               <motion.div
                 animate={{ rotate: [0, 10, -10, 0] }}
                 transition={{ repeat: Infinity, duration: 6, ease: 'easeInOut' }}
-                className="p-2 rounded-xl bg-gradient-to-br from-purple-500/20 to-blue-500/20 border border-purple-500/15"
+                className="p-2 rounded-xl bg-gradient-to-br from-sky-500/20 to-blue-500/20 border border-sky-500/15"
               >
-                <Globe className="w-6 h-6 text-purple-400" />
+                <Globe className="w-6 h-6 text-sky-400" />
               </motion.div>
               <h1 className="text-3xl md:text-4xl font-bold bg-gradient-to-r from-white via-white/90 to-white/60 bg-clip-text text-transparent">
                 TravelAI
@@ -140,7 +134,7 @@ export default function Home() {
                   role="alert"
                 >
                   <span className="text-red-400 text-lg leading-none">⚠</span>
-                  <div>
+                  <div className="flex-1">
                     <p className="font-medium mb-0.5">Something went wrong</p>
                     <p className="text-red-300/70">{error}</p>
                   </div>
@@ -170,7 +164,7 @@ export default function Home() {
                     transition={{ repeat: Infinity, duration: 2, ease: 'linear' }}
                     className="inline-block mb-3"
                   >
-                    <Globe className="w-8 h-8 text-purple-400" />
+                    <Globe className="w-8 h-8 text-sky-400" />
                   </motion.div>
                   <p className="text-sm text-muted-foreground">
                     Crafting your perfect itinerary for{' '}
@@ -181,7 +175,7 @@ export default function Home() {
               </motion.div>
             )}
 
-            {/* Itinerary view */}
+            {/* Itinerary */}
             {!loading && itinerary && (
               <motion.div
                 key="itinerary"
@@ -204,7 +198,7 @@ export default function Home() {
               </motion.div>
             )}
 
-            {/* Plan form */}
+            {/* Form */}
             {!loading && !itinerary && (
               <motion.div
                 key="form"
@@ -213,7 +207,7 @@ export default function Home() {
                 exit={{ opacity: 0 }}
                 transition={{ duration: 0.4 }}
               >
-                <PlanForm onSubmit={handlePlan} loading={loading} />
+                <TripWizard onSubmit={handlePlan} loading={loading} />
               </motion.div>
             )}
           </AnimatePresence>

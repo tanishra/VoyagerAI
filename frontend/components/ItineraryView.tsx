@@ -3,9 +3,10 @@
 import { motion } from 'framer-motion';
 import { ArrowLeft, Plane } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import DestinationHero from '@/components/DestinationHero';
 import BudgetSummary from '@/components/BudgetSummary';
 import WarningsSection from '@/components/WarningsSection';
-import DayCard from '@/components/DayCard';
+import TimelineDay from '@/components/TimelineDay';
 import type { Itinerary } from '@/lib/types';
 
 interface ItineraryViewProps {
@@ -39,19 +40,21 @@ export default function ItineraryView({
       >
         <Button
           variant="ghost"
-          id="plan-another-trip"
           onClick={onReset}
           className="text-sm text-muted-foreground hover:text-white transition-colors cursor-pointer"
           aria-label="Plan another trip"
         >
           <ArrowLeft className="w-4 h-4 mr-2" />
-          Plan Another Trip
+          New Trip
         </Button>
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Plane className="w-4 h-4 text-purple-400" />
+          <Plane className="w-4 h-4 text-sky-400" />
           <span>AI-Generated Itinerary</span>
         </div>
       </motion.div>
+
+      {/* Destination Hero */}
+      <DestinationHero destination={itinerary.destination} totalDays={itinerary.total_days} />
 
       {/* Budget Summary */}
       <BudgetSummary itinerary={itinerary} budget={budget} />
@@ -62,15 +65,16 @@ export default function ItineraryView({
         packingEssentials={itinerary.packing_essentials}
       />
 
-      {/* Day Cards */}
-      <div className="space-y-5">
+      {/* Timeline Day Cards */}
+      <div className="pl-1">
         {itinerary.days.map((day, index) => (
-          <DayCard
+          <TimelineDay
             key={day.day}
             day={day}
             index={index}
             onReplan={onReplanDay}
             replanLoading={replanLoading}
+            isLast={index === itinerary.days.length - 1}
           />
         ))}
       </div>
@@ -80,11 +84,10 @@ export default function ItineraryView({
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ delay: 0.5 }}
-        className="flex justify-center pt-4 pb-8"
+        className="flex justify-center pt-2 pb-8"
       >
         <Button
           variant="outline"
-          id="plan-another-trip-bottom"
           onClick={onReset}
           className="border-white/10 bg-white/[0.03] hover:bg-white/[0.06] text-white/60 hover:text-white transition-all cursor-pointer"
         >
