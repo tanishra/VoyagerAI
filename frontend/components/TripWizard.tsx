@@ -22,7 +22,6 @@ import {
   ArrowRight,
   Check,
   Plane,
-  Sunrise,
   Palmtree,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';

@@ -13,6 +13,7 @@ from google.genai import types
 from config import (
     MODEL_ID,
     MAX_AGENT_ITERATIONS,
+    MAX_VALIDATION_RETRIES,
     AGENT_TEMPERATURE,
     VALIDATION_REGEN_TEMPERATURE,
     client,
@@ -102,6 +103,84 @@ def _strip_markdown_fences(text: str) -> str:
     return cleaned.strip()
 
 
+async def _execute_function_calls(
+    function_calls: list[types.FunctionCall],
+    candidate_content: types.Content,
+    contents: list[types.Content],
+    validation_failures: int,
+) -> tuple[list[types.Content], int]:
+    """Execute function calls and append responses to contents."""
+    contents.append(candidate_content)
+
+    function_response_parts: list[types.Part] = []
+    for fc_call in function_calls:
+
+        result_json = await _execute_tool_call(fc_call)
+        result_data = json.loads(result_json)
+
+        if fc_call.name == "validate_constraints" and isinstance(result_data, dict):
+            if not result_data.get("valid", True):
+                validation_failures += 1
+                if validation_failures > MAX_VALIDATION_RETRIES:
+                    logger.warning(
+                        "Validation failed %d times — proceeding with best effort.",
+                        validation_failures,
+                    )
+
+        function_response_parts.append(
+            types.Part.from_function_response(
+                name=fc_call.name,
+                response=result_data,
+            )
+        )
+
+    contents.append(
+        types.Content(role="user", parts=function_response_parts),
+    )
+    return contents, validation_failures
+
+
+async def _make_gemini_call(
+    contents: list[types.Content],
+    system_prompt: str,
+    temperature: float,
+) -> types.GenerateContentResponse:
+    """Make a single Gemini API call with the given contents and config."""
+    try:
+        return client.models.generate_content(
+            model=MODEL_ID,
+            contents=contents,
+            config=types.GenerateContentConfig(
+                system_instruction=system_prompt,
+                tools=[AGENT_TOOLS],
+                temperature=temperature,
+            ),
+        )
+    except Exception as exc:
+        logger.error("Gemini API call failed: %s", exc)
+        raise HTTPException(status_code=502, detail=f"Gemini API error: {exc}") from exc
+
+
+def _parse_text_response(parts: list[types.Part]) -> dict | None:
+    """Extract and parse JSON from text parts of a response. Returns None if no text."""
+    text_parts = [p.text for p in parts if p.text]
+    final_text = "".join(text_parts).strip()
+
+    if not final_text:
+        return None
+
+    cleaned = _strip_markdown_fences(final_text)
+
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError as exc:
+        logger.error("Failed to parse agent response as JSON: %s", exc)
+        raise HTTPException(
+            status_code=502,
+            detail="Agent returned non-JSON response. Please try again.",
+        ) from exc
+
+
 async def run_agent(system_prompt: str, user_message: str) -> dict:
     """Run the manual function-calling agent loop.
 
@@ -120,7 +199,6 @@ async def run_agent(system_prompt: str, user_message: str) -> dict:
     ]
 
     validation_failures = 0
-    max_validation_retries = 3
 
     for iteration in range(1, MAX_AGENT_ITERATIONS + 1):
         logger.info("Agent iteration %d/%d", iteration, MAX_AGENT_ITERATIONS)
@@ -129,19 +207,7 @@ async def run_agent(system_prompt: str, user_message: str) -> dict:
             VALIDATION_REGEN_TEMPERATURE if validation_failures > 0 else AGENT_TEMPERATURE
         )
 
-        try:
-            response = client.models.generate_content(
-                model=MODEL_ID,
-                contents=contents,
-                config=types.GenerateContentConfig(
-                    system_instruction=system_prompt,
-                    tools=[AGENT_TOOLS],
-                    temperature=temperature,
-                ),
-            )
-        except Exception as exc:
-            logger.error("Gemini API call failed on iteration %d: %s", iteration, exc)
-            raise HTTPException(status_code=502, detail=f"Gemini API error: {exc}") from exc
+        response = await _make_gemini_call(contents, system_prompt, temperature)
 
         if not response.candidates:
             logger.error("Gemini returned no candidates on iteration %d", iteration)
@@ -152,53 +218,16 @@ async def run_agent(system_prompt: str, user_message: str) -> dict:
         function_calls = [p.function_call for p in parts if p.function_call]
 
         if function_calls:
-            contents.append(candidate.content)
-
-            function_response_parts: list[types.Part] = []
-            for fc in function_calls:
-                result_json = await _execute_tool_call(fc)
-                result_data = json.loads(result_json)
-
-                if fc.name == "validate_constraints" and isinstance(result_data, dict):
-                    if not result_data.get("valid", True):
-                        validation_failures += 1
-                        if validation_failures > max_validation_retries:
-                            logger.warning(
-                                "Validation failed %d times — proceeding with best effort.",
-                                validation_failures,
-                            )
-
-                function_response_parts.append(
-                    types.Part.from_function_response(
-                        name=fc.name,
-                        response=result_data,
-                    )
-                )
-
-            contents.append(
-                types.Content(role="user", parts=function_response_parts),
+            contents, validation_failures = await _execute_function_calls(
+                function_calls, candidate.content, contents, validation_failures
             )
             continue
 
-        text_parts = [p.text for p in parts if p.text]
-        final_text = "".join(text_parts).strip()
+        parsed = _parse_text_response(parts)
+        if parsed is not None:
+            return parsed
 
-        if not final_text:
-            logger.warning("Empty text response on iteration %d; continuing.", iteration)
-            continue
-
-        logger.info("Agent returned text (%d chars) on iteration %d", len(final_text), iteration)
-
-        cleaned = _strip_markdown_fences(final_text)
-
-        try:
-            return json.loads(cleaned)
-        except json.JSONDecodeError as exc:
-            logger.error("Failed to parse agent response as JSON: %s", exc)
-            raise HTTPException(
-                status_code=502,
-                detail="Agent returned non-JSON response. Please try again.",
-            ) from exc
+        logger.warning("Empty text response on iteration %d; continuing.", iteration)
 
     logger.error("Agent loop exhausted %d iterations.", MAX_AGENT_ITERATIONS)
     raise HTTPException(

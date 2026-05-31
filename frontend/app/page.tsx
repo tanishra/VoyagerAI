@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, lazy, Suspense } from 'react';
+import { useState, lazy, Suspense, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Globe, Sparkles } from 'lucide-react';
 import TripWizard from '@/components/TripWizard';
@@ -11,6 +11,20 @@ import type { Itinerary, PlanRequest } from '@/lib/types';
 const ItineraryView = lazy(() => import('@/components/ItineraryView'));
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+
+const CONNECTION_ERROR = 'Unable to connect to the server. Make sure it is running.';
+
+async function fetchJSON<T>(url: string, body: unknown): Promise<T> {
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    throw new Error(`Server responded with status ${res.status}`);
+  }
+  return res.json();
+}
 
 export default function Home() {
   const [itinerary, setItinerary] = useState<Itinerary | null>(null);
@@ -25,46 +39,40 @@ export default function Home() {
     setError(null);
 
     try {
-      const res = await fetch(`${API_BASE}/plan`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-      });
-      const result = await res.json();
+      const result = await fetchJSON<{ success: boolean; itinerary?: Itinerary; error?: string }>(
+        `${API_BASE}/plan`, data
+      );
       if (result.success && result.itinerary) {
         setItinerary(result.itinerary);
       } else {
         setError(result.error || 'Failed to generate itinerary.');
       }
-    } catch {
-      setError('Unable to connect to the server. Make sure the backend is running.');
+    } catch (exc) {
+      setError(exc instanceof TypeError ? CONNECTION_ERROR : String(exc));
     } finally {
       setLoading(false);
     }
   };
 
-  const handleReplanDay = async (dayNumber: number, reason: string) => {
+  const handleReplanDay = useCallback(async (dayNumber: number, reason: string) => {
     if (!itinerary) return;
     setReplanningDay(dayNumber);
 
     try {
-      const res = await fetch(`${API_BASE}/replan-day`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ itinerary, day_number: dayNumber, reason }),
-      });
-      const result = await res.json();
+      const result = await fetchJSON<{ success: boolean; itinerary?: Itinerary; error?: string }>(
+        `${API_BASE}/replan-day`, { itinerary, day_number: dayNumber, reason }
+      );
       if (result.success && result.itinerary) {
         setItinerary(result.itinerary);
       } else {
         setError(result.error || 'Failed to replan day.');
       }
-    } catch {
-      setError('Unable to connect to the server.');
+    } catch (exc) {
+      setError(exc instanceof TypeError ? CONNECTION_ERROR : String(exc));
     } finally {
       setReplanningDay(null);
     }
-  };
+  }, [itinerary]);
 
   const handleReset = () => {
     setItinerary(null);

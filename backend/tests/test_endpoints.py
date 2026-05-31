@@ -10,9 +10,8 @@ import os
 
 import pytest
 from fastapi.testclient import TestClient
-from pydantic import ValidationError
 
-from models import Itinerary, PlanRequest, PlanResponse
+from models import Itinerary, PlanResponse
 
 pytestmark = pytest.mark.skipif(
     not os.getenv("GEMINI_API_KEY"),

@@ -135,25 +135,25 @@ describe('Home page integration', () => {
   });
 
   it('handles API error gracefully', async () => {
-    (global.fetch as any).mockRejectedValueOnce(new Error('Network error'));
+    (global.fetch as any).mockRejectedValueOnce(new TypeError('Failed to fetch'));
     render(<Home />);
     fireEvent.change(screen.getByLabelText('Travel destination'), { target: { value: 'Paris' } });
     fireEvent.click(screen.getByText('Next'));
     fireEvent.click(screen.getByText('Next'));
     fireEvent.click(screen.getByText('Generate Itinerary'));
-    const errorMsg = await screen.findByText('Unable to connect to the server. Make sure the backend is running.');
-    expect(errorMsg).toBeInTheDocument();
-  });
+      const errorMsg = await screen.findByText('Unable to connect to the server. Make sure it is running.');
+      expect(errorMsg).toBeInTheDocument();
+    });
 
   it('dismisses error on close button', async () => {
-    (global.fetch as any).mockRejectedValueOnce(new Error('Network error'));
+    (global.fetch as any).mockRejectedValueOnce(new TypeError('Failed to fetch'));
     render(<Home />);
     fireEvent.change(screen.getByLabelText('Travel destination'), { target: { value: 'Paris' } });
     fireEvent.click(screen.getByText('Next'));
     fireEvent.click(screen.getByText('Next'));
     fireEvent.click(screen.getByText('Generate Itinerary'));
-    await screen.findByText('Unable to connect to the server. Make sure the backend is running.');
+    await screen.findByText('Unable to connect to the server. Make sure it is running.');
     fireEvent.click(screen.getByLabelText('Dismiss error'));
-    expect(screen.queryByText('Unable to connect to the server. Make sure the backend is running.')).not.toBeInTheDocument();
+    expect(screen.queryByText('Unable to connect to the server. Make sure it is running.')).not.toBeInTheDocument();
   });
 });

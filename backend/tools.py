@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import textwrap
+from collections.abc import Callable
 from functools import lru_cache
 
 from google.genai import types
@@ -13,8 +14,11 @@ from config import (
     MODEL_ID,
     CREATION_TEMPERATURE,
     ENRICH_TEMPERATURE,
+    CACHE_MAXSIZE,
+    VALIDATION_COST_TOLERANCE_FLAT,
+    VALIDATION_COST_TOLERANCE_PCT,
+    VALIDATION_UNDER_BUDGET_THRESHOLD,
     client,
-    logger,
 )
 
 logger = logging.getLogger("travel_agent.tools")
@@ -97,10 +101,9 @@ async def tool_generate_itinerary(
         raise RuntimeError(f"Itinerary generation error: {exc}") from exc
 
 
-@lru_cache(maxsize=32)
+@lru_cache(maxsize=CACHE_MAXSIZE)
 def _cached_validate(itinerary_json_str: str, budget_usd: int, dietary: str, constraints: str) -> str:
     """Cached validation core — accepts JSON string for hashability."""
-    import json
     return json.dumps(_validate_impl(json.loads(itinerary_json_str), budget_usd, dietary or None, constraints or None))
 
 
@@ -136,7 +139,7 @@ def _validate_impl(
         calculated_total += daily_cost
 
     header_total = itinerary_json.get("estimated_total_cost_usd", 0)
-    if abs(calculated_total - header_total) > max(50, header_total * 0.05):
+    if abs(calculated_total - header_total) > max(VALIDATION_COST_TOLERANCE_FLAT, header_total * VALIDATION_COST_TOLERANCE_PCT):
         warnings.append(
             f"Header total (${header_total}) differs from sum of daily costs (${calculated_total})."
         )
@@ -144,7 +147,7 @@ def _validate_impl(
     if calculated_total > budget_usd:
         budget_status = "over"
         issues.append(f"Calculated total ${calculated_total} exceeds budget of ${budget_usd}.")
-    elif calculated_total < budget_usd * 0.5:
+    elif calculated_total < budget_usd * VALIDATION_UNDER_BUDGET_THRESHOLD:
         budget_status = "under"
         warnings.append(
             f"Calculated total ${calculated_total} uses less than 50% of budget ${budget_usd}."
@@ -226,7 +229,7 @@ async def tool_enrich_day(
         raise RuntimeError(f"Day enrichment error: {exc}") from exc
 
 
-TOOL_DISPATCH: dict[str, callable] = {
+TOOL_DISPATCH: dict[str, Callable] = {
     "generate_itinerary": tool_generate_itinerary,
     "validate_constraints": tool_validate_constraints,
     "enrich_day": tool_enrich_day,

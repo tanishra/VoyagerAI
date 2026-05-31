@@ -6,7 +6,7 @@ import re
 from enum import Enum
 from typing import Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, ValidationInfo, field_validator
 
 
 class TravelStyle(str, Enum):
@@ -51,7 +51,7 @@ class PlanRequest(BaseModel):
 
     @field_validator("budget_usd")
     @classmethod
-    def budget_must_be_reasonable(cls, v: int, info) -> int:
+    def budget_must_be_reasonable(cls, v: int, info: ValidationInfo) -> int:
         days = info.data.get("days", 1)
         per_day = v // days
         if per_day < 20:

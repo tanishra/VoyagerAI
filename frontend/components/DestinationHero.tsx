@@ -8,13 +8,6 @@ interface DestinationHeroProps {
   totalDays: number;
 }
 
-const gradientPairs: Record<string, string> = {
-  adventure: 'from-emerald-600/30 via-teal-600/20 to-cyan-600/30',
-  cultural: 'from-violet-600/30 via-purple-600/20 to-indigo-600/30',
-  luxury: 'from-amber-600/30 via-yellow-600/20 to-orange-600/30',
-  budget: 'from-blue-600/30 via-cyan-600/20 to-sky-600/30',
-};
-
 export default function DestinationHero({ destination, totalDays }: DestinationHeroProps) {
   const gradient = 'from-sky-600/30 via-blue-600/20 to-indigo-600/30';
 
