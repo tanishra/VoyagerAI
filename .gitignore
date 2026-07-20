@@ -17,6 +17,9 @@ frontend/next-env.d.ts
 .DS_Store
 *.pem
 
+# Docs
+bugs.md
+
 # IDE
 .vscode/
 .idea/
