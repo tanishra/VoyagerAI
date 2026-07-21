@@ -2,13 +2,21 @@
 
 from __future__ import annotations
 
+import os
+
 import pytest
 from fastapi.testclient import TestClient
 
 
 @pytest.fixture
 def client():
-    """Return a FastAPI TestClient."""
+    """Return a FastAPI TestClient.
+
+    Requires GEMINI_API_KEY to be set (needed at app import time).
+    Tests using this fixture are skipped if the key is not present.
+    """
+    if not os.getenv("GEMINI_API_KEY"):
+        pytest.skip("GEMINI_API_KEY not set — required for app startup")
     from main import app
     with TestClient(app) as c:
         yield c
