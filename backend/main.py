@@ -12,16 +12,18 @@ Architecture:
     agent.py    — Manual function-calling loop over Gemini 2.5 Pro.
 """
 
-from __future__ import annotations
-
 import asyncio
 import json
 import os
 import time
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 
+from auth import verify_api_key
 from config import logger
 from models import Itinerary, PlanRequest, PlanResponse, ReplanRequest
 from agent import run_agent, AGENT_SYSTEM_PROMPT, REPLAN_SYSTEM_PROMPT
@@ -50,6 +52,14 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ---------------------------------------------------------------------------
+# Rate Limiting
+# ---------------------------------------------------------------------------
+
+limiter = Limiter(key_func=get_remote_address, default_limits=["30/hour"])
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # ---------------------------------------------------------------------------
 # Parallel Day Enrichment
@@ -104,8 +114,15 @@ async def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@app.post("/plan", response_model=PlanResponse, summary="Generate travel plan", tags=["planning"])
-async def plan(request: PlanRequest) -> PlanResponse:
+@app.post(
+    "/plan",
+    response_model=PlanResponse,
+    summary="Generate travel plan",
+    tags=["planning"],
+    dependencies=[Depends(verify_api_key)],
+)
+@limiter.limit("5/minute")
+async def plan(plan_req: PlanRequest, request: Request) -> PlanResponse:
     """Generate a validated, multi-day travel itinerary.
 
     Orchestrates a Gemini agent that:
@@ -116,20 +133,20 @@ async def plan(request: PlanRequest) -> PlanResponse:
     """
     logger.info(
         "POST /plan — destination=%s, days=%d, budget=%d, style=%s, group=%s",
-        request.destination,
-        request.days,
-        request.budget_usd,
-        request.travel_style.value,
-        request.group_type.value,
+        plan_req.destination,
+        plan_req.days,
+        plan_req.budget_usd,
+        plan_req.travel_style.value,
+        plan_req.group_type.value,
     )
 
     user_message = (
-        f"Plan a {request.days}-day trip to {request.destination}. "
-        f"Budget: ${request.budget_usd} USD. "
-        f"Style: {request.travel_style.value}. "
-        f"Group: {request.group_type.value}. "
-        f"Dietary: {request.dietary or 'None'}. "
-        f"Constraints: {request.constraints or 'None'}."
+        f"Plan a {plan_req.days}-day trip to {plan_req.destination}. "
+        f"Budget: ${plan_req.budget_usd} USD. "
+        f"Style: {plan_req.travel_style.value}. "
+        f"Group: {plan_req.group_type.value}. "
+        f"Dietary: {plan_req.dietary or 'None'}. "
+        f"Constraints: {plan_req.constraints or 'None'}."
     )
 
     total_t0 = time.perf_counter()
@@ -160,8 +177,10 @@ async def plan(request: PlanRequest) -> PlanResponse:
     response_model=PlanResponse,
     summary="Replan a specific day",
     tags=["planning"],
+    dependencies=[Depends(verify_api_key)],
 )
-async def replan_day(request: ReplanRequest) -> PlanResponse:
+@limiter.limit("10/minute")
+async def replan_day(replan_req: ReplanRequest, request: Request) -> PlanResponse:
     """Replan a specific day within an existing itinerary.
 
     The agent receives the full current itinerary plus the user's reason
@@ -169,24 +188,24 @@ async def replan_day(request: ReplanRequest) -> PlanResponse:
     """
     logger.info(
         "POST /replan-day — day=%d, reason=%s",
-        request.day_number,
-        request.reason[:80],
+        replan_req.day_number,
+        replan_req.reason[:80],
     )
 
-    if request.day_number > request.itinerary.total_days or request.day_number < 1:
+    if replan_req.day_number > replan_req.itinerary.total_days or replan_req.day_number < 1:
         raise HTTPException(
             status_code=400,
-            detail=f"Day {request.day_number} is out of range. "
-                   f"Itinerary has {request.itinerary.total_days} days.",
+            detail=f"Day {replan_req.day_number} is out of range. "
+                   f"Itinerary has {replan_req.itinerary.total_days} days.",
         )
 
-    itinerary_dict = request.itinerary.model_dump()
+    itinerary_dict = replan_req.itinerary.model_dump()
 
     user_message = (
         f"Here is the current itinerary:\n"
         f"{json.dumps(itinerary_dict, indent=2)}\n\n"
-        f"Please replan Day {request.day_number}.\n"
-        f"Reason: {request.reason}\n\n"
+        f"Please replan Day {replan_req.day_number}.\n"
+        f"Reason: {replan_req.reason}\n\n"
         f"Return the COMPLETE updated itinerary (all days) as JSON."
     )
 
