@@ -37,4 +37,12 @@ VALIDATION_COST_TOLERANCE_PCT: float = 0.05
 VALIDATION_UNDER_BUDGET_THRESHOLD: float = 0.5
 MAX_VALIDATION_RETRIES: int = 3
 
+# "development" — auth dependency is bypassed (safe for local dev)
+# "production"  — X-API-Key header is required and validated
+AUTH_MODE: str = os.getenv("AUTH_MODE", "development").lower()
+API_AUTH_KEY: str | None = os.getenv("API_AUTH_KEY")
+
+if AUTH_MODE == "production" and not API_AUTH_KEY:
+    raise RuntimeError("API_AUTH_KEY must be set when AUTH_MODE=production")
+
 client = genai.Client(api_key=GEMINI_API_KEY)
