@@ -24,6 +24,7 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
 from auth import verify_api_key
+from cache import cache_client
 from config import logger
 from models import Itinerary, PlanRequest, PlanResponse, ReplanRequest
 from agent import run_agent, AGENT_SYSTEM_PROMPT, REPLAN_SYSTEM_PROMPT
@@ -110,8 +111,8 @@ async def enrich_all_days_parallel(itinerary: dict) -> dict:
 
 @app.get("/health", summary="Health check", tags=["ops"])
 async def health() -> dict[str, str]:
-    """Return a simple health-check response."""
-    return {"status": "ok"}
+    redis_ok = await cache_client.ping()
+    return {"status": "ok", "redis": "connected" if redis_ok else "unavailable"}
 
 
 @app.post(
@@ -140,6 +141,12 @@ async def plan(plan_req: PlanRequest, request: Request) -> PlanResponse:
         plan_req.group_type.value,
     )
 
+    cached = await cache_client.get(plan_req)
+    if cached is not None:
+        logger.info("Cache HIT — returning cached itinerary for %s", plan_req.destination)
+        itinerary = Itinerary.model_validate(cached)
+        return PlanResponse(success=True, itinerary=itinerary)
+
     user_message = (
         f"Plan a {plan_req.days}-day trip to {plan_req.destination}. "
         f"Budget: ${plan_req.budget_usd} USD. "
@@ -160,6 +167,9 @@ async def plan(plan_req: PlanRequest, request: Request) -> PlanResponse:
         enriched = await enrich_all_days_parallel(raw_itinerary)
 
         itinerary = Itinerary.model_validate(enriched)
+
+        await cache_client.set(plan_req, itinerary.model_dump())
+
         logger.info(
             "✓ Total request completed in %.1fs",
             time.perf_counter() - total_t0,
