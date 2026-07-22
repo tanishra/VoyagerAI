@@ -45,4 +45,7 @@ API_AUTH_KEY: str | None = os.getenv("API_AUTH_KEY")
 if AUTH_MODE == "production" and not API_AUTH_KEY:
     raise RuntimeError("API_AUTH_KEY must be set when AUTH_MODE=production")
 
+REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+CACHE_TTL_SECONDS: int = int(os.getenv("CACHE_TTL", "3600"))
+
 client = genai.Client(api_key=GEMINI_API_KEY)
