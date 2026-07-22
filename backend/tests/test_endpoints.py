@@ -23,7 +23,9 @@ class TestHealth:
     def test_health_returns_ok(self, client: TestClient):
         resp = client.get("/health")
         assert resp.status_code == 200
-        assert resp.json() == {"status": "ok"}
+        data = resp.json()
+        assert data["status"] == "ok"
+        assert data["redis"] in ("connected", "unavailable")
 
     def test_health_method_not_allowed(self, client: TestClient):
         resp = client.post("/health")
