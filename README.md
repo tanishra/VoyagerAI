@@ -21,7 +21,6 @@
 - **Automated Budget Audit** — Pure-Python math processor validates daily costs against your global spending limit
 - **Day-by-Day Replanning** — Don't like a specific day? Request edits and Gemini updates just that day while re-balancing constraints
 - **Localized Enrichment** — Custom tips, safety alerts, weather-appropriate packing, and visa recommendations per destination
-- **State-of-the-Art Dark UI** — Glassmorphic interfaces, gradient borders, staggered animations, and fully responsive design
 
 ---
 
