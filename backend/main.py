@@ -22,9 +22,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import PlainTextResponse
 
 from auth import verify_api_key
 from cache import cache_client
+import config
 from config import logger
 from models import Itinerary, PlanRequest, PlanResponse, ReplanRequest
 from agent import run_agent, AGENT_SYSTEM_PROMPT, REPLAN_SYSTEM_PROMPT
@@ -53,6 +56,18 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+class TimeoutMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        try:
+            async with asyncio.timeout(config.REQUEST_TIMEOUT_SECONDS):
+                return await call_next(request)
+        except asyncio.TimeoutError:
+            return PlainTextResponse("Request timed out", status_code=503)
+
+
+app.add_middleware(TimeoutMiddleware)
 
 # ---------------------------------------------------------------------------
 # Rate Limiting
