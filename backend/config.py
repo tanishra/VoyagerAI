@@ -48,4 +48,6 @@ if AUTH_MODE == "production" and not API_AUTH_KEY:
 REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 CACHE_TTL_SECONDS: int = int(os.getenv("CACHE_TTL", "3600"))
 
+REQUEST_TIMEOUT_SECONDS: int = int(os.getenv("REQUEST_TIMEOUT", "120"))
+
 client = genai.Client(api_key=GEMINI_API_KEY)
