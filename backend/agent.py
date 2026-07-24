@@ -20,6 +20,7 @@ from config import (
     VALIDATION_REGEN_TEMPERATURE,
     client,
 )
+from gemini_errors import classify_gemini_error, run_with_retry
 from tools import TOOL_DISPATCH, AGENT_TOOLS
 
 logger = logging.getLogger("travel_agent.agent")
@@ -158,8 +159,9 @@ async def _make_gemini_call(
     system_prompt: str,
     temperature: float,
 ) -> types.GenerateContentResponse:
-    """Make a single Gemini API call with the given contents and config."""
-    try:
+    """Make a Gemini API call with error classification and automatic retry."""
+
+    async def _do_call() -> types.GenerateContentResponse:
         return await asyncio.wait_for(
             asyncio.to_thread(
                 lambda: client.models.generate_content(
@@ -174,9 +176,16 @@ async def _make_gemini_call(
             ),
             timeout=TIMEOUT_AGENT,
         )
+
+    try:
+        return await run_with_retry("_make_gemini_call", _do_call)
     except Exception as exc:
-        logger.error("Gemini API call failed: %s", exc)
-        raise HTTPException(status_code=502, detail=f"Gemini API error: {exc}") from exc
+        info = classify_gemini_error(exc)
+        logger.error("Gemini API call failed after retries: %s", info.details)
+        raise HTTPException(
+            status_code=info.http_status,
+            detail=info.user_message,
+        ) from exc
 
 
 def _parse_text_response(parts: list[types.Part]) -> dict | None:
