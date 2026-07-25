@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import inspect
 import json
 import logging
@@ -153,6 +154,8 @@ async def _execute_function_calls(
 
 TIMEOUT_AGENT: int = 30
 
+_THREAD_POOL = concurrent.futures.ThreadPoolExecutor(max_workers=4)
+
 
 async def _make_gemini_call(
     contents: list[types.Content],
@@ -162,8 +165,10 @@ async def _make_gemini_call(
     """Make a Gemini API call with error classification and automatic retry."""
 
     async def _do_call() -> types.GenerateContentResponse:
+        loop = asyncio.get_running_loop()
         return await asyncio.wait_for(
-            asyncio.to_thread(
+            loop.run_in_executor(
+                _THREAD_POOL,
                 lambda: client.models.generate_content(
                     model=MODEL_ID,
                     contents=contents,
