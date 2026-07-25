@@ -24,8 +24,36 @@ from config import (
     client,
 )
 from gemini_errors import classify_gemini_error, run_with_retry
+from sanitize import sanitize_prompt_input
 
 logger = logging.getLogger("travel_agent.tools")
+
+_SAFETY_SETTINGS = [
+    types.SafetySetting(
+        category=types.HarmCategory.HARM_CATEGORY_HARASSMENT,
+        threshold=types.HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+    ),
+    types.SafetySetting(
+        category=types.HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+        threshold=types.HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+    ),
+    types.SafetySetting(
+        category=types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+        threshold=types.HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+    ),
+    types.SafetySetting(
+        category=types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+        threshold=types.HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+    ),
+    types.SafetySetting(
+        category=types.HarmCategory.HARM_CATEGORY_CIVIC_INTEGRITY,
+        threshold=types.HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+    ),
+    types.SafetySetting(
+        category=types.HarmCategory.HARM_CATEGORY_JAILBREAK,
+        threshold=types.HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+    ),
+]
 
 
 async def tool_generate_itinerary(
@@ -47,20 +75,24 @@ async def tool_generate_itinerary(
         days,
     )
 
+    _dest_safe = sanitize_prompt_input(destination, "destination")
+    _diet_safe = sanitize_prompt_input(dietary, "dietary")
+    _constr_safe = sanitize_prompt_input(constraints, "constraints")
+
     prompt = textwrap.dedent(f"""\
         You are an expert travel planner. Create a detailed {days}-day travel
-        itinerary for {destination}.
+        itinerary for {_dest_safe}.
 
         Requirements:
         - Budget: ${budget_usd} USD total
         - Travel style: {travel_style}
         - Group type: {group_type}
-        - Dietary restrictions: {dietary or 'None'}
-        - Additional constraints: {constraints or 'None'}
+        - Dietary restrictions: {_diet_safe or 'None'}
+        - Additional constraints: {_constr_safe or 'None'}
 
         Return a JSON object with EXACTLY this structure:
         {{
-            "destination": "{destination}",
+            "destination": "{_dest_safe}",
             "total_days": {days},
             "estimated_total_cost_usd": <int>,
             "budget_status": "within" | "over" | "under",
@@ -100,6 +132,7 @@ async def tool_generate_itinerary(
                     config=types.GenerateContentConfig(
                         response_mime_type="application/json",
                         temperature=CREATION_TEMPERATURE,
+                        safety_settings=_SAFETY_SETTINGS,
                     ),
                 )
             )
@@ -231,8 +264,10 @@ async def tool_enrich_day(
     """Enrich a single day with practical tips via a Gemini sub-call."""
     logger.info("  enrich_day [day %d]: calling Gemini Flash...", day_number)
 
+    _dest_safe = sanitize_prompt_input(destination, "enrich_destination")
+
     prompt = textwrap.dedent(f"""\
-        You are a local travel expert for {destination}.
+        You are a local travel expert for {_dest_safe}.
         Given this day plan (Day {day_number}):
 
         {json.dumps(day_json, indent=2)}
@@ -262,6 +297,7 @@ async def tool_enrich_day(
                             config=types.GenerateContentConfig(
                                 response_mime_type="application/json",
                                 temperature=ENRICH_TEMPERATURE,
+                                safety_settings=_SAFETY_SETTINGS,
                             ),
                         )
                     ),
