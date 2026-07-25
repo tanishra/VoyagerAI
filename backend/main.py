@@ -28,6 +28,7 @@ from starlette.responses import PlainTextResponse
 from auth import verify_api_key
 from cache import cache_client
 import config
+from sanitize import sanitize_prompt_input
 from config import logger
 from models import Itinerary, PlanRequest, PlanResponse, ReplanRequest
 from agent import run_agent, AGENT_SYSTEM_PROMPT, REPLAN_SYSTEM_PROMPT
@@ -162,13 +163,17 @@ async def plan(plan_req: PlanRequest, request: Request) -> PlanResponse:
         itinerary = Itinerary.model_validate(cached)
         return PlanResponse(success=True, itinerary=itinerary)
 
+    _dest_safe = sanitize_prompt_input(plan_req.destination, "destination")
+    _diet_safe = sanitize_prompt_input(plan_req.dietary, "dietary")
+    _constr_safe = sanitize_prompt_input(plan_req.constraints, "constraints")
+
     user_message = (
-        f"Plan a {plan_req.days}-day trip to {plan_req.destination}. "
+        f"Plan a {plan_req.days}-day trip to {_dest_safe}. "
         f"Budget: ${plan_req.budget_usd} USD. "
         f"Style: {plan_req.travel_style.value}. "
         f"Group: {plan_req.group_type.value}. "
-        f"Dietary: {plan_req.dietary or 'None'}. "
-        f"Constraints: {plan_req.constraints or 'None'}."
+        f"Dietary: {_diet_safe or 'None'}. "
+        f"Constraints: {_constr_safe or 'None'}."
     )
 
     total_t0 = time.perf_counter()
@@ -225,12 +230,13 @@ async def replan_day(replan_req: ReplanRequest, request: Request) -> PlanRespons
         )
 
     itinerary_dict = replan_req.itinerary.model_dump()
+    _reason_safe = sanitize_prompt_input(replan_req.reason, "reason")
 
     user_message = (
         f"Here is the current itinerary:\n"
         f"{json.dumps(itinerary_dict, indent=2)}\n\n"
         f"Please replan Day {replan_req.day_number}.\n"
-        f"Reason: {replan_req.reason}\n\n"
+        f"Reason: {_reason_safe}\n\n"
         f"Return the COMPLETE updated itinerary (all days) as JSON."
     )
 
