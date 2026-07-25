@@ -7,6 +7,7 @@ import TripWizard from '@/components/TripWizard';
 import LoadingSkeleton from '@/components/LoadingSkeleton';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import { fetchWithTimeout, isFetchError } from '@/lib/api';
+import { saveItinerary, loadItinerary, clearItinerary } from '@/lib/storage';
 import type { Itinerary, PlanRequest } from '@/lib/types';
 import type { FetchError } from '@/lib/api';
 
@@ -17,7 +18,7 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 const TIMEOUT_WARNING_SECONDS = 90;
 
 export default function PlanPage() {
-  const [itinerary, setItinerary] = useState<Itinerary | null>(null);
+  const [itinerary, setItinerary] = useState<Itinerary | null>(() => loadItinerary());
   const [formData, setFormData] = useState<PlanRequest | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -41,6 +42,12 @@ export default function PlanPage() {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
   }, [loading, replanningDay]);
+
+  useEffect(() => {
+    if (itinerary) {
+      saveItinerary(itinerary);
+    }
+  }, [itinerary]);
 
   const handleAbort = () => {
     abortRef.current?.abort();
@@ -114,6 +121,7 @@ export default function PlanPage() {
   const handleReset = () => {
     setItinerary(null);
     setError(null);
+    clearItinerary();
   };
 
   const handleRetry = () => {
