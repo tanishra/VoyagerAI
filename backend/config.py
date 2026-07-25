@@ -25,10 +25,19 @@ ENRICH_MODEL_ID: str = "gemini-2.5-flash"
 
 MAX_AGENT_ITERATIONS: int = 5
 
+# Lower temperature on regen to encourage strict budget adherence and
+# minimal deviation from the feedback. The agent should correct issues,
+# not introduce new creative variation.
 VALIDATION_REGEN_TEMPERATURE: float = 0.2
 
+# Higher temperature on initial creation for diverse activity choices,
+# thematic day structure, and creative routing across destinations.
 CREATION_TEMPERATURE: float = 0.7
+# Moderate temperature for day enrichment — factual, practical tips
+# without hallucinated recommendations.
 ENRICH_TEMPERATURE: float = 0.6
+# Moderate temperature for the agent loop's function-calling decisions.
+# Balances deterministic tool selection with routing flexibility.
 AGENT_TEMPERATURE: float = 0.4
 
 CACHE_MAXSIZE: int = 32
