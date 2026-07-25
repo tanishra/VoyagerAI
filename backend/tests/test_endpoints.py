@@ -24,7 +24,9 @@ class TestHealth:
         resp = client.get("/health")
         assert resp.status_code == 200
         data = resp.json()
-        assert data["status"] == "ok"
+        assert data["status"] in ("ok", "degraded")
+        assert "redis" in data
+        assert "gemini" in data
         assert data["redis"] in ("connected", "unavailable")
 
     def test_health_method_not_allowed(self, client: TestClient):
