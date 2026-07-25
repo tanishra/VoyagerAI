@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import json
 import logging
 import textwrap
@@ -27,6 +28,8 @@ from gemini_errors import classify_gemini_error, run_with_retry
 from sanitize import sanitize_prompt_input
 
 logger = logging.getLogger("travel_agent.tools")
+
+_THREAD_POOL = concurrent.futures.ThreadPoolExecutor(max_workers=4)
 
 _SAFETY_SETTINGS = [
     types.SafetySetting(
@@ -125,7 +128,9 @@ async def tool_generate_itinerary(
         t0 = time.perf_counter()
 
         async def _do_generate():
-            return await asyncio.to_thread(
+            loop = asyncio.get_running_loop()
+            return await loop.run_in_executor(
+                _THREAD_POOL,
                 lambda: client.models.generate_content(
                     model=MODEL_ID,
                     contents=prompt,
@@ -134,7 +139,7 @@ async def tool_generate_itinerary(
                         temperature=CREATION_TEMPERATURE,
                         safety_settings=_SAFETY_SETTINGS,
                     ),
-                )
+                ),
             )
 
         response = await run_with_retry("generate_itinerary", _do_generate)
@@ -289,8 +294,10 @@ async def tool_enrich_day(
             t0 = time.perf_counter()
 
             async def _do_enrich():
+                loop = asyncio.get_running_loop()
                 return await asyncio.wait_for(
-                    asyncio.to_thread(
+                    loop.run_in_executor(
+                        _THREAD_POOL,
                         lambda: client.models.generate_content(
                             model=ENRICH_MODEL_ID,
                             contents=prompt,
@@ -299,7 +306,7 @@ async def tool_enrich_day(
                                 temperature=ENRICH_TEMPERATURE,
                                 safety_settings=_SAFETY_SETTINGS,
                             ),
-                        )
+                        ),
                     ),
                     timeout=TIMEOUT_ENRICH,
                 )
