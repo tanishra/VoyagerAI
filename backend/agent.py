@@ -171,6 +171,32 @@ async def _make_gemini_call(
                         system_instruction=system_prompt,
                         tools=[AGENT_TOOLS],
                         temperature=temperature,
+                        safety_settings=[
+                            types.SafetySetting(
+                                category=types.HarmCategory.HARM_CATEGORY_HARASSMENT,
+                                threshold=types.HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+                            ),
+                            types.SafetySetting(
+                                category=types.HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+                                threshold=types.HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+                            ),
+                            types.SafetySetting(
+                                category=types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+                                threshold=types.HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+                            ),
+                            types.SafetySetting(
+                                category=types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+                                threshold=types.HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+                            ),
+                            types.SafetySetting(
+                                category=types.HarmCategory.HARM_CATEGORY_CIVIC_INTEGRITY,
+                                threshold=types.HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+                            ),
+                            types.SafetySetting(
+                                category=types.HarmCategory.HARM_CATEGORY_JAILBREAK,
+                                threshold=types.HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+                            ),
+                        ],
                     ),
                 )
             ),
