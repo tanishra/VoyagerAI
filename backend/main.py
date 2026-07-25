@@ -50,6 +50,11 @@ ALLOWED_ORIGINS: list[str] = [
     if orig.strip()
 ]
 
+if config.AUTH_MODE == "production" and not ALLOWED_ORIGINS:
+    raise RuntimeError(
+        "CORS_ORIGINS must be set to an explicit allowlist when AUTH_MODE=production"
+    )
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
@@ -128,7 +133,18 @@ async def enrich_all_days_parallel(itinerary: dict) -> dict:
 @app.get("/health", summary="Health check", tags=["ops"])
 async def health() -> dict[str, str]:
     redis_ok = await cache_client.ping()
-    return {"status": "ok", "redis": "connected" if redis_ok else "unavailable"}
+    gemini_ok = False
+    try:
+        await asyncio.to_thread(client.models.list)
+        gemini_ok = True
+    except Exception:
+        pass
+    all_ok = redis_ok and gemini_ok
+    return {
+        "status": "ok" if all_ok else "degraded",
+        "redis": "connected" if redis_ok else "unavailable",
+        "gemini": "connected" if gemini_ok else "unavailable",
+    }
 
 
 @app.post(
