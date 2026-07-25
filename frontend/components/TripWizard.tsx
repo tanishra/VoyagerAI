@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   MapPin,
@@ -51,20 +51,57 @@ interface TripWizardProps {
   loading: boolean;
 }
 
+const STORAGE_KEY = 'tripWizardForm';
+
+function loadSavedForm(): Partial<PlanRequest> {
+  try {
+    const raw = sessionStorage.getItem(STORAGE_KEY);
+    if (!raw) return {};
+    return JSON.parse(raw);
+  } catch {
+    return {};
+  }
+}
+
+function saveForm(data: PlanRequest) {
+  try {
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  } catch { /* quota exceeded — ignore */ }
+}
+
+function clearSavedForm() {
+  try {
+    sessionStorage.removeItem(STORAGE_KEY);
+  } catch { /* ignore */ }
+}
+
 export default function TripWizard({ onSubmit, loading }: TripWizardProps) {
+  const saved = loadSavedForm();
   const [step, setStep] = useState(0);
   const [formData, setFormData] = useState<PlanRequest>({
-    destination: '',
-    days: 5,
-    budget_usd: 2000,
-    travel_style: 'cultural',
-    group_type: 'solo',
-    dietary: '',
-    constraints: '',
+    destination: saved.destination || '',
+    days: saved.days || 5,
+    budget_usd: saved.budget_usd || 2000,
+    travel_style: (saved.travel_style as PlanRequest['travel_style']) || 'cultural',
+    group_type: (saved.group_type as PlanRequest['group_type']) || 'solo',
+    dietary: saved.dietary || '',
+    constraints: saved.constraints || '',
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [dayStr, setDayStr] = useState('5');
-  const [budgetStr, setBudgetStr] = useState('2000');
+  const [dayStr, setDayStr] = useState(String(formData.days));
+  const [budgetStr, setBudgetStr] = useState(String(formData.budget_usd));
+  const prevLoadingRef = useRef(loading);
+
+  useEffect(() => {
+    saveForm(formData);
+  }, [formData]);
+
+  useEffect(() => {
+    if (prevLoadingRef.current && !loading) {
+      clearSavedForm();
+    }
+    prevLoadingRef.current = loading;
+  }, [loading]);
 
   const updateField = <K extends keyof PlanRequest>(key: K, value: PlanRequest[K]) => {
     setFormData(prev => ({ ...prev, [key]: value }));
