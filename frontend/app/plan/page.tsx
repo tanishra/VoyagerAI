@@ -2,29 +2,19 @@
 
 import { useState, lazy, Suspense, useCallback, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Globe, Sparkles } from 'lucide-react';
+import { Globe, Sparkles, XCircle, RotateCcw } from 'lucide-react';
 import TripWizard from '@/components/TripWizard';
 import LoadingSkeleton from '@/components/LoadingSkeleton';
 import ErrorBoundary from '@/components/ErrorBoundary';
+import { fetchWithTimeout, isFetchError } from '@/lib/api';
 import type { Itinerary, PlanRequest } from '@/lib/types';
+import type { FetchError } from '@/lib/api';
 
 const ItineraryView = lazy(() => import('@/components/ItineraryView'));
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
-const CONNECTION_ERROR = 'Unable to connect to the server. Make sure it is running.';
-
-async function fetchJSON<T>(url: string, body: unknown): Promise<T> {
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) {
-    throw new Error(`Server responded with status ${res.status}`);
-  }
-  return res.json();
-}
+const TIMEOUT_WARNING_SECONDS = 90;
 
 export default function PlanPage() {
   const [itinerary, setItinerary] = useState<Itinerary | null>(null);
@@ -34,6 +24,7 @@ export default function PlanPage() {
   const [replanningDay, setReplanningDay] = useState<number | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     if (loading || replanningDay !== null) {
@@ -51,14 +42,22 @@ export default function PlanPage() {
     };
   }, [loading, replanningDay]);
 
+  const handleAbort = () => {
+    abortRef.current?.abort();
+  };
+
   const handlePlan = async (data: PlanRequest) => {
     setFormData(data);
     setLoading(true);
     setError(null);
 
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     try {
-      const result = await fetchJSON<{ success: boolean; itinerary?: Itinerary; error?: string }>(
-        `${API_BASE}/plan`, data
+      const result = await fetchWithTimeout<{ success: boolean; itinerary?: Itinerary; error?: string }>(
+        `${API_BASE}/plan`, data,
+        { signal: controller.signal },
       );
       if (result.success && result.itinerary) {
         setItinerary(result.itinerary);
@@ -66,8 +65,17 @@ export default function PlanPage() {
         setError(result.error || 'Failed to generate itinerary.');
       }
     } catch (exc) {
-      setError(exc instanceof TypeError ? CONNECTION_ERROR : String(exc));
+      if (isFetchError(exc) && exc.isAborted) {
+        setError(null);
+        return;
+      }
+      setError(
+        isFetchError(exc)
+          ? exc.message
+          : String(exc),
+      );
     } finally {
+      abortRef.current = null;
       setLoading(false);
     }
   };
@@ -77,9 +85,13 @@ export default function PlanPage() {
     setReplanningDay(dayNumber);
     setError(null);
 
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     try {
-      const result = await fetchJSON<{ success: boolean; itinerary?: Itinerary; error?: string }>(
-        `${API_BASE}/replan-day`, { itinerary, day_number: dayNumber, reason }
+      const result = await fetchWithTimeout<{ success: boolean; itinerary?: Itinerary; error?: string }>(
+        `${API_BASE}/replan-day`, { itinerary, day_number: dayNumber, reason },
+        { signal: controller.signal },
       );
       if (result.success && result.itinerary) {
         setItinerary(result.itinerary);
@@ -87,8 +99,14 @@ export default function PlanPage() {
         setError(result.error || 'Failed to replan day.');
       }
     } catch (exc) {
-      setError(exc instanceof TypeError ? CONNECTION_ERROR : String(exc));
+      if (isFetchError(exc) && exc.isAborted) return;
+      setError(
+        isFetchError(exc)
+          ? exc.message
+          : String(exc),
+      );
     } finally {
+      abortRef.current = null;
       setReplanningDay(null);
     }
   }, [itinerary]);
@@ -96,6 +114,10 @@ export default function PlanPage() {
   const handleReset = () => {
     setItinerary(null);
     setError(null);
+  };
+
+  const handleRetry = () => {
+    if (formData) handlePlan(formData);
   };
 
   return (
@@ -153,21 +175,38 @@ export default function PlanPage() {
               className="max-w-2xl mx-auto mb-6"
             >
               <div
-                className="p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-300 text-sm flex items-start gap-3"
+                className="p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-300 text-sm"
                 role="alert"
               >
-                <span className="text-red-400 text-lg leading-none">⚠</span>
-                <div className="flex-1">
-                  <p className="font-medium mb-0.5">Something went wrong</p>
-                  <p className="text-red-300/70">{error}</p>
+                <div className="flex items-start gap-3">
+                  <span className="text-red-400 text-lg leading-none shrink-0">⚠</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium mb-0.5">Something went wrong</p>
+                    <p className="text-red-300/70 break-words">{error}</p>
+                  </div>
+                  <button
+                    onClick={() => setError(null)}
+                    className="text-red-400 hover:text-red-300 transition-colors shrink-0 cursor-pointer"
+                    aria-label="Dismiss error"
+                  >
+                    ✕
+                  </button>
                 </div>
-                <button
-                  onClick={() => setError(null)}
-                  className="ml-auto text-red-400 hover:text-red-300 transition-colors shrink-0 cursor-pointer"
-                  aria-label="Dismiss error"
-                >
-                  ✕
-                </button>
+                <div className="flex items-center gap-3 mt-3 pt-3 border-t border-red-500/10">
+                  <button
+                    onClick={handleRetry}
+                    className="inline-flex items-center gap-1.5 text-xs font-medium text-red-300 hover:text-red-200 transition-colors cursor-pointer"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    Try again
+                  </button>
+                  <button
+                    onClick={handleReset}
+                    className="text-xs text-red-300/60 hover:text-red-300 transition-colors cursor-pointer"
+                  >
+                    Start over
+                  </button>
+                </div>
               </div>
             </motion.div>
           )}
@@ -197,6 +236,24 @@ export default function PlanPage() {
                     This typically takes 60–90 seconds{' '}
                     <span className="text-white/40">(waiting {elapsed}s…)</span>
                   </p>
+                  {elapsed > TIMEOUT_WARNING_SECONDS && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 5 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="mt-4"
+                    >
+                      <p className="text-xs text-amber-400/80 mb-2">
+                        This is taking longer than expected.
+                      </p>
+                      <button
+                        onClick={handleAbort}
+                        className="inline-flex items-center gap-1.5 text-xs font-medium text-red-400 hover:text-red-300 transition-colors cursor-pointer"
+                      >
+                        <XCircle className="w-3.5 h-3.5" />
+                        Cancel request
+                      </button>
+                    </motion.div>
+                  )}
                 </div>
                 <LoadingSkeleton />
               </motion.div>
