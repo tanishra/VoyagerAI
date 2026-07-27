@@ -5,17 +5,17 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Globe, Sparkles, XCircle, RotateCcw } from 'lucide-react';
 import TripWizard from '@/components/TripWizard';
 import LoadingSkeleton from '@/components/LoadingSkeleton';
+import StreamingProgress from '@/components/StreamingProgress';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import { fetchWithTimeout, isFetchError } from '@/lib/api';
+import { streamPlan } from '@/lib/streaming-api';
 import { saveItinerary, loadItinerary, clearItinerary } from '@/lib/storage';
-import type { Itinerary, PlanRequest } from '@/lib/types';
+import type { Itinerary, PlanRequest, SSEStreamEvent } from '@/lib/types';
 import type { FetchError } from '@/lib/api';
 
 const ItineraryView = lazy(() => import('@/components/ItineraryView'));
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-
-const TIMEOUT_WARNING_SECONDS = 90;
 
 export default function PlanPage() {
   const [itinerary, setItinerary] = useState<Itinerary | null>(() => loadItinerary());
@@ -23,6 +23,7 @@ export default function PlanPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [replanningDay, setReplanningDay] = useState<number | null>(null);
+  const [streamEvent, setStreamEvent] = useState<SSEStreamEvent | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -57,33 +58,26 @@ export default function PlanPage() {
     setFormData(data);
     setLoading(true);
     setError(null);
+    setStreamEvent(null);
 
     const controller = new AbortController();
     abortRef.current = controller;
 
-    try {
-      const result = await fetchWithTimeout<{ success: boolean; itinerary?: Itinerary; error?: string }>(
-        `${API_BASE}/plan`, data,
-        { signal: controller.signal },
-      );
-      if (result.success && result.itinerary) {
-        setItinerary(result.itinerary);
-      } else {
-        setError(result.error || 'Failed to generate itinerary.');
-      }
-    } catch (exc) {
-      if (isFetchError(exc) && exc.isAborted) {
-        setError(null);
-        return;
-      }
-      setError(
-        isFetchError(exc)
-          ? exc.message
-          : String(exc),
-      );
-    } finally {
+    await streamPlan(`${API_BASE}/plan/stream`, data, {
+      signal: controller.signal,
+      onEvent: (ev) => setStreamEvent(ev),
+      onFinal: (result) => {
+        setItinerary(result);
+        setLoading(false);
+      },
+      onError: (msg) => {
+        setError(msg);
+        setLoading(false);
+      },
+    });
+
+    if (abortRef.current === controller) {
       abortRef.current = null;
-      setLoading(false);
     }
   };
 
@@ -228,42 +222,12 @@ export default function PlanPage() {
                 exit={{ opacity: 0 }}
                 transition={{ duration: 0.3 }}
               >
-                <div className="text-center mb-6">
-                  <motion.div
-                    animate={{ rotate: 360 }}
-                    transition={{ repeat: Infinity, duration: 2, ease: 'linear' }}
-                    className="inline-block mb-3"
-                  >
-                    <Globe className="w-8 h-8 text-sky-400" />
-                  </motion.div>
-                  <p className="text-sm text-muted-foreground">
-                    Crafting your perfect itinerary for{' '}
-                    <span className="text-white font-medium">{formData?.destination}</span>…
-                  </p>
-                  <p className="text-xs text-muted-foreground/60 mt-2">
-                    This typically takes 60–90 seconds{' '}
-                    <span className="text-white/40">(waiting {elapsed}s…)</span>
-                  </p>
-                  {elapsed > TIMEOUT_WARNING_SECONDS && (
-                    <motion.div
-                      initial={{ opacity: 0, y: 5 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className="mt-4"
-                    >
-                      <p className="text-xs text-amber-400/80 mb-2">
-                        This is taking longer than expected.
-                      </p>
-                      <button
-                        onClick={handleAbort}
-                        className="inline-flex items-center gap-1.5 text-xs font-medium text-red-400 hover:text-red-300 transition-colors cursor-pointer"
-                      >
-                        <XCircle className="w-3.5 h-3.5" />
-                        Cancel request
-                      </button>
-                    </motion.div>
-                  )}
-                </div>
-                <LoadingSkeleton />
+                <StreamingProgress
+                  destination={formData?.destination ?? ''}
+                  onCancel={handleAbort}
+                  onComplete={() => {}}
+                  event={streamEvent}
+                />
               </motion.div>
             )}
 
