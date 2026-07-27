@@ -1,5 +1,3 @@
-"""Pytest configuration and fixtures."""
-
 from __future__ import annotations
 
 import os
@@ -10,11 +8,6 @@ from fastapi.testclient import TestClient
 
 @pytest.fixture
 def client():
-    """Return a FastAPI TestClient.
-
-    Requires GEMINI_API_KEY to be set (needed at app import time).
-    Tests using this fixture are skipped if the key is not present.
-    """
     if not os.getenv("GEMINI_API_KEY"):
         pytest.skip("GEMINI_API_KEY not set — required for app startup")
     from main import app
@@ -33,6 +26,11 @@ def valid_plan_payload() -> dict:
         "dietary": "vegetarian",
         "constraints": "no long walks",
     }
+
+
+@pytest.fixture
+def sample_activity_dict() -> dict:
+    return {"activity": "Test", "location": "Test", "cost_usd": 10, "duration": "1h"}
 
 
 @pytest.fixture
@@ -82,8 +80,3 @@ def sample_itinerary_dict() -> dict:
         "warnings": ["Watch for pickpockets in tourist areas"],
         "packing_essentials": ["Umbrella", "Comfortable walking shoes", "Adapter"],
     }
-
-
-@pytest.fixture
-def sample_activity_dict() -> dict:
-    return {"activity": "Test", "location": "Test", "cost_usd": 10, "duration": "1h"}
