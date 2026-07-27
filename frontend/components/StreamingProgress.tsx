@@ -56,7 +56,6 @@ export default function StreamingProgress({ destination, onCancel, onComplete, e
   );
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [progress, setProgress] = useState(0);
-  const [currentTool, setCurrentTool] = useState('');
   const logEndRef = useRef<HTMLDivElement>(null);
   const logIdRef = useRef(0);
 
@@ -91,7 +90,6 @@ export default function StreamingProgress({ destination, onCancel, onComplete, e
 
     if (ev === 'on_tool_start') {
       const name = event.name ?? '';
-      setCurrentTool(name);
       addLog(`→ ${name} starting...`);
 
       if (STEP_MAP[name]) {
@@ -109,7 +107,6 @@ export default function StreamingProgress({ destination, onCancel, onComplete, e
     if (ev === 'on_tool_end') {
       const name = event.name ?? '';
       addLog(`✓ ${name} complete`, 'success');
-      setCurrentTool('');
 
       if (STEP_MAP[name]) {
         const idx = STEP_ORDER.indexOf(name);
@@ -132,8 +129,6 @@ export default function StreamingProgress({ destination, onCancel, onComplete, e
       setSteps(prev => prev.map(s => s.status === 'active' ? { ...s, status: 'error' } : s));
     }
   }, [event, addLog, onComplete]);
-
-  const activeIdx = steps.findIndex(s => s.status === 'active');
 
   return (
     <div className="w-full max-w-2xl mx-auto space-y-6">

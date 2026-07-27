@@ -14,7 +14,6 @@ from langgraph.store.redis import RedisStore
 from config.settings import settings
 
 from agents.prompts import TRAVEL_AGENT_SYSTEM_PROMPT
-from agents.tools import get_internet_tools
 from agents.subagents import get_subagents
 
 logger = logging.getLogger("travel_agent.deep_agent")
@@ -88,20 +87,10 @@ def create_travel_agent(checkpointer=None, store=None):
     return agent
 
 
-def _extract_itinerary(state: dict, user_message: str = "") -> dict:
-    """Extract the itinerary JSON from the agent response.
-
-    Searches all messages and tool call arguments for JSON matching
-    the itinerary schema.
-    """
+def _extract_itinerary(state: dict) -> dict:
     messages = state.get("messages", [])
     if not messages:
         raise ValueError("No messages in agent response")
-
-    itinerary_keys = {
-        "destination", "total_days", "estimated_total_cost_usd",
-        "budget_status", "visa_note", "best_season_note", "days",
-    }
 
     def _find_json_objects(text: str) -> list[dict]:
         results = []

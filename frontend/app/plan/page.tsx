@@ -2,7 +2,7 @@
 
 import { useState, lazy, Suspense, useCallback, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Globe, Sparkles, XCircle, RotateCcw } from 'lucide-react';
+import { Globe, Sparkles, RotateCcw } from 'lucide-react';
 import TripWizard from '@/components/TripWizard';
 import LoadingSkeleton from '@/components/LoadingSkeleton';
 import StreamingProgress from '@/components/StreamingProgress';
@@ -11,7 +11,6 @@ import { fetchWithTimeout, isFetchError } from '@/lib/api';
 import { streamPlan } from '@/lib/streaming-api';
 import { saveItinerary, loadItinerary, clearItinerary } from '@/lib/storage';
 import type { Itinerary, PlanRequest, SSEStreamEvent } from '@/lib/types';
-import type { FetchError } from '@/lib/api';
 
 const ItineraryView = lazy(() => import('@/components/ItineraryView'));
 

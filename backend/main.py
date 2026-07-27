@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
+import uuid
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -22,7 +22,7 @@ from agents import run_travel_agent, stream_travel_agent
 
 ALLOWED_ORIGINS: list[str] = [
     orig.strip()
-    for orig in os.getenv("CORS_ORIGINS", "http://localhost:3000").split(",")
+    for orig in settings.CORS_ORIGINS.split(",")
     if orig.strip()
 ]
 
@@ -149,17 +149,37 @@ async def plan_stream(plan_req: PlanRequest, request: Request) -> EventSourceRes
         f"Constraints: {_constr_safe or 'None'}."
     )
 
-    thread_id = f"plan:{plan_req.destination}:{plan_req.days}:{plan_req.budget_usd}"
+    cached = await cache_client.get(plan_req)
+    if cached is not None:
+        logger.info("Stream cache HIT for %s", plan_req.destination)
+        async def cached_generator():
+            yield {
+                "event": "final",
+                "data": json.dumps({"event": "final", "data": cached}),
+            }
+        return EventSourceResponse(cached_generator())
+
+    request_id = uuid.uuid4().hex[:8]
+    thread_id = f"plan:{plan_req.destination}:{plan_req.days}:{plan_req.budget_usd}:{request_id}"
 
     async def event_generator():
+        itinerary_result = None
         async for event in stream_travel_agent(
             user_message=user_message,
             thread_id=thread_id,
         ):
+            if event.get("event") == "final":
+                itinerary_result = event.get("data")
             yield {
                 "event": event.get("event", "data"),
                 "data": json.dumps(event),
             }
+        if itinerary_result:
+            try:
+                validated = Itinerary.model_validate(itinerary_result)
+                await cache_client.set(plan_req, validated.model_dump())
+            except Exception:
+                logger.warning("Failed to cache stream result", exc_info=True)
 
     return EventSourceResponse(event_generator())
 

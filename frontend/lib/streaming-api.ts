@@ -11,7 +11,7 @@ export async function streamPlan(
   body: PlanRequest,
   callbacks: StreamCallbacks,
 ): Promise<void> {
-  const { onEvent, onProgress, onFinal, onError, signal } = callbacks;
+  const { onEvent, onFinal, onError, signal } = callbacks;
 
   try {
     const response = await fetch(url, {
@@ -53,7 +53,7 @@ export async function streamPlan(
             try {
               const parsed = JSON.parse(currentData);
               onEvent?.(parsed);
-              handleEvent(parsed, onProgress, onFinal, onError);
+              handleEvent(parsed, onFinal, onError);
             } catch {
               onError?.('Failed to parse event data');
             }
@@ -74,43 +74,14 @@ export async function streamPlan(
   }
 }
 
-function getData(parsed: Record<string, unknown>): Record<string, unknown> | undefined {
-  const d = parsed.data;
-  if (d && typeof d === 'object' && !Array.isArray(d)) return d as Record<string, unknown>;
-  return undefined;
-}
-
 function handleEvent(
   parsed: Record<string, unknown>,
-  onProgress?: StreamCallbacks['onProgress'],
   onFinal?: StreamCallbacks['onFinal'],
   onError?: StreamCallbacks['onError'],
 ) {
   const event = parsed.event as string;
-  const data = getData(parsed);
 
   switch (event) {
-    case 'on_tool_start': {
-      const name = parsed.name as string;
-      const input = data?.input;
-      onProgress?.(`Running ${name}`, input ? JSON.stringify(input).slice(0, 120) : '');
-      break;
-    }
-    case 'on_tool_end': {
-      const name = parsed.name as string;
-      onProgress?.(`${name} complete`, '');
-      break;
-    }
-    case 'on_chain_start': {
-      const name = parsed.name as string;
-      onProgress?.(`Starting ${name}`, '');
-      break;
-    }
-    case 'on_chain_end': {
-      const name = parsed.name as string;
-      onProgress?.(`${name} complete`, '');
-      break;
-    }
     case 'final': {
       const itinerary = parsed.data as Itinerary;
       onFinal?.(itinerary);

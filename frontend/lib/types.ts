@@ -47,7 +47,6 @@ export interface SSEStreamEvent {
 
 export interface StreamCallbacks {
   onEvent?: (event: SSEStreamEvent) => void;
-  onProgress?: (step: string, detail: string) => void;
   onFinal?: (itinerary: Itinerary) => void;
   onError?: (error: string) => void;
   signal?: AbortSignal;
