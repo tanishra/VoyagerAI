@@ -38,3 +38,17 @@ export interface PlanRequest {
   dietary: string;
   constraints: string;
 }
+
+export interface SSEStreamEvent {
+  event: string;
+  name?: string;
+  data?: Record<string, unknown>;
+}
+
+export interface StreamCallbacks {
+  onEvent?: (event: SSEStreamEvent) => void;
+  onProgress?: (step: string, detail: string) => void;
+  onFinal?: (itinerary: Itinerary) => void;
+  onError?: (error: string) => void;
+  signal?: AbortSignal;
+}
