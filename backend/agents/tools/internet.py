@@ -70,39 +70,5 @@ def internet_search(
     return _search(query, max_results=max_results, topic=topic)
 
 
-@tool
-def search_events(destination: str, dates: str) -> str:
-    """Search for events, festivals, closures during specific dates."""
-    query = f"events festivals {destination} {dates} 2024 2025"
-    return _search(query, max_results=8, topic="news")
-
-
-@tool
-def search_weather(destination: str, month: str) -> str:
-    """Get typical weather patterns for destination in month."""
-    query = f"weather {destination} {month} temperature rainfall packing"
-    return _search(query, max_results=5, topic="general")
-
-
-@tool
-def search_visa(nationality: str, destination: str) -> str:
-    """Get visa/entry requirements for nationality traveling to destination."""
-    query = f"visa requirements {nationality} citizens {destination} 2024"
-    return _search(query, max_results=5, topic="general")
-
-
-@tool
-def search_costs(destination: str, style: str) -> str:
-    """Get current cost estimates for accommodation, food, transport."""
-    query = f"travel costs {destination} {style} budget 2024 accommodation food transport"
-    return _search(query, max_results=8, topic="general")
-
-
 def get_internet_tools() -> list:
-    return [
-        internet_search,
-        search_events,
-        search_weather,
-        search_visa,
-        search_costs,
-    ]
+    return [internet_search]
