@@ -6,19 +6,19 @@ import uuid
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import PlainTextResponse
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 from sse_starlette.sse import EventSourceResponse
 from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.responses import PlainTextResponse
 
 from auth import verify_api_key
 from cache import cache_client
 from config import settings, logger, REQUEST_TIMEOUT_SECONDS
 from sanitize import sanitize_prompt_input
 from models import Itinerary, PlanRequest, PlanResponse, ReplanRequest
-from agents import run_travel_agent, stream_travel_agent
+from agents import run_travel_agent, stream_travel_agent, get_redis_file_store
 
 ALLOWED_ORIGINS: list[str] = [
     orig.strip()
@@ -33,7 +33,7 @@ if settings.AUTH_MODE == "production" and not ALLOWED_ORIGINS:
 
 app = FastAPI(
     title="Travel Planning AI Agent",
-    version="2.1.0",
+    version="2.2.0",
     description="Generates, validates, and enriches multi-day travel itineraries using DeepAgent.",
 )
 
@@ -62,6 +62,10 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 
+def _resolve_user_id(request: Request) -> str:
+    return request.headers.get("x-user-id") or request.query_params.get("user_id", "anonymous")
+
+
 @app.get("/health", summary="Health check", tags=["ops"])
 async def health() -> dict[str, str]:
     redis_ok = await cache_client.ping()
@@ -70,6 +74,40 @@ async def health() -> dict[str, str]:
         "redis": "connected" if redis_ok else "unavailable",
         "agent": "deepagent",
     }
+
+
+@app.get(
+    "/preferences",
+    summary="Get user preferences",
+    tags=["preferences"],
+    dependencies=[Depends(verify_api_key)],
+)
+@limiter.limit("30/minute")
+async def get_preferences(request: Request) -> PlainTextResponse:
+    user_id = _resolve_user_id(request)
+    store = get_redis_file_store()
+    item = store.get((user_id,), "preferences.md")
+    if item is None:
+        return PlainTextResponse("", status_code=200)
+    content = item.value.get("content", "")
+    return PlainTextResponse(content, status_code=200)
+
+
+@app.put(
+    "/preferences",
+    summary="Save user preferences",
+    tags=["preferences"],
+    dependencies=[Depends(verify_api_key)],
+)
+@limiter.limit("30/minute")
+async def put_preferences(request: Request) -> dict[str, str]:
+    user_id = _resolve_user_id(request)
+    body = await request.body()
+    content = body.decode("utf-8") if body else ""
+    store = get_redis_file_store()
+    store.put((user_id,), "preferences.md", {"content": content, "encoding": "utf-8"})
+    logger.info("Saved preferences for user=%s (%d bytes)", user_id, len(content))
+    return {"status": "ok", "user_id": user_id}
 
 
 @app.post(
@@ -110,11 +148,13 @@ async def plan(plan_req: PlanRequest, request: Request) -> PlanResponse:
     )
 
     try:
+        user_id = _resolve_user_id(request)
         thread_id = f"plan:{plan_req.destination}:{plan_req.days}:{plan_req.budget_usd}"
 
         raw_itinerary = await run_travel_agent(
             user_message=user_message,
             thread_id=thread_id,
+            user_id=user_id,
         )
 
         itinerary = Itinerary.model_validate(raw_itinerary)
@@ -159,6 +199,7 @@ async def plan_stream(plan_req: PlanRequest, request: Request) -> EventSourceRes
             }
         return EventSourceResponse(cached_generator())
 
+    user_id = _resolve_user_id(request)
     request_id = uuid.uuid4().hex[:8]
     thread_id = f"plan:{plan_req.destination}:{plan_req.days}:{plan_req.budget_usd}:{request_id}"
 
@@ -167,6 +208,7 @@ async def plan_stream(plan_req: PlanRequest, request: Request) -> EventSourceRes
         async for event in stream_travel_agent(
             user_message=user_message,
             thread_id=thread_id,
+            user_id=user_id,
         ):
             if event.get("event") == "final":
                 itinerary_result = event.get("data")
@@ -218,11 +260,13 @@ async def replan_day(replan_req: ReplanRequest, request: Request) -> PlanRespons
     )
 
     try:
+        user_id = _resolve_user_id(request)
         thread_id = f"replan:{replan_req.day_number}:{hash(json.dumps(itinerary_dict, sort_keys=True))}"
 
         raw_itinerary = await run_travel_agent(
             user_message=user_message,
             thread_id=thread_id,
+            user_id=user_id,
         )
 
         itinerary = Itinerary.model_validate(raw_itinerary)
