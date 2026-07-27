@@ -75,6 +75,8 @@ export default function PlanPage() {
       },
     });
 
+    setLoading(false);
+
     if (abortRef.current === controller) {
       abortRef.current = null;
     }
