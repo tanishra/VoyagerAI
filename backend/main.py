@@ -86,7 +86,7 @@ async def health() -> dict[str, str]:
 async def get_preferences(request: Request) -> PlainTextResponse:
     user_id = _resolve_user_id(request)
     store = get_redis_file_store()
-    item = store.get((user_id,), "preferences.md")
+    item = store.get((user_id,), "/preferences.md")
     if item is None:
         return PlainTextResponse("", status_code=200)
     content = item.value.get("content", "")
@@ -105,7 +105,7 @@ async def put_preferences(request: Request) -> dict[str, str]:
     body = await request.body()
     content = body.decode("utf-8") if body else ""
     store = get_redis_file_store()
-    store.put((user_id,), "preferences.md", {"content": content, "encoding": "utf-8"})
+    store.put((user_id,), "/preferences.md", {"content": content, "encoding": "utf-8"})
     logger.info("Saved preferences for user=%s (%d bytes)", user_id, len(content))
     return {"status": "ok", "user_id": user_id}
 
