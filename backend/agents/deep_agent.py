@@ -4,12 +4,12 @@ import json
 import logging
 
 from deepagents import create_deep_agent, FilesystemPermission
-from deepagents.backends import FilesystemBackend
+from deepagents.backends import CompositeBackend, FilesystemBackend, StoreBackend
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.checkpoint.redis import RedisSaver
 from langgraph.store.memory import InMemoryStore
-from langgraph.store.redis import RedisStore
+from langgraph.store.redis import RedisStore, RedisConnectionFactory
 
 from config.settings import settings
 
@@ -20,6 +20,7 @@ logger = logging.getLogger("travel_agent.deep_agent")
 
 _checkpointer = None
 _store = None
+_file_store = None
 
 
 def create_redis_checkpointer() -> RedisSaver:
@@ -33,15 +34,31 @@ def create_redis_checkpointer() -> RedisSaver:
 def create_redis_store() -> RedisStore:
     global _store
     if _store is None:
+        conn = RedisConnectionFactory.get_redis_connection(settings.REDIS_URL)
         _store = RedisStore(
-            redis_url=settings.REDIS_URL,
+            conn=conn,
             index={"dims": 1536, "embed": "openai:text-embedding-3-small"},
         )
         _store.setup()
     return _store
 
 
-def create_travel_agent(checkpointer=None, store=None):
+def get_redis_file_store() -> InMemoryStore | RedisStore:
+    global _file_store
+    if _file_store is None:
+        if settings.STORE_BACKEND == "redis":
+            try:
+                conn = RedisConnectionFactory.get_redis_connection(settings.REDIS_URL)
+                _file_store = RedisStore(conn=conn)
+                _file_store.setup()
+            except Exception:
+                _file_store = InMemoryStore()
+        else:
+            _file_store = InMemoryStore()
+    return _file_store
+
+
+def create_travel_agent(checkpointer=None, store=None, user_id=None):
     if checkpointer is None:
         if settings.CHECKPOINTER_BACKEND == "redis":
             try:
@@ -68,6 +85,19 @@ def create_travel_agent(checkpointer=None, store=None):
 
     subagents = get_subagents()
 
+    uid = user_id or "anonymous"
+
+    def _make_backend(rt):
+        return CompositeBackend(
+            default=FilesystemBackend(root_dir="/tmp/agent_fs"),
+            routes={
+                "/memories/": StoreBackend(
+                    store=get_redis_file_store(),
+                    namespace=lambda _rt: (uid,),
+                ),
+            },
+        )
+
     agent = create_deep_agent(
         model=model,
         tools=[],
@@ -75,13 +105,14 @@ def create_travel_agent(checkpointer=None, store=None):
         system_prompt=TRAVEL_AGENT_SYSTEM_PROMPT,
         checkpointer=checkpointer,
         store=store,
+        memory=["/memories/preferences.md"],
         permissions=[
             FilesystemPermission(
                 operations=["read", "write"],
-                paths=["/workspace/**"],
+                paths=["/workspace/**", "/memories/**"],
             ),
         ],
-        backend=FilesystemBackend(root_dir="/tmp/agent_fs"),
+        backend=_make_backend,
     )
 
     return agent
@@ -110,7 +141,6 @@ def _extract_itinerary(state: dict) -> dict:
         return results
 
     def _score_itinerary(obj: dict) -> int:
-        """Score how well a dict matches the itinerary schema."""
         if not isinstance(obj, dict):
             return 0
         score = 0
@@ -170,7 +200,7 @@ async def run_travel_agent(
     thread_id: str,
     user_id: str | None = None,
 ) -> dict:
-    agent = create_travel_agent()
+    agent = create_travel_agent(user_id=user_id)
     config = {
         "configurable": {
             "thread_id": thread_id,
@@ -190,7 +220,7 @@ async def stream_travel_agent(
     thread_id: str,
     user_id: str | None = None,
 ):
-    agent = create_travel_agent()
+    agent = create_travel_agent(user_id=user_id)
     config = {
         "configurable": {
             "thread_id": thread_id,
