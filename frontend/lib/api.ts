@@ -1,3 +1,5 @@
+import { getUserId } from '@/lib/user-id';
+
 export interface FetchOptions {
   timeout?: number;
   retries?: number;
@@ -63,7 +65,7 @@ async function doFetch<T>(
   try {
     const res = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-User-Id': getUserId() },
       body: JSON.stringify(body),
       signal: combinedSignal,
     });
