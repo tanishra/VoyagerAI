@@ -149,7 +149,7 @@ async def plan(plan_req: PlanRequest, request: Request) -> PlanResponse:
 
     try:
         user_id = _resolve_user_id(request)
-        thread_id = f"plan:{plan_req.destination}:{plan_req.days}:{plan_req.budget_usd}"
+        thread_id = f"plan:{user_id}:{plan_req.destination}:{plan_req.days}:{plan_req.budget_usd}"
 
         raw_itinerary = await run_travel_agent(
             user_message=user_message,
