@@ -1,3 +1,4 @@
+import { getUserId } from '@/lib/user-id';
 import type { Itinerary, PlanRequest, StreamCallbacks } from './types';
 
 function parseSSELine(line: string): { event?: string; data?: string } | null {
@@ -16,7 +17,7 @@ export async function streamPlan(
   try {
     const response = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
+      headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream', 'X-User-Id': getUserId() },
       body: JSON.stringify(body),
       signal,
     });
