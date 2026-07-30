@@ -17,8 +17,13 @@ from auth import verify_api_key
 from cache import cache_client
 from config import settings, logger, REQUEST_TIMEOUT_SECONDS
 from sanitize import sanitize_prompt_input
-from models import Itinerary, PlanRequest, PlanResponse, ReplanRequest
-from agents import run_travel_agent, stream_travel_agent, get_redis_file_store
+from models import ChatRequest, Itinerary, PlanRequest, PlanResponse, ReplanRequest
+from agents import (
+    get_redis_file_store,
+    run_travel_agent,
+    stream_chat_agent,
+    stream_travel_agent,
+)
 
 ALLOWED_ORIGINS: list[str] = [
     orig.strip()
@@ -276,6 +281,86 @@ async def replan_day(replan_req: ReplanRequest, request: Request) -> PlanRespons
     except Exception as exc:
         logger.error("Unexpected error in /replan-day: %s", exc)
         return PlanResponse(success=False, error=f"Replanning failed: {exc}")
+
+
+@app.post(
+    "/chat/stream",
+    summary="Stream chat conversation with the travel agent",
+    tags=["chat"],
+    dependencies=[Depends(verify_api_key)],
+)
+@limiter.limit("20/minute")
+async def chat_stream(chat_req: ChatRequest, request: Request) -> EventSourceResponse:
+    _msg_safe = sanitize_prompt_input(chat_req.message, "message")
+
+    user_id = _resolve_user_id(request)
+    thread_id = chat_req.thread_id or f"chat:{user_id}:{uuid.uuid4().hex[:12]}"
+
+    logger.info(
+        "POST /chat/stream — thread_id=%s, message_len=%d, user=%s",
+        thread_id,
+        len(_msg_safe),
+        user_id,
+    )
+
+    async def event_generator():
+        yield {
+            "event": "thread_id",
+            "data": json.dumps({"event": "thread_id", "data": {"thread_id": thread_id}}),
+        }
+
+        yield {
+            "event": "status",
+            "data": json.dumps({"event": "status", "data": {"tool": "agent", "status": "thinking"}}),
+        }
+
+        async for event in stream_chat_agent(
+            message=_msg_safe,
+            thread_id=thread_id,
+            user_id=user_id,
+        ):
+            event_type = event.get("event", "data")
+            event_data = event.get("data")
+            if event_type == "itinerary" and event_data is not None:
+                yield {
+                    "event": "itinerary",
+                    "data": json.dumps({"event": "itinerary", "data": event_data}),
+                }
+            elif event_type == "done":
+                yield {
+                    "event": "done",
+                    "data": json.dumps({"event": "done", "data": None}),
+                }
+            elif event_type == "error":
+                yield {
+                    "event": "error",
+                    "data": json.dumps({"event": "error", "data": str(event_data)}),
+                }
+            elif event_type == "data" and isinstance(event_data, dict):
+                chunk_type = event_data.get("type", "")
+                chunk_data = event_data
+                if chunk_type == "ai" or chunk_type == "llm":
+                    content_blocks = chunk_data.get("content", [])
+                    if isinstance(content_blocks, list):
+                        for block in content_blocks:
+                            if isinstance(block, dict) and block.get("type") == "text-delta":
+                                text = block.get("text", "")
+                                if text:
+                                    yield {
+                                        "event": "token",
+                                        "data": json.dumps({"event": "token", "data": text}),
+                                    }
+                if chunk_type == "tool_use":
+                    tool_info = chunk_data.get("content", chunk_data)
+                    yield {
+                        "event": "status",
+                        "data": json.dumps({
+                            "event": "status",
+                            "data": {"tool": tool_info, "status": "running"},
+                        }),
+                    }
+
+    return EventSourceResponse(event_generator())
 
 
 if __name__ == "__main__":
