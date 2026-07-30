@@ -2,8 +2,6 @@
 
 import logging
 
-import pytest
-
 from sanitize import sanitize_prompt_input
 
 

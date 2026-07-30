@@ -57,7 +57,6 @@ def sanitize_prompt_input(
     if not isinstance(text, str):
         return text
 
-    original = text
     for pattern in CONTROL_TOKEN_PATTERNS:
         replaced = pattern.sub("[blocked]", text)
         if replaced != text:

@@ -85,7 +85,7 @@ class TestCacheIntegration:
 
 if __name__ == "__main__":
     import asyncio
-    import sys
+
 
     async def _manual_integration() -> None:
         from cache import cache_client
