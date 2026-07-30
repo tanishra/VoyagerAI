@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 
 from deepagents import create_deep_agent, FilesystemPermission
 from deepagents.backends import CompositeBackend, FilesystemBackend, StoreBackend
@@ -13,7 +14,7 @@ from langgraph.store.redis import RedisStore, RedisConnectionFactory
 
 from config.settings import settings
 
-from agents.prompts import TRAVEL_AGENT_SYSTEM_PROMPT
+from agents.prompts import CHAT_AGENT_SYSTEM_PROMPT, TRAVEL_AGENT_SYSTEM_PROMPT
 from agents.subagents import get_subagents
 
 logger = logging.getLogger("travel_agent.deep_agent")
@@ -239,5 +240,125 @@ async def stream_travel_agent(
     try:
         itinerary = _extract_itinerary(state.values)
         yield {"event": "final", "data": itinerary}
+    except (ValueError, json.JSONDecodeError) as exc:
+        yield {"event": "error", "data": str(exc)}
+
+
+def create_chat_agent(checkpointer=None, store=None, user_id=None):
+    if checkpointer is None:
+        if settings.CHECKPOINTER_BACKEND == "redis":
+            try:
+                checkpointer = create_redis_checkpointer()
+            except Exception:
+                checkpointer = MemorySaver()
+        else:
+            checkpointer = MemorySaver()
+
+    if store is None:
+        if settings.STORE_BACKEND == "redis":
+            try:
+                store = create_redis_store()
+            except Exception:
+                store = InMemoryStore()
+        else:
+            store = InMemoryStore()
+
+    model = ChatGoogleGenerativeAI(
+        model="gemini-2.5-pro",
+        google_api_key=settings.GEMINI_API_KEY,
+        temperature=0.4,
+    )
+
+    subagents = get_subagents()
+
+    uid = user_id or "anonymous"
+
+    def _make_backend(rt):
+        return CompositeBackend(
+            default=FilesystemBackend(root_dir="/tmp/agent_fs"),
+            routes={
+                "/memories/": StoreBackend(
+                    store=get_redis_file_store(),
+                    namespace=lambda _rt: (uid,),
+                ),
+            },
+        )
+
+    agent = create_deep_agent(
+        model=model,
+        tools=[],
+        subagents=subagents,
+        system_prompt=CHAT_AGENT_SYSTEM_PROMPT,
+        checkpointer=checkpointer,
+        store=store,
+        memory=["/memories/preferences.md"],
+        permissions=[
+            FilesystemPermission(
+                operations=["read", "write"],
+                paths=["/workspace/**", "/memories/**"],
+            ),
+        ],
+        backend=_make_backend,
+    )
+
+    return agent
+
+
+_ITINERARY_TAG_RE = re.compile(r"<itinerary>\s*(.*?)\s*</itinerary>", re.DOTALL)
+
+
+def _extract_chat_itinerary(state: dict) -> dict | None:
+    messages = state.get("messages", [])
+    if not messages:
+        return None
+
+    for msg in reversed(messages):
+        c = msg.content
+        texts: list[str] = []
+        if isinstance(c, str):
+            texts.append(c)
+        elif isinstance(c, list):
+            texts.extend(
+                p["text"] for p in c if isinstance(p, dict) and p.get("type") == "text"
+            )
+        for text in texts:
+            match = _ITINERARY_TAG_RE.search(text)
+            if match:
+                try:
+                    parsed = json.loads(match.group(1))
+                    return parsed
+                except (json.JSONDecodeError, ValueError):
+                    logger.warning("Found <itinerary> tags but content is not valid JSON")
+
+    return None
+
+
+async def stream_chat_agent(
+    message: str,
+    thread_id: str,
+    user_id: str | None = None,
+):
+    agent = create_chat_agent(user_id=user_id)
+    config = {
+        "configurable": {
+            "thread_id": thread_id,
+            "user_id": user_id or "anonymous",
+        },
+        "recursion_limit": 50,
+    }
+
+    async for event in agent.astream_events(
+        {"messages": [{"role": "user", "content": message}]},
+        config,
+        version="v2",
+    ):
+        yield event
+
+    state = await agent.aget_state(config)
+    try:
+        itinerary = _extract_chat_itinerary(state.values)
+        if itinerary is not None:
+            yield {"event": "itinerary", "data": itinerary}
+        yield {"event": "done", "data": None}
     except (ValueError, json.JSONDecodeError) as exc:
         yield {"event": "error", "data": str(exc)}
