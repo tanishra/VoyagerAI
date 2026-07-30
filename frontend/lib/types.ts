@@ -51,3 +51,20 @@ export interface StreamCallbacks {
   onError?: (error: string) => void;
   signal?: AbortSignal;
 }
+
+export interface ChatMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  itinerary?: Itinerary;
+}
+
+export interface ChatStreamCallbacks {
+  onToken?: (text: string) => void;
+  onItinerary?: (itinerary: Itinerary) => void;
+  onStatus?: (status: { tool: string; status: string }) => void;
+  onThreadId?: (threadId: string) => void;
+  onDone?: () => void;
+  onError?: (error: string) => void;
+  signal?: AbortSignal;
+}
