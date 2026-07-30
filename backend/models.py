@@ -107,6 +107,15 @@ class PlanResponse(BaseModel):
     error: Optional[str] = None
 
 
+class ChatRequest(BaseModel):
+    message: str = Field(
+        ..., min_length=1, max_length=2000, description="User chat message."
+    )
+    thread_id: Optional[str] = Field(
+        None, description="Thread ID for resuming a previous conversation."
+    )
+
+
 class ReplanRequest(BaseModel):
     itinerary: Itinerary
     day_number: int = Field(..., ge=1, description="Day number to replan.")
