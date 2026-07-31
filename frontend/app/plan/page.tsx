@@ -29,14 +29,12 @@ export default function PlanPage() {
 
   useEffect(() => {
     if (loading || replanningDay !== null) {
-      setElapsed(0);
       intervalRef.current = setInterval(() => {
         setElapsed(prev => prev + 1);
       }, 1000);
     } else {
       if (intervalRef.current) clearInterval(intervalRef.current);
       intervalRef.current = null;
-      setElapsed(0);
     }
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
@@ -56,6 +54,7 @@ export default function PlanPage() {
   const handlePlan = async (data: PlanRequest) => {
     setFormData(data);
     setLoading(true);
+    setElapsed(0);
     setError(null);
     setStreamEvent(null);
 
@@ -85,6 +84,7 @@ export default function PlanPage() {
   const handleReplanDay = useCallback(async (dayNumber: number, reason: string) => {
     if (!itinerary) return;
     setReplanningDay(dayNumber);
+    setElapsed(0);
     setError(null);
 
     const controller = new AbortController();

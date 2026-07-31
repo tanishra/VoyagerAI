@@ -27,7 +27,8 @@ export default function Navbar() {
   }, []);
 
   useEffect(() => {
-    setMenuOpen(false);
+    const raf = requestAnimationFrame(() => setMenuOpen(false));
+    return () => cancelAnimationFrame(raf);
   }, [pathname]);
 
   return (

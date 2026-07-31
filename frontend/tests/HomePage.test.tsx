@@ -2,23 +2,20 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import Home from '@/app/page';
 
-vi.mock('lucide-react', () => {
-  const MockIcon = ({ name }: { name?: string }) => <span data-testid={`icon-${name || 'default'}`} />;
-  return {
-    Globe: () => <span data-testid="icon-globe" />,
-    Sparkles: () => <span data-testid="icon-sparkles" />,
-    MapPin: () => <span data-testid="icon-map-pin" />,
-    Calendar: () => <span data-testid="icon-calendar" />,
-    DollarSign: () => <span data-testid="icon-dollar" />,
-    Compass: () => <span data-testid="icon-compass" />,
-    Map: () => <span data-testid="icon-map" />,
-    Lightbulb: () => <span data-testid="icon-lightbulb" />,
-    Luggage: () => <span data-testid="icon-luggage" />,
-    RefreshCw: () => <span data-testid="icon-refresh" />,
-    Award: () => <span data-testid="icon-award" />,
-    ArrowRight: () => <span data-testid="icon-arrow-right" />,
-  };
-});
+vi.mock('lucide-react', () => ({
+  Globe: () => <span data-testid="icon-globe" />,
+  Sparkles: () => <span data-testid="icon-sparkles" />,
+  MapPin: () => <span data-testid="icon-map-pin" />,
+  Calendar: () => <span data-testid="icon-calendar" />,
+  DollarSign: () => <span data-testid="icon-dollar" />,
+  Compass: () => <span data-testid="icon-compass" />,
+  Map: () => <span data-testid="icon-map" />,
+  Lightbulb: () => <span data-testid="icon-lightbulb" />,
+  Luggage: () => <span data-testid="icon-luggage" />,
+  RefreshCw: () => <span data-testid="icon-refresh" />,
+  Award: () => <span data-testid="icon-award" />,
+  ArrowRight: () => <span data-testid="icon-arrow-right" />,
+}));
 
 describe('Home landing page', () => {
   it('renders HeroSection content', () => {

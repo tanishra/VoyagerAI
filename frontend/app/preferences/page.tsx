@@ -13,10 +13,6 @@ export default function PreferencesPage() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  useEffect(() => {
-    fetchPreferences();
-  }, []);
-
   async function fetchPreferences() {
     setLoading(true);
     setMessage(null);
@@ -32,6 +28,13 @@ export default function PreferencesPage() {
       setLoading(false);
     }
   }
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      fetchPreferences();
+    }, 0);
+    return () => clearTimeout(timer);
+  }, []);
 
   async function handleSave() {
     setSaving(true);

@@ -27,7 +27,7 @@ export async function fetchWithTimeout<T>(
   body: unknown,
   options: FetchOptions = {},
 ): Promise<T> {
-  const { timeout = DEFAULT_TIMEOUT, retries = DEFAULT_RETRIES } = options;
+  const { retries = DEFAULT_RETRIES } = options;
 
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {

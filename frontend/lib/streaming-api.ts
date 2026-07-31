@@ -45,7 +45,6 @@ export async function streamPlan(
       const lines = buffer.split('\n');
       buffer = lines.pop() || '';
 
-      let currentEvent = '';
       let currentData = '';
 
       for (const line of lines) {
@@ -59,13 +58,11 @@ export async function streamPlan(
               onError?.('Failed to parse event data');
             }
           }
-          currentEvent = '';
           currentData = '';
           continue;
         }
 
         const parsed = parseSSELine(line);
-        if (parsed?.event) currentEvent = parsed.event;
         if (parsed?.data) currentData = parsed.data;
       }
     }

@@ -19,43 +19,35 @@ vi.mock('next/navigation', () => ({
 }));
 
 vi.mock('next/link', () => ({
-  default: ({ children, href, ...props }: any) =>
+  default: ({ children, href, ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement> & { children?: React.ReactNode }) =>
     React.createElement('a', { href, ...props }, children),
 }));
 
-vi.mock('framer-motion', () => ({
-  motion: new Proxy(
-    {},
-    {
-      get: (_target, prop) => {
-        if (typeof prop === 'string') {
-          return ({ children, ...props }: any) => {
-            const {
-              initial,
-              animate,
-              exit,
-              transition,
-              variants,
-              custom,
-              whileInView,
-              whileHover,
-              whileTap,
-              onAnimationComplete,
-              layout,
-              layoutId,
-              ...rest
-            } = props;
-            return React.createElement(prop, rest, children);
-          };
-        }
-        return undefined;
+vi.mock('framer-motion', () => {
+  const makeMotion = (tag: string) => {
+    const Component: React.FC<{ children?: React.ReactNode } & Record<string, unknown>> = ({ children, ...props }) =>
+      React.createElement(tag, props as React.HTMLAttributes<HTMLElement>, children);
+    Component.displayName = `MockMotion.${tag}`;
+    return Component;
+  };
+
+  return {
+    motion: new Proxy(
+      {},
+      {
+        get: (_target, prop) => {
+          if (typeof prop === 'string') {
+            return makeMotion(prop);
+          }
+          return undefined;
+        },
       },
-    }
-  ),
-  AnimatePresence: ({ children }: any) => React.createElement(React.Fragment, null, children),
-  useScroll: () => ({ scrollYProgress: { on: () => {} } }),
-  useSpring: () => ({ set: () => {} }),
-  useAnimation: () => ({ start: () => {}, set: () => {} }),
-  useMotionValue: (initial: any) => ({ get: () => initial, set: () => {} }),
-  useTransform: () => ({ get: () => 0 }),
-}));
+    ),
+    AnimatePresence: ({ children }: { children?: React.ReactNode }) => React.createElement(React.Fragment, null, children),
+    useScroll: () => ({ scrollYProgress: { on: () => {} } }),
+    useSpring: () => ({ set: () => {} }),
+    useAnimation: () => ({ start: () => {}, set: () => {} }),
+    useMotionValue: (initial: number) => ({ get: () => initial, set: () => {} }),
+    useTransform: () => ({ get: () => 0 }),
+  };
+});

@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import TripWizard from '@/components/TripWizard';
 
@@ -8,6 +8,9 @@ const defaultProps = {
 };
 
 describe('TripWizard', () => {
+  beforeEach(() => {
+    sessionStorage.clear();
+  });
   it('renders step 1 (destination) by default', () => {
     render(<TripWizard {...defaultProps} />);
     expect(screen.getByText('Where to?')).toBeInTheDocument();

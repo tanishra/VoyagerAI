@@ -8,7 +8,6 @@ import {
   Moon,
   MapPin,
   DollarSign,
-  Clock,
   Car,
   Hotel,
   Lightbulb,
@@ -36,13 +35,6 @@ const timeSlotConfig = [
   { key: 'afternoon' as const, label: 'Afternoon', icon: Sun, gradient: 'from-blue-500/15 to-cyan-500/15', textColor: 'text-blue-400', borderColor: 'border-blue-500/20' },
   { key: 'evening' as const, label: 'Evening', icon: Moon, gradient: 'from-purple-500/15 to-indigo-500/15', textColor: 'text-purple-400', borderColor: 'border-purple-500/20' },
 ];
-
-const themeAccents: Record<string, string> = {
-  adventure: 'border-emerald-500/30',
-  cultural: 'border-violet-500/30',
-  luxury: 'border-amber-500/30',
-  budget: 'border-blue-500/30',
-};
 
 function TimeSlotBadge({ data, config }: { data: TimeSlot; config: typeof timeSlotConfig[number] }) {
   return (
