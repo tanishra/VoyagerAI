@@ -305,6 +305,35 @@ def create_chat_agent(checkpointer=None, store=None, user_id=None):
 _ITINERARY_TAG_RE = re.compile(r"<itinerary>\s*(.*?)\s*</itinerary>", re.DOTALL)
 
 
+def _find_largest_json_object(text: str) -> dict | None:
+    """Best-effort fallback: locate the largest balanced JSON object in text.
+
+    Tries the longest brace-balanced spans first; only accepts objects that
+    look like an itinerary (destination + days keys). Returns None if nothing
+    parses.
+    """
+    spans: list[str] = []
+    for m in re.finditer(r"\{", text):
+        depth = 0
+        for i in range(m.start(), len(text)):
+            ch = text[i]
+            if ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    spans.append(text[m.start():i + 1])
+                    break
+    for span in reversed(spans):  # longest first
+        try:
+            parsed = json.loads(span)
+        except (json.JSONDecodeError, ValueError):
+            continue
+        if isinstance(parsed, dict) and "destination" in parsed and "days" in parsed:
+            return parsed
+    return None
+
+
 def _extract_chat_itinerary(state: dict) -> dict | None:
     messages = state.get("messages", [])
     if not messages:
@@ -327,6 +356,9 @@ def _extract_chat_itinerary(state: dict) -> dict | None:
                     return parsed
                 except (json.JSONDecodeError, ValueError):
                     logger.warning("Found <itinerary> tags but content is not valid JSON")
+            fallback = _find_largest_json_object(text)
+            if fallback is not None:
+                return fallback
 
     return None
 
@@ -353,8 +385,27 @@ async def stream_chat_agent(
         yield event
 
     state = await agent.aget_state(config)
-    try:
+    itinerary = _extract_chat_itinerary(state.values)
+    if itinerary is None:
+        await agent.ainvoke(
+            {
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": (
+                            "Your previous response did not include the itinerary JSON. "
+                            "Please output the final itinerary JSON now, inside "
+                            "<itinerary></itinerary> tags."
+                        ),
+                    }
+                ]
+            },
+            config,
+        )
+        state = await agent.aget_state(config)
         itinerary = _extract_chat_itinerary(state.values)
+
+    try:
         if itinerary is not None:
             yield {"event": "itinerary", "data": itinerary}
         yield {"event": "done", "data": None}
