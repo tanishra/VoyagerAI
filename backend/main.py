@@ -13,17 +13,17 @@ from slowapi.util import get_remote_address
 from sse_starlette.sse import EventSourceResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from auth import verify_api_key
-from cache import cache_client
-from config import settings, logger, REQUEST_TIMEOUT_SECONDS
-from sanitize import sanitize_prompt_input
-from models import ChatRequest, Itinerary, PlanRequest, PlanResponse, ReplanRequest
 from agents import (
     get_redis_file_store,
     run_travel_agent,
     stream_chat_agent,
     stream_travel_agent,
 )
+from auth import verify_api_key
+from cache import cache_client
+from config import REQUEST_TIMEOUT_SECONDS, logger, settings
+from models import ChatRequest, Itinerary, PlanRequest, PlanResponse, ReplanRequest
+from sanitize import sanitize_prompt_input
 
 ALLOWED_ORIGINS: list[str] = [
     orig.strip()
@@ -69,6 +69,70 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 def _resolve_user_id(request: Request) -> str:
     return request.headers.get("x-user-id") or request.query_params.get("user_id", "anonymous")
+
+
+def _sse(event: str, data: object) -> dict:
+    return {"event": event, "data": json.dumps({"event": event, "data": data})}
+
+
+def _parse_chat_event(event: dict, active_tasks: dict[str, str]) -> list[dict]:
+    """Map a stream event to SSE payloads.
+
+    Handles synthetic envelopes (itinerary/done/error) plus raw langchain v2
+    astream_events (on_chat_model_stream -> token, on_tool_start/on_tool_end
+    for the task tool -> subagent status). `active_tasks` maps task tool
+    run_id -> subagent_type so completion status names the right subagent.
+    """
+    event_type = event.get("event", "data")
+    event_data = event.get("data")
+
+    if event_type == "itinerary" and event_data is not None:
+        return [_sse("itinerary", event_data)]
+    if event_type == "done":
+        return [_sse("done", None)]
+    if event_type == "error":
+        return [_sse("error", str(event_data))]
+
+    if event_type == "on_chat_model_stream":
+        chunk = event_data.get("chunk") if isinstance(event_data, dict) else None
+        if chunk is None:
+            return []
+        content = getattr(chunk, "content", None)
+        if isinstance(content, str):
+            return [_sse("token", content)] if content else []
+        if isinstance(content, list):
+            payloads: list[dict] = []
+            for block in content:
+                if not isinstance(block, dict):
+                    continue
+                block_type = block.get("type", "")
+                if block_type == "text-delta" and block.get("text"):
+                    payloads.append(_sse("token", block["text"]))
+                elif block_type == "tool_use" and block.get("name") != "task":
+                    payloads.append(_sse("status", {"tool": block["name"], "status": "running"}))
+            return payloads
+        return []
+
+    if event_type == "on_tool_start":
+        name = event.get("name", "")
+        tool_input = event_data.get("input") if isinstance(event_data, dict) else None
+        if name == "task" and isinstance(tool_input, dict):
+            subagent_type = tool_input.get("subagent_type")
+            if subagent_type:
+                run_id = event.get("run_id", "")
+                if run_id:
+                    active_tasks[run_id] = subagent_type
+                return [_sse("status", {"tool": subagent_type, "status": "running"})]
+        return []
+
+    if event_type == "on_tool_end":
+        run_id = event.get("run_id", "")
+        if run_id in active_tasks:
+            subagent_type = active_tasks.pop(run_id)
+            return [_sse("status", {"tool": subagent_type, "status": "done"})]
+        return []
+
+    return []
 
 
 @app.get("/health", summary="Health check", tags=["ops"])
@@ -168,7 +232,7 @@ async def plan(plan_req: PlanRequest, request: Request) -> PlanResponse:
         return PlanResponse(success=True, itinerary=itinerary)
     except HTTPException:
         raise
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 (intentional fallback handler)
         logger.error("Unexpected error in /plan: %s", exc)
         return PlanResponse(success=False, error=f"Planning failed: {exc}")
 
@@ -225,7 +289,7 @@ async def plan_stream(plan_req: PlanRequest, request: Request) -> EventSourceRes
             try:
                 validated = Itinerary.model_validate(itinerary_result)
                 await cache_client.set(plan_req, validated.model_dump())
-            except Exception:
+            except Exception:  # noqa: BLE001 (intentional fallback handler)
                 logger.warning("Failed to cache stream result", exc_info=True)
 
     return EventSourceResponse(event_generator())
@@ -278,7 +342,7 @@ async def replan_day(replan_req: ReplanRequest, request: Request) -> PlanRespons
         return PlanResponse(success=True, itinerary=itinerary)
     except HTTPException:
         raise
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 (intentional fallback handler)
         logger.error("Unexpected error in /replan-day: %s", exc)
         return PlanResponse(success=False, error=f"Replanning failed: {exc}")
 
@@ -304,61 +368,18 @@ async def chat_stream(chat_req: ChatRequest, request: Request) -> EventSourceRes
     )
 
     async def event_generator():
-        yield {
-            "event": "thread_id",
-            "data": json.dumps({"event": "thread_id", "data": {"thread_id": thread_id}}),
-        }
+        yield _sse("thread_id", {"thread_id": thread_id})
+        yield _sse("status", {"tool": "agent", "status": "thinking"})
 
-        yield {
-            "event": "status",
-            "data": json.dumps({"event": "status", "data": {"tool": "agent", "status": "thinking"}}),
-        }
+        active_tasks: dict[str, str] = {}
 
         async for event in stream_chat_agent(
             message=_msg_safe,
             thread_id=thread_id,
             user_id=user_id,
         ):
-            event_type = event.get("event", "data")
-            event_data = event.get("data")
-            if event_type == "itinerary" and event_data is not None:
-                yield {
-                    "event": "itinerary",
-                    "data": json.dumps({"event": "itinerary", "data": event_data}),
-                }
-            elif event_type == "done":
-                yield {
-                    "event": "done",
-                    "data": json.dumps({"event": "done", "data": None}),
-                }
-            elif event_type == "error":
-                yield {
-                    "event": "error",
-                    "data": json.dumps({"event": "error", "data": str(event_data)}),
-                }
-            elif event_type == "data" and isinstance(event_data, dict):
-                chunk_type = event_data.get("type", "")
-                chunk_data = event_data
-                if chunk_type == "ai" or chunk_type == "llm":
-                    content_blocks = chunk_data.get("content", [])
-                    if isinstance(content_blocks, list):
-                        for block in content_blocks:
-                            if isinstance(block, dict) and block.get("type") == "text-delta":
-                                text = block.get("text", "")
-                                if text:
-                                    yield {
-                                        "event": "token",
-                                        "data": json.dumps({"event": "token", "data": text}),
-                                    }
-                if chunk_type == "tool_use":
-                    tool_info = chunk_data.get("content", chunk_data)
-                    yield {
-                        "event": "status",
-                        "data": json.dumps({
-                            "event": "status",
-                            "data": {"tool": tool_info, "status": "running"},
-                        }),
-                    }
+            for payload in _parse_chat_event(event, active_tasks):
+                yield payload
 
     return EventSourceResponse(event_generator())
 
