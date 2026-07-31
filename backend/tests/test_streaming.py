@@ -150,9 +150,10 @@ class TestStreamChatAgentRetry:
         class _FakeAgent:
             def __init__(self):
                 self.get_state_calls = 0
-                self.invoke_calls = 0
+                self.stream_calls = 0
 
             async def astream_events(self, *args, **kwargs):
+                self.stream_calls += 1
                 yield {"event": "on_chat_model_stream", "data": {"chunk": None}}
 
             async def aget_state(self, config):
@@ -162,16 +163,18 @@ class TestStreamChatAgentRetry:
                 return _fake_state([_Msg('<itinerary>{"destination": "Paris", "days": []}</itinerary>')])
 
             async def ainvoke(self, *args, **kwargs):
-                self.invoke_calls += 1
+                raise AssertionError("retry must stream, not ainvoke")
 
         fake = _FakeAgent()
-        monkeypatch.setattr(deep_agent_module, "create_chat_agent", lambda **kw: fake)
+        async def _fake_factory(**kw):
+            return fake
+        monkeypatch.setattr(deep_agent_module, "create_chat_agent", _fake_factory)
 
         events = asyncio.run(
             self._collect(deep_agent_module.stream_chat_agent("hello", "t1", "u1"))
         )
 
-        assert fake.invoke_calls == 1
+        assert fake.stream_calls == 2
         assert fake.get_state_calls == 2
         assert events[-2] == ("itinerary", {"destination": "Paris", "days": []})
         assert events[-1] == ("done", None)
@@ -186,7 +189,11 @@ class TestStreamChatAgentRetry:
                 self.content = content
 
         class _FakeAgent:
+            def __init__(self):
+                self.stream_calls = 0
+
             async def astream_events(self, *args, **kwargs):
+                self.stream_calls += 1
                 yield {"event": "on_chat_model_stream", "data": {"chunk": None}}
 
             async def aget_state(self, config):
@@ -195,12 +202,16 @@ class TestStreamChatAgentRetry:
             async def ainvoke(self, *args, **kwargs):
                 raise AssertionError("should not retry")
 
-        monkeypatch.setattr(deep_agent_module, "create_chat_agent", lambda **kw: _FakeAgent())
+        fake = _FakeAgent()
+        async def _fake_factory(**kw):
+            return fake
+        monkeypatch.setattr(deep_agent_module, "create_chat_agent", _fake_factory)
 
         events = asyncio.run(
             self._collect(deep_agent_module.stream_chat_agent("hello", "t1", "u1"))
         )
 
+        assert fake.stream_calls == 1
         assert events[-2] == ("itinerary", {"destination": "Paris", "days": []})
         assert events[-1] == ("done", None)
 
@@ -209,6 +220,45 @@ def json_data(payload: dict):
     import json
 
     return json.loads(payload["data"])["data"]
+
+
+class TestRedisCheckpointer:
+    """Regression: the sync langgraph.checkpoint.redis.RedisSaver leaves
+    aget_tuple unimplemented (NotImplementedError on any async run), which
+    killed every /chat/stream run when Redis was reachable."""
+
+    def test_factory_uses_async_saver(self):
+        from langgraph.checkpoint.redis.aio import AsyncRedisSaver
+
+        import agents.deep_agent as deep_agent_module
+
+        assert deep_agent_module.AsyncRedisSaver is AsyncRedisSaver
+        assert "aget_tuple" in AsyncRedisSaver.__dict__ or any(
+            "aget_tuple" in c.__dict__ for c in AsyncRedisSaver.__mro__
+        )
+
+    def test_factory_awaits_setup_and_supports_aget_tuple(self, monkeypatch):
+        import asyncio
+
+        import agents.deep_agent as deep_agent_module
+
+        class _FakeAsyncSaver:
+            def __init__(self, redis_url=None):
+                self.setup_called = False
+
+            async def setup(self):
+                self.setup_called = True
+
+            async def aget_tuple(self, config):
+                return None
+
+        monkeypatch.setattr(deep_agent_module, "AsyncRedisSaver", _FakeAsyncSaver)
+        saver = asyncio.run(deep_agent_module.create_redis_checkpointer())
+        assert saver.setup_called
+        assert (
+            asyncio.run(saver.aget_tuple({"configurable": {"thread_id": "x"}}))
+            is None
+        )
 
 
 class TestChatStreamEndpoint:
@@ -275,3 +325,113 @@ class TestChatStreamEndpoint:
         statuses = [(p["data"]["tool"], p["data"]["status"]) for p in parsed if p["event"] == "status"]
         assert ("risk_detector", "running") in statuses
         assert ("risk_detector", "error") in statuses
+
+    def test_thread_id_is_user_scoped(self, monkeypatch):
+        import hashlib
+        import json as _json
+
+        from fastapi.testclient import TestClient
+
+        import main as main_module
+
+        async def fake_stream_chat_agent(message, thread_id, user_id=None):
+            yield {"event": "done", "data": None}
+
+        monkeypatch.setattr(main_module, "stream_chat_agent", fake_stream_chat_agent)
+        user_tag = hashlib.sha256(b"user-a").hexdigest()[:12]
+
+        with TestClient(main_module.app) as c, c.stream(
+            "POST", "/chat/stream",
+            json={"message": "hello"},
+            headers={"X-User-Id": "user-a"},
+        ) as r:
+            parsed = []
+            for line in r.iter_lines():
+                if line.startswith("data: "):
+                    parsed.append(_json.loads(line[6:]))
+
+        first = parsed[0]
+        assert first["event"] == "thread_id"
+        returned = first["data"]["thread_id"]
+        assert returned.startswith(f"chat:{user_tag}:")
+
+    def test_resume_thread_id_passes_through_scoped(self, monkeypatch):
+        import hashlib
+        import json as _json
+
+        from fastapi.testclient import TestClient
+
+        import main as main_module
+
+        async def fake_stream_chat_agent(message, thread_id, user_id=None):
+            yield {"event": "done", "data": None}
+
+        monkeypatch.setattr(main_module, "stream_chat_agent", fake_stream_chat_agent)
+        user_tag = hashlib.sha256(b"user-a").hexdigest()[:12]
+        resume_id = f"chat:{user_tag}:abc123"
+
+        with TestClient(main_module.app) as c, c.stream(
+            "POST", "/chat/stream",
+            json={"message": "hello", "thread_id": resume_id},
+            headers={"X-User-Id": "user-a"},
+        ) as r:
+            parsed = []
+            for line in r.iter_lines():
+                if line.startswith("data: "):
+                    parsed.append(_json.loads(line[6:]))
+
+        assert parsed[0]["data"]["thread_id"] == resume_id
+
+    def test_unscoped_client_thread_id_gets_scoped(self, monkeypatch):
+        import hashlib
+        import json as _json
+
+        from fastapi.testclient import TestClient
+
+        import main as main_module
+
+        async def fake_stream_chat_agent(message, thread_id, user_id=None):
+            yield {"event": "done", "data": None}
+
+        monkeypatch.setattr(main_module, "stream_chat_agent", fake_stream_chat_agent)
+        user_tag = hashlib.sha256(b"user-a").hexdigest()[:12]
+
+        with TestClient(main_module.app) as c, c.stream(
+            "POST", "/chat/stream",
+            json={"message": "hello", "thread_id": "plain-id"},
+            headers={"X-User-Id": "user-a"},
+        ) as r:
+            parsed = []
+            for line in r.iter_lines():
+                if line.startswith("data: "):
+                    parsed.append(_json.loads(line[6:]))
+
+        assert parsed[0]["data"]["thread_id"] == f"chat:{user_tag}:plain-id"
+
+    def test_agent_exception_yields_error_event(self, monkeypatch):
+        import json as _json
+
+        from fastapi.testclient import TestClient
+
+        import main as main_module
+
+        async def failing_stream_chat_agent(message, thread_id, user_id=None):
+            yield {"event": "on_chat_model_stream", "data": {"chunk": "part"}}
+            raise RuntimeError("boom")
+
+        monkeypatch.setattr(main_module, "stream_chat_agent", failing_stream_chat_agent)
+        with TestClient(main_module.app) as c, c.stream(
+            "POST", "/chat/stream",
+            json={"message": "hello"},
+            headers={"X-User-Id": "tester"},
+        ) as r:
+            parsed = []
+            for line in r.iter_lines():
+                if line.startswith("data: "):
+                    parsed.append(_json.loads(line[6:]))
+
+        events = [(p["event"], p["data"]) for p in parsed]
+        assert events[0][0] == "thread_id"
+        assert events[1] == ("status", {"tool": "agent", "status": "thinking"})
+        assert events[-1][0] == "error"
+        assert "boom" in events[-1][1]
