@@ -7,6 +7,8 @@ AUTH_MODE controls whether authentication is enforced:
 
 from __future__ import annotations
 
+import hmac
+
 from fastapi import Header, HTTPException, status
 
 from config import API_AUTH_KEY, AUTH_MODE, logger
@@ -26,7 +28,7 @@ async def verify_api_key(
             detail="Server authentication is misconfigured",
         )
 
-    if not x_api_key or x_api_key != API_AUTH_KEY:
+    if not x_api_key or not hmac.compare_digest(x_api_key, API_AUTH_KEY):
         logger.warning("Unauthorized request received")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
