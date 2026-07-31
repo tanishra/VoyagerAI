@@ -2,11 +2,26 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Send, MessageSquare, RotateCcw, Globe } from 'lucide-react';
+import { Send, MessageSquare, RotateCcw, Globe, Search, ShieldAlert, ListChecks, Loader2 } from 'lucide-react';
 import { streamChat } from '@/lib/chat-api';
 import type { ChatMessage, Itinerary } from '@/lib/types';
 
 const THREAD_STORAGE_KEY = 'voyagerai_chat_thread_id';
+
+const TOOL_LABELS: Record<string, string> = {
+  researcher: 'Researching',
+  risk_detector: 'Checking risks',
+  constraint_analyzer: 'Checking constraints',
+  validator: 'Validating',
+  enricher: 'Adding local tips',
+  cost_optimizer: 'Optimizing budget',
+};
+
+const TOOL_ICONS: Record<string, React.ReactNode> = {
+  researcher: <Search className="w-3 h-3" />,
+  risk_detector: <ShieldAlert className="w-3 h-3" />,
+  constraint_analyzer: <ListChecks className="w-3 h-3" />,
+};
 
 function ItineraryCard({ itinerary }: { itinerary: Itinerary }) {
   return (
@@ -61,6 +76,7 @@ export default function ChatPage() {
   const [error, setError] = useState<string | null>(null);
   const [streamingText, setStreamingText] = useState('');
   const [streamingItinerary, setStreamingItinerary] = useState<Itinerary | null>(null);
+  const [activeWorkers, setActiveWorkers] = useState<string[]>([]);
   const [threadId, setThreadId] = useState<string | null>(() => {
     if (typeof window !== 'undefined') {
       return localStorage.getItem(THREAD_STORAGE_KEY);
@@ -87,6 +103,7 @@ export default function ChatPage() {
     setError(null);
     setStreamingText('');
     setStreamingItinerary(null);
+    setActiveWorkers([]);
   };
 
   const handleSend = useCallback(async () => {
@@ -97,6 +114,7 @@ export default function ChatPage() {
     setError(null);
     setStreamingText('');
     setStreamingItinerary(null);
+    setActiveWorkers([]);
 
     const userMessage: ChatMessage = {
       id: `user-${Date.now()}`,
@@ -130,6 +148,15 @@ export default function ChatPage() {
           setThreadId(tid);
           localStorage.setItem(THREAD_STORAGE_KEY, tid);
         },
+        onStatus: (status) => {
+          const tool = status.tool;
+          if (!TOOL_LABELS[tool]) return;
+          setActiveWorkers((prev) =>
+            status.status === 'running'
+              ? prev.includes(tool) ? prev : [...prev, tool]
+              : prev.filter((t) => t !== tool),
+          );
+        },
         onError: (msg) => {
           setError(msg);
         },
@@ -138,6 +165,7 @@ export default function ChatPage() {
 
     setLoading(false);
     abortRef.current = null;
+    setActiveWorkers([]);
 
     setMessages((prev) => {
       const updated = [...prev];
@@ -248,6 +276,20 @@ export default function ChatPage() {
               className="flex justify-start"
             >
               <div className="max-w-[85%] rounded-2xl px-4 py-3 bg-white/5 border border-white/10 text-white/90">
+                {activeWorkers.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mb-2">
+                    {activeWorkers.map((tool) => (
+                      <span
+                        key={tool}
+                        className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full bg-sky-500/10 border border-sky-500/20 text-[10px] font-medium text-sky-200"
+                      >
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                        {TOOL_ICONS[tool]}
+                        {TOOL_LABELS[tool]}
+                      </span>
+                    ))}
+                  </div>
+                )}
                 {streamingText ? (
                   <>
                     <p className="text-sm whitespace-pre-wrap">{streamingText}</p>
