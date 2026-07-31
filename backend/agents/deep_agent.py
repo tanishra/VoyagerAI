@@ -8,7 +8,7 @@ from deepagents import FilesystemPermission, create_deep_agent
 from deepagents.backends import CompositeBackend, FilesystemBackend, StoreBackend
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langgraph.checkpoint.memory import MemorySaver
-from langgraph.checkpoint.redis import RedisSaver
+from langgraph.checkpoint.redis.aio import AsyncRedisSaver
 from langgraph.store.memory import InMemoryStore
 from langgraph.store.redis import RedisConnectionFactory, RedisStore
 
@@ -23,11 +23,19 @@ _store = None
 _file_store = None
 
 
-def create_redis_checkpointer() -> RedisSaver:
+async def create_redis_checkpointer() -> AsyncRedisSaver:
+    """Build a Redis-backed checkpointer, cached per process.
+
+    NOTE: the sync ``langgraph.checkpoint.redis.RedisSaver`` leaves
+    ``aget_tuple`` unimplemented, which crashes any async stream run; the
+    ``AsyncRedisSaver`` from ``langgraph.checkpoint.redis.aio`` is the
+    implementation that works with async graphs.
+    """
     global _checkpointer
     if _checkpointer is None:
-        _checkpointer = RedisSaver(redis_url=settings.REDIS_URL)
-        _checkpointer.setup()
+        saver = AsyncRedisSaver(redis_url=settings.REDIS_URL)
+        await saver.setup()
+        _checkpointer = saver
     return _checkpointer
 
 
@@ -58,11 +66,11 @@ def get_redis_file_store() -> InMemoryStore | RedisStore:
     return _file_store
 
 
-def create_travel_agent(checkpointer=None, store=None, user_id=None):
+async def create_travel_agent(checkpointer=None, store=None, user_id=None):
     if checkpointer is None:
         if settings.CHECKPOINTER_BACKEND == "redis":
             try:
-                checkpointer = create_redis_checkpointer()
+                checkpointer = await create_redis_checkpointer()
             except Exception:  # noqa: BLE001 (intentional fallback handler)
                 checkpointer = MemorySaver()
         else:
@@ -199,7 +207,7 @@ async def run_travel_agent(
     thread_id: str,
     user_id: str | None = None,
 ) -> dict:
-    agent = create_travel_agent(user_id=user_id)
+    agent = await create_travel_agent(user_id=user_id)
     config = {
         "configurable": {
             "thread_id": thread_id,
@@ -219,7 +227,7 @@ async def stream_travel_agent(
     thread_id: str,
     user_id: str | None = None,
 ):
-    agent = create_travel_agent(user_id=user_id)
+    agent = await create_travel_agent(user_id=user_id)
     config = {
         "configurable": {
             "thread_id": thread_id,
@@ -242,11 +250,11 @@ async def stream_travel_agent(
         yield {"event": "error", "data": str(exc)}
 
 
-def create_chat_agent(checkpointer=None, store=None, user_id=None):
+async def create_chat_agent(checkpointer=None, store=None, user_id=None):
     if checkpointer is None:
         if settings.CHECKPOINTER_BACKEND == "redis":
             try:
-                checkpointer = create_redis_checkpointer()
+                checkpointer = await create_redis_checkpointer()
             except Exception:  # noqa: BLE001 (intentional fallback handler)
                 checkpointer = MemorySaver()
         else:
@@ -368,7 +376,7 @@ async def stream_chat_agent(
     thread_id: str,
     user_id: str | None = None,
 ):
-    agent = create_chat_agent(user_id=user_id)
+    agent = await create_chat_agent(user_id=user_id)
     config = {
         "configurable": {
             "thread_id": thread_id,
@@ -387,7 +395,7 @@ async def stream_chat_agent(
     state = await agent.aget_state(config)
     itinerary = _extract_chat_itinerary(state.values)
     if itinerary is None:
-        await agent.ainvoke(
+        async for event in agent.astream_events(
             {
                 "messages": [
                     {
@@ -401,7 +409,9 @@ async def stream_chat_agent(
                 ]
             },
             config,
-        )
+            version="v2",
+        ):
+            yield event
         state = await agent.aget_state(config)
         itinerary = _extract_chat_itinerary(state.values)
 
