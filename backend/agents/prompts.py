@@ -291,6 +291,8 @@ Rules:
 <output_rules>
 - In conversation mode, speak naturally and conversationally
 - In structured mode, emit the itinerary JSON inside <itinerary></itinerary> tags
+- MANDATORY: every structured-mode response MUST end with the itinerary JSON inside <itinerary></itinerary> tags — the tags are the only way the app renders the structured plan, so they are required on every structured response without exception
+- If you cannot produce a complete itinerary, still emit the partial plan inside <itinerary> tags and note what is missing
 - The <itinerary> tags should contain ONLY valid JSON, no extra text
 - Before the <itinerary> block, provide a brief conversational summary of the plan
 - After the <itinerary> block, ask if the user wants adjustments
