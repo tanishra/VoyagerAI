@@ -43,6 +43,7 @@ export async function streamChat(
 
     const decoder = new TextDecoder();
     let buffer = '';
+    let sawDone = false;
 
     let currentEvent = '';
     let currentData = '';
@@ -63,6 +64,10 @@ export async function streamChat(
                 onThreadId?.(tid);
               },
               onError,
+              onDone: () => {
+                sawDone = true;
+                onDone?.();
+              },
             },
           );
         } catch {
@@ -99,7 +104,10 @@ export async function streamChat(
     if (buffer.trim()) processLines(buffer.split('\n'));
     dispatchIfReady();
 
-    onDone?.();
+    if (!sawDone) {
+      onError?.('Stream ended before the agent finished');
+      return resolvedThreadId;
+    }
     return resolvedThreadId;
   } catch (err) {
     if (err instanceof DOMException && err.name === 'AbortError') {
@@ -120,9 +128,10 @@ function handleChatEvent(
     onStatus?: (status: { tool: string; status: string }) => void;
     onThreadId?: (threadId: string) => void;
     onError?: (error: string) => void;
+    onDone?: () => void;
   },
 ) {
-  const { onToken, onItinerary, onStatus, onThreadId, onError } = callbacks;
+  const { onToken, onItinerary, onStatus, onThreadId, onError, onDone } = callbacks;
 
   switch (event) {
     case 'token': {
@@ -147,6 +156,10 @@ function handleChatEvent(
     }
     case 'error': {
       onError?.(String(parsed.data ?? 'Unknown error'));
+      break;
+    }
+    case 'done': {
+      onDone?.();
       break;
     }
   }
