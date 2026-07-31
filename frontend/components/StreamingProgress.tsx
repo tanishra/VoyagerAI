@@ -125,7 +125,9 @@ export default function StreamingProgress({ destination, onCancel, onComplete, e
 
     if (ev === 'on_tool_end') {
       const name = streamEvent.name ?? '';
-      addLog(`✓ ${STEP_MAP[name]?.label ?? name} complete`, 'success');
+      if (name !== 'task') {
+        addLog(`✓ ${STEP_MAP[name]?.label ?? name} complete`, 'success');
+      }
 
       if (STEP_MAP[name]) {
         const idx = STEP_ORDER.indexOf(name);
