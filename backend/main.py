@@ -72,6 +72,19 @@ def _resolve_user_id(request: Request) -> str:
     return request.headers.get("x-user-id") or request.query_params.get("user_id", "anonymous")
 
 
+def _scoped_chat_thread_id(client_thread_id: str | None, user_id: str) -> str:
+    """Namespace chat thread ids per user so checkpoints can't be resumed cross-user.
+
+    Client-supplied ids are treated as opaque and stored under a user-scoped key.
+    Already-scoped ids (resume) pass through unchanged.
+    """
+    user_tag = hashlib.sha256(user_id.encode()).hexdigest()[:12]
+    prefix = f"chat:{user_tag}:"
+    if client_thread_id and client_thread_id.startswith(prefix):
+        return client_thread_id
+    return prefix + (client_thread_id or uuid.uuid4().hex[:12])
+
+
 def _sse(event: str, data: object) -> dict:
     return {"event": event, "data": json.dumps({"event": event, "data": data})}
 
@@ -377,7 +390,7 @@ async def chat_stream(chat_req: ChatRequest, request: Request) -> EventSourceRes
     _msg_safe = sanitize_prompt_input(chat_req.message, "message")
 
     user_id = _resolve_user_id(request)
-    thread_id = chat_req.thread_id or f"chat:{user_id}:{uuid.uuid4().hex[:12]}"
+    thread_id = _scoped_chat_thread_id(chat_req.thread_id, user_id)
 
     logger.info(
         "POST /chat/stream — thread_id=%s, message_len=%d, user=%s",
@@ -392,13 +405,22 @@ async def chat_stream(chat_req: ChatRequest, request: Request) -> EventSourceRes
 
         active_tasks: dict[str, str] = {}
 
-        async for event in stream_chat_agent(
-            message=_msg_safe,
-            thread_id=thread_id,
-            user_id=user_id,
-        ):
-            for payload in _parse_chat_event(event, active_tasks):
-                yield payload
+        try:
+            async for event in stream_chat_agent(
+                message=_msg_safe,
+                thread_id=thread_id,
+                user_id=user_id,
+            ):
+                for payload in _parse_chat_event(event, active_tasks):
+                    yield payload
+        except Exception as exc:  # noqa: BLE001 (intentional fallback handler)
+            logger.error(
+                "Chat stream failed for thread=%s: %s",
+                thread_id,
+                exc,
+                exc_info=True,
+            )
+            yield _sse("error", f"Streaming failed: {exc}")
 
     return EventSourceResponse(event_generator())
 
