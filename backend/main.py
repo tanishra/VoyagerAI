@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import uuid
 
@@ -132,6 +133,13 @@ def _parse_chat_event(event: dict, active_tasks: dict[str, str]) -> list[dict]:
             return [_sse("status", {"tool": subagent_type, "status": "done"})]
         return []
 
+    if event_type == "on_tool_error":
+        run_id = event.get("run_id", "")
+        if run_id in active_tasks:
+            subagent_type = active_tasks.pop(run_id)
+            return [_sse("status", {"tool": subagent_type, "status": "error"})]
+        return []
+
     return []
 
 
@@ -154,8 +162,12 @@ async def health() -> dict[str, str]:
 @limiter.limit("30/minute")
 async def get_preferences(request: Request) -> PlainTextResponse:
     user_id = _resolve_user_id(request)
-    store = get_redis_file_store()
-    item = store.get((user_id,), "/preferences.md")
+    try:
+        store = get_redis_file_store()
+        item = store.get((user_id,), "/preferences.md")
+    except Exception:  # noqa: BLE001 (intentional fallback handler)
+        logger.warning("Preferences store unavailable — returning empty preferences")
+        return PlainTextResponse("", status_code=503)
     if item is None:
         return PlainTextResponse("", status_code=200)
     content = item.value.get("content", "")
@@ -173,8 +185,12 @@ async def put_preferences(request: Request) -> dict[str, str]:
     user_id = _resolve_user_id(request)
     body = await request.body()
     content = body.decode("utf-8") if body else ""
-    store = get_redis_file_store()
-    store.put((user_id,), "/preferences.md", {"content": content, "encoding": "utf-8"})
+    try:
+        store = get_redis_file_store()
+        store.put((user_id,), "/preferences.md", {"content": content, "encoding": "utf-8"})
+    except Exception:  # noqa: BLE001 (intentional fallback handler)
+        logger.warning("Preferences store unavailable — preferences not saved")
+        return {"status": "error", "user_id": user_id, "error": "Preferences store unavailable"}
     logger.info("Saved preferences for user=%s (%d bytes)", user_id, len(content))
     return {"status": "ok", "user_id": user_id}
 
@@ -330,7 +346,10 @@ async def replan_day(replan_req: ReplanRequest, request: Request) -> PlanRespons
 
     try:
         user_id = _resolve_user_id(request)
-        thread_id = f"replan:{replan_req.day_number}:{hash(json.dumps(itinerary_dict, sort_keys=True))}"
+        thread_id = (
+            f"replan:{replan_req.day_number}:"
+            f"{hashlib.sha256(json.dumps(itinerary_dict, sort_keys=True).encode()).hexdigest()[:16]}"
+        )
 
         raw_itinerary = await run_travel_agent(
             user_message=user_message,
