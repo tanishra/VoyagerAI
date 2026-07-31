@@ -66,5 +66,6 @@ export interface ChatStreamCallbacks {
   onThreadId?: (threadId: string) => void;
   onDone?: () => void;
   onError?: (error: string) => void;
+  onAbort?: () => void;
   signal?: AbortSignal;
 }

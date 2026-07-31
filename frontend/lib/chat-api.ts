@@ -11,7 +11,7 @@ export async function streamChat(
   body: { message: string; thread_id?: string },
   callbacks: ChatStreamCallbacks,
 ): Promise<string | undefined> {
-  const { onToken, onItinerary, onStatus, onThreadId, onDone, onError, signal } = callbacks;
+  const { onToken, onItinerary, onStatus, onThreadId, onDone, onError, onAbort, signal } = callbacks;
   let resolvedThreadId: string | undefined;
 
   try {
@@ -44,6 +44,47 @@ export async function streamChat(
     const decoder = new TextDecoder();
     let buffer = '';
 
+    let currentEvent = '';
+    let currentData = '';
+
+    const dispatchIfReady = () => {
+      if (currentData) {
+        try {
+          const parsed = JSON.parse(currentData);
+          handleChatEvent(
+            currentEvent,
+            parsed,
+            {
+              onToken,
+              onItinerary,
+              onStatus,
+              onThreadId: (tid) => {
+                resolvedThreadId = tid;
+                onThreadId?.(tid);
+              },
+              onError,
+            },
+          );
+        } catch {
+          onError?.('Failed to parse event data');
+        }
+      }
+      currentEvent = '';
+      currentData = '';
+    };
+
+    const processLines = (lines: string[]) => {
+      for (const line of lines) {
+        if (line.trim() === '') {
+          dispatchIfReady();
+          continue;
+        }
+        const parsed = parseSSELine(line);
+        if (parsed?.event) currentEvent = parsed.event;
+        if (parsed?.data) currentData = parsed.data;
+      }
+    };
+
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
@@ -51,47 +92,20 @@ export async function streamChat(
       buffer += decoder.decode(value, { stream: true });
       const lines = buffer.split('\n');
       buffer = lines.pop() || '';
-
-      let currentEvent = '';
-      let currentData = '';
-
-      for (const line of lines) {
-        if (line.trim() === '') {
-          if (currentData) {
-            try {
-              const parsed = JSON.parse(currentData);
-              handleChatEvent(
-                currentEvent,
-                parsed,
-                {
-                  onToken,
-                  onItinerary,
-                  onStatus,
-                  onThreadId: (tid) => {
-                    resolvedThreadId = tid;
-                    onThreadId?.(tid);
-                  },
-                },
-              );
-            } catch {
-              onError?.('Failed to parse event data');
-            }
-          }
-          currentEvent = '';
-          currentData = '';
-          continue;
-        }
-
-        const parsed = parseSSELine(line);
-        if (parsed?.event) currentEvent = parsed.event;
-        if (parsed?.data) currentData = parsed.data;
-      }
+      processLines(lines);
     }
+
+    buffer += decoder.decode();
+    if (buffer.trim()) processLines(buffer.split('\n'));
+    dispatchIfReady();
 
     onDone?.();
     return resolvedThreadId;
   } catch (err) {
-    if (err instanceof DOMException && err.name === 'AbortError') return resolvedThreadId;
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      onAbort?.();
+      return resolvedThreadId;
+    }
     onError?.(err instanceof Error ? err.message : String(err));
     return resolvedThreadId;
   }
@@ -105,9 +119,10 @@ function handleChatEvent(
     onItinerary?: (itinerary: Itinerary) => void;
     onStatus?: (status: { tool: string; status: string }) => void;
     onThreadId?: (threadId: string) => void;
+    onError?: (error: string) => void;
   },
 ) {
-  const { onToken, onItinerary, onStatus, onThreadId } = callbacks;
+  const { onToken, onItinerary, onStatus, onThreadId, onError } = callbacks;
 
   switch (event) {
     case 'token': {
@@ -128,6 +143,10 @@ function handleChatEvent(
     case 'thread_id': {
       const data = parsed.data as { thread_id: string };
       onThreadId?.(data.thread_id);
+      break;
+    }
+    case 'error': {
+      onError?.(String(parsed.data ?? 'Unknown error'));
       break;
     }
   }
