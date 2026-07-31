@@ -170,6 +170,11 @@ class TestStreamChatAgentRetry:
             return fake
         monkeypatch.setattr(deep_agent_module, "create_chat_agent", _fake_factory)
 
+        async def _boom_formatter(*args, **kwargs):
+            raise AssertionError("formatter must not run when retry extracts")
+
+        monkeypatch.setattr(deep_agent_module, "_format_itinerary", _boom_formatter)
+
         events = asyncio.run(
             self._collect(deep_agent_module.stream_chat_agent("hello", "t1", "u1"))
         )
@@ -207,6 +212,11 @@ class TestStreamChatAgentRetry:
             return fake
         monkeypatch.setattr(deep_agent_module, "create_chat_agent", _fake_factory)
 
+        async def _boom_formatter(*args, **kwargs):
+            raise AssertionError("formatter must not run when extraction succeeds")
+
+        monkeypatch.setattr(deep_agent_module, "_format_itinerary", _boom_formatter)
+
         events = asyncio.run(
             self._collect(deep_agent_module.stream_chat_agent("hello", "t1", "u1"))
         )
@@ -214,6 +224,234 @@ class TestStreamChatAgentRetry:
         assert fake.stream_calls == 1
         assert events[-2] == ("itinerary", {"destination": "Paris", "days": []})
         assert events[-1] == ("done", None)
+
+    def test_retry_uses_hint_and_formatter_recovers(self, monkeypatch):
+        import asyncio
+
+        import agents.deep_agent as deep_agent_module
+
+        class _Msg:
+            def __init__(self, content):
+                self.content = content
+
+        prose = "Here is a lovely trip plan for Paris with great food. " * 50
+
+        class _FakeAgent:
+            def __init__(self):
+                self.inputs = []
+
+            async def astream_events(self, inputs, *args, **kwargs):
+                self.inputs.append(inputs)
+                yield {"event": "on_chat_model_stream", "data": {"chunk": None}}
+
+            async def aget_state(self, config):
+                return _fake_state([_Msg(prose)])
+
+            async def ainvoke(self, *args, **kwargs):
+                raise AssertionError("retry must stream, not ainvoke")
+
+        fake = _FakeAgent()
+        async def _fake_factory(**kw):
+            return fake
+        monkeypatch.setattr(deep_agent_module, "create_chat_agent", _fake_factory)
+
+        captured = {}
+
+        async def _fake_formatter(draft_text, user_message):
+            captured["draft"] = draft_text
+            captured["user"] = user_message
+            return {"destination": "Paris", "days": []}
+
+        monkeypatch.setattr(deep_agent_module, "_format_itinerary", _fake_formatter)
+
+        events = asyncio.run(
+            self._collect(deep_agent_module.stream_chat_agent("plan a trip", "t1", "u1"))
+        )
+
+        assert len(fake.inputs) == 2  # main pass + retry
+        retry_content = fake.inputs[1]["messages"][0]["content"]
+        assert "did not include a parseable itinerary JSON" in retry_content
+        assert prose[:80] in retry_content  # failed output snippet fed back
+        assert captured["user"] == "plan a trip"
+        assert captured["draft"] == prose
+        assert events[-2] == ("itinerary", {"destination": "Paris", "days": []})
+        assert events[-1] == ("done", None)
+
+    def test_formatter_failure_still_ends_gracefully(self, monkeypatch):
+        import asyncio
+
+        import agents.deep_agent as deep_agent_module
+
+        class _Msg:
+            def __init__(self, content):
+                self.content = content
+
+        class _FakeAgent:
+            async def astream_events(self, *args, **kwargs):
+                yield {"event": "on_chat_model_stream", "data": {"chunk": None}}
+
+            async def aget_state(self, config):
+                return _fake_state([_Msg("no json here at all")])
+
+        async def _fake_factory(**kw):
+            return _FakeAgent()
+        monkeypatch.setattr(deep_agent_module, "create_chat_agent", _fake_factory)
+
+        async def _failing_formatter(*args, **kwargs):
+            return None
+
+        monkeypatch.setattr(deep_agent_module, "_format_itinerary", _failing_formatter)
+
+        events = asyncio.run(
+            self._collect(deep_agent_module.stream_chat_agent("hi", "t1", "u1"))
+        )
+
+        assert events[-1] == ("done", None)
+        assert all(e[0] != "error" for e in events)
+
+
+class TestStreamTextExtraction:
+    """Regression: the agent node persists only the first stream chunk of each
+    model call, so checkpoint messages are truncated stubs (e.g. an 8-char
+    prefix) even though on_chat_model_stream events carry the full response.
+    Extraction must use the accumulated stream text, not the checkpoint."""
+
+    async def _collect(self, agen):
+        return [(e["event"], e.get("data")) async for e in agen]
+
+    def test_chat_uses_stream_text_when_checkpoint_is_stub(self, monkeypatch):
+        import asyncio
+
+        import agents.deep_agent as deep_agent_module
+
+        full_json = '{"destination": "Udaipur, India", "total_days": 1, "days": []}'
+        stub = '<itinerary>\n{\n  "'  # what the checkpoint actually persists
+
+        class _Msg:
+            def __init__(self, content):
+                self.content = content
+
+        class _FakeAgent:
+            def __init__(self):
+                self.stream_calls = 0
+                self.get_state_calls = 0
+
+            async def astream_events(self, *args, **kwargs):
+                self.stream_calls += 1
+                yield _ev(
+                    "on_chat_model_stream",
+                    run_id="run-1",
+                    data={"chunk": _Chunk([{"type": "text", "text": f"<itinerary>{full_json}</itinerary>"}])},
+                )
+
+            async def aget_state(self, config):
+                self.get_state_calls += 1
+                return _fake_state([_Msg(stub)])
+
+        fake = _FakeAgent()
+        async def _fake_factory(**kw):
+            return fake
+        monkeypatch.setattr(deep_agent_module, "create_chat_agent", _fake_factory)
+
+        async def _boom_formatter(*args, **kwargs):
+            raise AssertionError("formatter must not run when stream text extracts")
+
+        monkeypatch.setattr(deep_agent_module, "_format_itinerary", _boom_formatter)
+
+        events = asyncio.run(
+            self._collect(deep_agent_module.stream_chat_agent("hello", "t1", "u1"))
+        )
+
+        assert fake.stream_calls == 1  # no retry needed
+        assert fake.get_state_calls == 0  # stream text alone was sufficient
+        assert events[-2] == (
+            "itinerary",
+            {"destination": "Udaipur, India", "total_days": 1, "days": []},
+        )
+        assert events[-1] == ("done", None)
+
+    def test_hint_prefers_stream_text_over_state(self, monkeypatch):
+        import asyncio
+
+        import agents.deep_agent as deep_agent_module
+
+        class _Msg:
+            def __init__(self, content):
+                self.content = content
+
+        full_prose = "Here is the complete revised plan. " * 60
+
+        class _FakeAgent:
+            def __init__(self):
+                self.inputs = []
+
+            async def astream_events(self, inputs, *args, **kwargs):
+                self.inputs.append(inputs)
+                yield _ev(
+                    "on_chat_model_stream",
+                    run_id="run-1",
+                    data={"chunk": _Chunk(full_prose)},
+                )
+
+            async def aget_state(self, config):
+                return _fake_state([_Msg("stub: truncated")])
+
+        fake = _FakeAgent()
+        async def _fake_factory(**kw):
+            return fake
+        monkeypatch.setattr(deep_agent_module, "create_chat_agent", _fake_factory)
+
+        captured = {}
+
+        async def _fake_formatter(draft_text, user_message):
+            captured["draft"] = draft_text
+
+        monkeypatch.setattr(deep_agent_module, "_format_itinerary", _fake_formatter)
+
+        asyncio.run(
+            self._collect(deep_agent_module.stream_chat_agent("plan a trip", "t1", "u1"))
+        )
+
+        assert len(fake.inputs) == 2
+        retry_content = fake.inputs[1]["messages"][0]["content"]
+        assert "did not include a parseable itinerary JSON" in retry_content
+        assert full_prose[:80] in retry_content  # full stream text fed back, not the stub
+        assert captured["draft"] == full_prose
+
+    def test_travel_uses_stream_text_when_checkpoint_is_stub(self, monkeypatch):
+        import asyncio
+
+        import agents.deep_agent as deep_agent_module
+
+        full_json = '{"destination": "Udaipur, India", "total_days": 1, "days": []}'
+
+        class _Msg:
+            def __init__(self, content):
+                self.content = content
+
+        class _FakeAgent:
+            async def astream_events(self, *args, **kwargs):
+                yield _ev(
+                    "on_chat_model_stream",
+                    run_id="run-1",
+                    data={"chunk": _Chunk([{"type": "text", "text": full_json}])},
+                )
+
+            async def aget_state(self, config):
+                raise AssertionError("state must not be needed when stream text extracts")
+
+        async def _fake_factory(**kw):
+            return _FakeAgent()
+        monkeypatch.setattr(deep_agent_module, "create_travel_agent", _fake_factory)
+
+        events = asyncio.run(
+            self._collect(deep_agent_module.stream_travel_agent("plan a trip", "t1", "u1"))
+        )
+
+        assert events[-1] == (
+            "final",
+            {"destination": "Udaipur, India", "total_days": 1, "days": []},
+        )
 
 
 def json_data(payload: dict):
@@ -259,6 +497,63 @@ class TestRedisCheckpointer:
             asyncio.run(saver.aget_tuple({"configurable": {"thread_id": "x"}}))
             is None
         )
+
+
+class TestSqliteCheckpointer:
+    """SQLite checkpointer: file-backed persistence with no external service."""
+
+    def test_sqlite_checkpointer_supports_aget_tuple(self, tmp_path, monkeypatch):
+        import asyncio
+
+        from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+
+        import agents.deep_agent as deep_agent_module
+
+        db = tmp_path / "checkpoints.sqlite"
+        monkeypatch.setattr(deep_agent_module, "_sqlite_checkpointer", None)
+        monkeypatch.setattr(deep_agent_module.settings, "CHECKPOINTER_DB_PATH", str(db))
+
+        saver = asyncio.run(deep_agent_module.create_sqlite_checkpointer())
+        assert isinstance(saver, AsyncSqliteSaver)
+        assert db.exists()
+
+        result = asyncio.run(
+            saver.aget_tuple({"configurable": {"thread_id": "no-such-thread"}})
+        )
+        assert result is None
+
+    def test_checkpointer_backend_selects_sqlite(self, tmp_path, monkeypatch):
+        import asyncio
+
+        from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+
+        import agents.deep_agent as deep_agent_module
+
+        db = tmp_path / "checkpoints.sqlite"
+        monkeypatch.setattr(deep_agent_module, "_sqlite_checkpointer", None)
+        monkeypatch.setattr(deep_agent_module.settings, "CHECKPOINTER_DB_PATH", str(db))
+        monkeypatch.setattr(deep_agent_module.settings, "CHECKPOINTER_BACKEND", "sqlite")
+
+        saver = asyncio.run(deep_agent_module.create_checkpointer())
+        assert isinstance(saver, AsyncSqliteSaver)
+
+    def test_checkpointer_backend_redis_falls_back_gracefully(self, tmp_path, monkeypatch):
+        import asyncio
+
+        from langgraph.checkpoint.memory import MemorySaver
+
+        import agents.deep_agent as deep_agent_module
+
+        monkeypatch.setattr(deep_agent_module.settings, "CHECKPOINTER_BACKEND", "redis")
+        monkeypatch.setattr(deep_agent_module, "create_redis_checkpointer", _raise_on_call)
+        monkeypatch.setattr(deep_agent_module, "create_sqlite_checkpointer", _raise_on_call)
+
+        saver = asyncio.run(deep_agent_module.create_checkpointer())
+        assert isinstance(saver, MemorySaver)
+
+
+async def _raise_on_call(*args, **kwargs):
+    raise RuntimeError("forced failure")
 
 
 class TestChatStreamEndpoint:

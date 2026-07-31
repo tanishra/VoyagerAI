@@ -43,7 +43,8 @@ class Settings(BaseSettings):
 
     DAILY_TOKEN_LIMIT: int = 1_000_000
 
-    CHECKPOINTER_BACKEND: str = "redis"
+    CHECKPOINTER_BACKEND: str = "redis"  # "redis", "sqlite", or "memory"
+    CHECKPOINTER_DB_PATH: str = "./data/checkpoints.sqlite"
     STORE_BACKEND: str = "redis"
 
 
