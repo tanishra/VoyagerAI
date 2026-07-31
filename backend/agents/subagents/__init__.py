@@ -3,14 +3,16 @@ from __future__ import annotations
 from deepagents import SubAgent
 from langchain_google_genai import ChatGoogleGenerativeAI
 
-from config.settings import settings
 from agents.prompts import (
+    COST_OPTIMIZER_SYSTEM_PROMPT,
+    ENRICHER_SYSTEM_PROMPT,
     RESEARCHER_SYSTEM_PROMPT,
     VALIDATOR_SYSTEM_PROMPT,
-    ENRICHER_SYSTEM_PROMPT,
-    COST_OPTIMIZER_SYSTEM_PROMPT,
 )
+from agents.subagents.constraint_analyzer import build_constraint_analyzer
+from agents.subagents.risk_detector import build_risk_detector
 from agents.tools import get_internet_tools
+from config.settings import settings
 
 
 def _get_model() -> ChatGoogleGenerativeAI:
@@ -67,4 +69,6 @@ def get_subagents() -> list:
             model=model,
             tools=internet_tools,
         ),
+        build_risk_detector(model, internet_tools),
+        build_constraint_analyzer(model),
     ]
