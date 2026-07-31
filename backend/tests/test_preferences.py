@@ -20,9 +20,8 @@ def fresh_store():
 @pytest.fixture
 def client(fresh_store):
     import main
-    with patch.object(main, "get_redis_file_store", return_value=fresh_store):
-        with TestClient(main.app) as c:
-            yield c
+    with patch.object(main, "get_redis_file_store", return_value=fresh_store), TestClient(main.app) as c:
+        yield c
 
 
 class TestPreferences:

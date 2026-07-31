@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import re
 from enum import Enum
-from typing import Optional
 
 from pydantic import BaseModel, Field, ValidationInfo, field_validator
 
@@ -30,10 +29,10 @@ class PlanRequest(BaseModel):
     budget_usd: int = Field(..., ge=50, description="Total trip budget in USD (minimum $50).")
     travel_style: TravelStyle = Field(..., description="Preferred travel style.")
     group_type: GroupType = Field(..., description="Group composition.")
-    dietary: Optional[str] = Field(
+    dietary: str | None = Field(
         None, max_length=500, description="Dietary restrictions or preferences."
     )
-    constraints: Optional[str] = Field(
+    constraints: str | None = Field(
         None, max_length=1000, description="Additional constraints or requests."
     )
 
@@ -103,15 +102,15 @@ class Itinerary(BaseModel):
 
 class PlanResponse(BaseModel):
     success: bool = True
-    itinerary: Optional[Itinerary] = None
-    error: Optional[str] = None
+    itinerary: Itinerary | None = None
+    error: str | None = None
 
 
 class ChatRequest(BaseModel):
     message: str = Field(
         ..., min_length=1, max_length=2000, description="User chat message."
     )
-    thread_id: Optional[str] = Field(
+    thread_id: str | None = Field(
         None, description="Thread ID for resuming a previous conversation."
     )
 

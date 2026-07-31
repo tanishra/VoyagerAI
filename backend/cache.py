@@ -18,7 +18,7 @@ import logging
 from redis import RedisError
 from redis.asyncio import Redis
 
-from config import REDIS_URL, CACHE_TTL_SECONDS
+from config import CACHE_TTL_SECONDS, REDIS_URL
 from models import PlanRequest
 
 logger = logging.getLogger("travel_agent.cache")

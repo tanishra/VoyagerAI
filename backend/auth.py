@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from fastapi import Header, HTTPException, status
 
-from config import AUTH_MODE, API_AUTH_KEY, logger
+from config import API_AUTH_KEY, AUTH_MODE, logger
 
 
 async def verify_api_key(

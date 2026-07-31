@@ -4,18 +4,17 @@ import json
 import logging
 import re
 
-from deepagents import create_deep_agent, FilesystemPermission
+from deepagents import FilesystemPermission, create_deep_agent
 from deepagents.backends import CompositeBackend, FilesystemBackend, StoreBackend
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.checkpoint.redis import RedisSaver
 from langgraph.store.memory import InMemoryStore
-from langgraph.store.redis import RedisStore, RedisConnectionFactory
-
-from config.settings import settings
+from langgraph.store.redis import RedisConnectionFactory, RedisStore
 
 from agents.prompts import CHAT_AGENT_SYSTEM_PROMPT, TRAVEL_AGENT_SYSTEM_PROMPT
 from agents.subagents import get_subagents
+from config.settings import settings
 
 logger = logging.getLogger("travel_agent.deep_agent")
 
@@ -52,7 +51,7 @@ def get_redis_file_store() -> InMemoryStore | RedisStore:
                 conn = RedisConnectionFactory.get_redis_connection(settings.REDIS_URL)
                 _file_store = RedisStore(conn=conn)
                 _file_store.setup()
-            except Exception:
+            except Exception:  # noqa: BLE001 (intentional fallback handler)
                 _file_store = InMemoryStore()
         else:
             _file_store = InMemoryStore()
@@ -64,7 +63,7 @@ def create_travel_agent(checkpointer=None, store=None, user_id=None):
         if settings.CHECKPOINTER_BACKEND == "redis":
             try:
                 checkpointer = create_redis_checkpointer()
-            except Exception:
+            except Exception:  # noqa: BLE001 (intentional fallback handler)
                 checkpointer = MemorySaver()
         else:
             checkpointer = MemorySaver()
@@ -73,7 +72,7 @@ def create_travel_agent(checkpointer=None, store=None, user_id=None):
         if settings.STORE_BACKEND == "redis":
             try:
                 store = create_redis_store()
-            except Exception:
+            except Exception:  # noqa: BLE001 (intentional fallback handler)
                 store = InMemoryStore()
         else:
             store = InMemoryStore()
@@ -130,8 +129,7 @@ def _extract_itinerary(state: dict) -> dict:
         if cleaned.startswith("```"):
             first_nl = cleaned.index("\n") if "\n" in cleaned else len(cleaned)
             cleaned = cleaned[first_nl + 1:]
-        if cleaned.endswith("```"):
-            cleaned = cleaned[:-3]
+        cleaned = cleaned.removesuffix("```")
         cleaned = cleaned.strip()
         try:
             parsed = json.loads(cleaned)
@@ -249,7 +247,7 @@ def create_chat_agent(checkpointer=None, store=None, user_id=None):
         if settings.CHECKPOINTER_BACKEND == "redis":
             try:
                 checkpointer = create_redis_checkpointer()
-            except Exception:
+            except Exception:  # noqa: BLE001 (intentional fallback handler)
                 checkpointer = MemorySaver()
         else:
             checkpointer = MemorySaver()
@@ -258,7 +256,7 @@ def create_chat_agent(checkpointer=None, store=None, user_id=None):
         if settings.STORE_BACKEND == "redis":
             try:
                 store = create_redis_store()
-            except Exception:
+            except Exception:  # noqa: BLE001 (intentional fallback handler)
                 store = InMemoryStore()
         else:
             store = InMemoryStore()

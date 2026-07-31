@@ -13,4 +13,4 @@ client = Client(
     api_key=LANGSMITH_API_KEY,
 ) if LANGSMITH_API_KEY else None
 
-__all__ = ["client", "LANGSMITH_PROJECT"]
+__all__ = ["LANGSMITH_PROJECT", "client"]

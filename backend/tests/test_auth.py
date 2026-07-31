@@ -16,7 +16,7 @@ class TestAuth:
     @pytest.fixture(autouse=True)
     def _enable_production_auth(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Override auth module variables so auth is enforced for every test."""
-        import auth  # noqa: PLC0415
+        import auth
         monkeypatch.setattr(auth, "AUTH_MODE", "production")
         monkeypatch.setattr(auth, "API_AUTH_KEY", "test_secret_key")
 
