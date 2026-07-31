@@ -24,6 +24,11 @@ const TOOL_ICONS: Record<string, React.ReactNode> = {
 };
 
 function ItineraryCard({ itinerary }: { itinerary: Itinerary }) {
+  const days = itinerary.days ?? [];
+  const warnings = itinerary.warnings ?? [];
+  const cost = itinerary.estimated_total_cost_usd ?? 0;
+  const totalDays = itinerary.total_days ?? days.length;
+
   return (
     <div className="mt-3 rounded-xl border border-sky-500/20 bg-sky-500/5 overflow-hidden">
       <div className="px-4 py-3 border-b border-sky-500/10">
@@ -36,28 +41,28 @@ function ItineraryCard({ itinerary }: { itinerary: Itinerary }) {
         <div className="grid grid-cols-2 gap-3">
           <div>
             <span className="text-muted-foreground">Duration</span>
-            <p className="text-white font-medium">{itinerary.total_days} days</p>
+            <p className="text-white font-medium">{totalDays} days</p>
           </div>
           <div>
             <span className="text-muted-foreground">Budget</span>
-            <p className="text-white font-medium">${itinerary.estimated_total_cost_usd}</p>
+            <p className="text-white font-medium">${cost}</p>
           </div>
         </div>
         <div className="space-y-2">
-          {itinerary.days.map((day) => (
+          {days.map((day) => (
             <div key={day.day} className="p-2 rounded-lg bg-white/5">
               <p className="font-medium text-white">
-                Day {day.day} — {day.theme}
+                Day {day.day} — {day.theme ?? 'Day ' + day.day}
               </p>
               <p className="text-muted-foreground text-xs mt-0.5">
-                {day.morning.activity} → {day.afternoon.activity} → {day.evening.activity}
+                {day.morning?.activity ?? '—'} → {day.afternoon?.activity ?? '—'} → {day.evening?.activity ?? '—'}
               </p>
             </div>
           ))}
         </div>
-        {itinerary.warnings.length > 0 && (
+        {warnings.length > 0 && (
           <div className="text-xs text-amber-400/80">
-            ⚠ {itinerary.warnings[0]}
+            ⚠ {warnings[0]}
           </div>
         )}
       </div>
@@ -85,6 +90,8 @@ export default function ChatPage() {
   });
 
   const abortRef = useRef<AbortController | null>(null);
+  const sendingRef = useRef(false);
+  const sessionResetRef = useRef(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -93,6 +100,8 @@ export default function ChatPage() {
   }, [messages, streamingText]);
 
   const handleNewChat = () => {
+    abortRef.current?.abort();
+    sessionResetRef.current = true;
     setMessages([{
       id: 'welcome',
       role: 'assistant',
@@ -108,8 +117,10 @@ export default function ChatPage() {
 
   const handleSend = useCallback(async () => {
     const text = input.trim();
-    if (!text || loading) return;
+    if (!text || loading || sendingRef.current) return;
 
+    sendingRef.current = true;
+    sessionResetRef.current = false;
     setInput('');
     setError(null);
     setStreamingText('');
@@ -133,66 +144,97 @@ export default function ChatPage() {
 
     let accumulatedText = '';
     let accumulatedItinerary: Itinerary | null = null;
+    let streamFailed = false;
+    let errorMessage = '';
+    let aborted = false;
 
-    const newThreadId = await streamChat(
-      { message: text, thread_id: threadId ?? undefined },
-      {
-        signal: controller.signal,
-        onToken: (token) => {
-          accumulatedText += token;
-          setStreamingText(accumulatedText);
+    try {
+      const newThreadId = await streamChat(
+        { message: text, thread_id: threadId ?? undefined },
+        {
+          signal: controller.signal,
+          onToken: (token) => {
+            accumulatedText += token;
+            setStreamingText(accumulatedText);
+          },
+          onItinerary: (itinerary) => {
+            accumulatedItinerary = itinerary;
+            setStreamingItinerary(itinerary);
+          },
+          onThreadId: (tid) => {
+            if (sessionResetRef.current) return;
+            setThreadId(tid);
+            try {
+              localStorage.setItem(THREAD_STORAGE_KEY, tid);
+            } catch {
+              // storage unavailable — thread id still works for this session
+            }
+          },
+          onStatus: (status) => {
+            const tool = status.tool;
+            if (!TOOL_LABELS[tool]) return;
+            setActiveWorkers((prev) =>
+              status.status === 'running'
+                ? prev.includes(tool) ? prev : [...prev, tool]
+                : prev.filter((t) => t !== tool),
+            );
+          },
+          onError: (msg) => {
+            streamFailed = true;
+            errorMessage = msg;
+            setError(msg);
+          },
+          onAbort: () => {
+            aborted = true;
+          },
         },
-        onItinerary: (itinerary) => {
-          accumulatedItinerary = itinerary;
-          setStreamingItinerary(itinerary);
-        },
-        onThreadId: (tid) => {
-          setThreadId(tid);
-          localStorage.setItem(THREAD_STORAGE_KEY, tid);
-        },
-        onStatus: (status) => {
-          const tool = status.tool;
-          if (!TOOL_LABELS[tool]) return;
-          setActiveWorkers((prev) =>
-            status.status === 'running'
-              ? prev.includes(tool) ? prev : [...prev, tool]
-              : prev.filter((t) => t !== tool),
-          );
-        },
-        onError: (msg) => {
-          setError(msg);
-        },
-      },
-    );
+      );
 
-    setLoading(false);
-    abortRef.current = null;
-    setActiveWorkers([]);
+      if (sessionResetRef.current) return;
 
-    setMessages((prev) => {
-      const updated = [...prev];
-      const idx = updated.findIndex((m) => m.id === assistantId);
-      if (idx !== -1) {
-        updated[idx] = {
-          ...updated[idx],
-          content: accumulatedText,
-          itinerary: accumulatedItinerary ?? undefined,
-        };
+      setMessages((prev) => {
+        const updated = [...prev];
+        const idx = updated.findIndex((m) => m.id === assistantId);
+        if (idx !== -1) {
+          if (streamFailed && !accumulatedText) {
+            updated[idx] = {
+              ...updated[idx],
+              content: `⚠ Generation failed: ${errorMessage || 'unknown error'}`,
+            };
+          } else if (aborted && !accumulatedText) {
+            updated[idx] = { ...updated[idx], content: '⏹ Generation stopped.' };
+          } else {
+            updated[idx] = {
+              ...updated[idx],
+              content: accumulatedText,
+              itinerary: accumulatedItinerary ?? undefined,
+            };
+          }
+        }
+        return updated;
+      });
+
+      setStreamingText('');
+      setStreamingItinerary(null);
+
+      if (newThreadId && !sessionResetRef.current) {
+        setThreadId(newThreadId);
+        try {
+          localStorage.setItem(THREAD_STORAGE_KEY, newThreadId);
+        } catch {
+          // storage unavailable — thread id still works for this session
+        }
       }
-      return updated;
-    });
-
-    setStreamingText('');
-    setStreamingItinerary(null);
-
-    if (newThreadId) {
-      setThreadId(newThreadId);
-      localStorage.setItem(THREAD_STORAGE_KEY, newThreadId);
+    } finally {
+      setLoading(false);
+      abortRef.current = null;
+      setActiveWorkers([]);
+      sendingRef.current = false;
     }
   }, [input, loading, threadId]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
       handleSend();
     }
