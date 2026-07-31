@@ -53,8 +53,9 @@ function AnimatedNumber({ value, prefix = '' }: { value: number; prefix?: string
 
 const BudgetSummary = memo(function BudgetSummary({ itinerary, budget }: BudgetSummaryProps) {
   const config = statusConfig[itinerary.budget_status];
-  const userBudget = budget ?? itinerary.estimated_total_cost_usd;
-  const budgetPercent = Math.min(100, Math.round((itinerary.estimated_total_cost_usd / userBudget) * 100));
+  const totalCost = itinerary.estimated_total_cost_usd ?? 0;
+  const userBudget = budget ?? totalCost;
+  const budgetPercent = Math.min(100, Math.round((totalCost / userBudget) * 100));
 
   return (
     <motion.div
@@ -86,7 +87,7 @@ const BudgetSummary = memo(function BudgetSummary({ itinerary, budget }: BudgetS
                   <div className="flex items-baseline gap-1 mt-0.5">
                     <DollarSign className="w-5 h-5 text-emerald-400" />
                     <span className="text-3xl font-bold text-white tabular-nums">
-                      <AnimatedNumber value={itinerary.estimated_total_cost_usd} />
+                      <AnimatedNumber value={totalCost} />
                     </span>
                     <span className="text-sm text-muted-foreground ml-1">USD</span>
                   </div>
@@ -102,7 +103,7 @@ const BudgetSummary = memo(function BudgetSummary({ itinerary, budget }: BudgetS
                 <motion.div whileHover={{ y: -2 }} className="p-3 rounded-lg bg-white/[0.03] border border-white/5 hover:border-white/20 transition-colors">
                   <p className="text-xs text-muted-foreground">Per Day Avg</p>
                   <p className="text-lg font-semibold text-white/80 tabular-nums">
-                    ${Math.round(itinerary.estimated_total_cost_usd / itinerary.total_days).toLocaleString()}
+                    ${Math.round((itinerary.estimated_total_cost_usd ?? 0) / itinerary.total_days).toLocaleString()}
                   </p>
                 </motion.div>
                 <motion.div whileHover={{ y: -2 }} className="p-3 rounded-lg bg-white/[0.03] border border-white/5 hover:border-white/20 transition-colors">

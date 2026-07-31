@@ -4,6 +4,7 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Send, Square, MessageSquare, RotateCcw, Globe, Search, ShieldAlert, ListChecks, Loader2 } from 'lucide-react';
 import { streamChat } from '@/lib/chat-api';
+import ErrorBoundary from '@/components/ErrorBoundary';
 import type { ChatMessage, Itinerary } from '@/lib/types';
 
 const THREAD_STORAGE_KEY = 'voyagerai_chat_thread_id';
@@ -26,7 +27,7 @@ const TOOL_ICONS: Record<string, React.ReactNode> = {
 function ItineraryCard({ itinerary }: { itinerary: Itinerary }) {
   const days = itinerary.days ?? [];
   const warnings = itinerary.warnings ?? [];
-  const cost = itinerary.estimated_total_cost_usd ?? 0;
+  const cost: number | string = itinerary.estimated_total_cost_usd ?? 'N/A';
   const totalDays = itinerary.total_days ?? days.length;
 
   return (
@@ -45,7 +46,7 @@ function ItineraryCard({ itinerary }: { itinerary: Itinerary }) {
           </div>
           <div>
             <span className="text-muted-foreground">Budget</span>
-            <p className="text-white font-medium">${cost}</p>
+            <p className="text-white font-medium">{cost === 'N/A' ? 'N/A' : `$${cost}`}</p>
           </div>
         </div>
         <div className="space-y-2">
@@ -291,6 +292,13 @@ export default function ChatPage() {
 
         {/* Messages */}
         <div className="flex-1 overflow-y-auto py-4 space-y-4">
+          <ErrorBoundary
+            fallback={
+              <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-300 text-sm">
+                Something went wrong rendering this conversation. Start a New Chat to continue.
+              </div>
+            }
+          >
           {messages.map((msg) => (
             <motion.div
               key={msg.id}
@@ -355,6 +363,7 @@ export default function ChatPage() {
           )}
 
           <div ref={messagesEndRef} />
+          </ErrorBoundary>
         </div>
 
         {/* Input bar */}

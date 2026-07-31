@@ -20,7 +20,7 @@ export interface DayPlan {
 export interface Itinerary {
   destination: string;
   total_days: number;
-  estimated_total_cost_usd: number;
+  estimated_total_cost_usd: number | null;
   budget_status: 'within' | 'over' | 'under';
   visa_note: string;
   best_season_note: string;
