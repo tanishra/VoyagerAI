@@ -111,7 +111,7 @@ class ChatRequest(BaseModel):
         ..., min_length=1, max_length=2000, description="User chat message."
     )
     thread_id: str | None = Field(
-        None, description="Thread ID for resuming a previous conversation."
+        None, max_length=200, description="Thread ID for resuming a previous conversation."
     )
 
 
