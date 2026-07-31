@@ -2,7 +2,7 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Send, MessageSquare, RotateCcw, Globe, Search, ShieldAlert, ListChecks, Loader2 } from 'lucide-react';
+import { Send, Square, MessageSquare, RotateCcw, Globe, Search, ShieldAlert, ListChecks, Loader2 } from 'lucide-react';
 import { streamChat } from '@/lib/chat-api';
 import type { ChatMessage, Itinerary } from '@/lib/types';
 
@@ -132,6 +132,7 @@ export default function ChatPage() {
     abortRef.current = controller;
 
     let accumulatedText = '';
+    let accumulatedItinerary: Itinerary | null = null;
 
     const newThreadId = await streamChat(
       { message: text, thread_id: threadId ?? undefined },
@@ -142,6 +143,7 @@ export default function ChatPage() {
           setStreamingText(accumulatedText);
         },
         onItinerary: (itinerary) => {
+          accumulatedItinerary = itinerary;
           setStreamingItinerary(itinerary);
         },
         onThreadId: (tid) => {
@@ -174,7 +176,7 @@ export default function ChatPage() {
         updated[idx] = {
           ...updated[idx],
           content: accumulatedText,
-          itinerary: streamingItinerary ?? undefined,
+          itinerary: accumulatedItinerary ?? undefined,
         };
       }
       return updated;
@@ -187,7 +189,7 @@ export default function ChatPage() {
       setThreadId(newThreadId);
       localStorage.setItem(THREAD_STORAGE_KEY, newThreadId);
     }
-  }, [input, loading, threadId, streamingItinerary]);
+  }, [input, loading, threadId]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -334,6 +336,15 @@ export default function ChatPage() {
             >
               <Send className="w-4 h-4" />
             </button>
+            {loading && (
+              <button
+                onClick={() => abortRef.current?.abort()}
+                className="p-3 bg-red-500/10 hover:bg-red-500/20 border border-red-500/25 rounded-xl text-red-400 transition-all cursor-pointer"
+                aria-label="Stop generating"
+              >
+                <Square className="w-4 h-4" />
+              </button>
+            )}
           </div>
           <p className="text-[10px] text-muted-foreground/40 mt-1.5 text-center">
             Press Enter to send · Shift+Enter for new line
