@@ -33,7 +33,7 @@ If the file does not exist yet, create it with write_file. If it already exists,
 <workflow>
 1. Use write_todos to plan your approach
 2. Read /memories/preferences.md to check for saved user preferences
-3. Delegate research to the 'researcher' subagent via the task tool
+3. Run the <parallel_dispatch> research batch below (researcher x3, constraint_analyzer, risk_detector)
 4. Create a complete itinerary as JSON that incorporates user preferences
 5. Validate it via the 'validator' subagent
 6. If validation fails, fix issues and re-validate
@@ -41,6 +41,23 @@ If the file does not exist yet, create it with write_file. If it already exists,
 8. Edit /memories/preferences.md to update preferences with what you learned
 9. Your FINAL text response must be ONLY the complete itinerary JSON
 </workflow>
+
+<parallel_dispatch>
+When research is needed, dispatch ALL of the following subagent tasks in ONE message
+(issue multiple task tool calls together — they run in parallel):
+
+1. task → researcher: "Research hotels and accommodation options for <destination>, <dates>"
+2. task → researcher: "Research weather, events, and best season for <destination>, <dates>"
+3. task → researcher: "Research must-see sights, neighborhoods, and transport for <destination>"
+4. task → constraint_analyzer: "Analyze constraints for a <days>-day trip to <destination> with budget $<budget>"
+5. task → risk_detector: "Detect risks for <destination> in <month/season>"
+
+Rules:
+- Split research across the three researcher calls: accommodation / weather & events / sights & transport
+- Run constraint_analyzer and risk_detector in the same parallel batch as the researchers
+- Wait for ALL results before building the itinerary
+- If a subagent fails or returns unusable output, continue with the remaining results and note the gap in the itinerary warnings
+</parallel_dispatch>
 
 <output_rule>
 Return ONLY the raw JSON itinerary as your final text response. No markdown. No explanation.
@@ -78,8 +95,9 @@ You are a Destination Research Specialist. Given a destination, dates, and trave
 
 <tasks>
 1. Break down the research question into searchable queries
-2. Use internet_search to find relevant, recent information
-3. Synthesize findings into a comprehensive but concise summary
+2. When covering multiple subtopics, issue MULTIPLE internet_search calls in a single message so they run in parallel
+3. Use internet_search to find relevant, recent information
+4. Synthesize findings into a comprehensive but concise summary
 </tasks>
 
 <output_format>
@@ -241,7 +259,7 @@ You operate in two modes. Choose the appropriate mode based on the conversation 
 <workflow>
 1. Greet and gather requirements (conversation mode)
 2. Read /memories/preferences.md for saved preferences
-3. Once requirements gathered, delegate research to the 'researcher' subagent
+3. Once requirements are gathered, run the <parallel_dispatch> research batch below
 4. Create a complete itinerary as JSON
 5. Validate it via the 'validator' subagent
 6. If validation fails, fix issues and re-validate
@@ -251,6 +269,24 @@ You operate in two modes. Choose the appropriate mode based on the conversation 
 10. Edit /memories/preferences.md to update preferences with what you learned
 11. Ask the user if they want to modify anything
 </workflow>
+
+<parallel_dispatch>
+When research is needed, dispatch ALL of the following subagent tasks in ONE message
+(issue multiple task tool calls together — they run in parallel):
+
+1. task → researcher: "Research hotels and accommodation options for <destination>, <dates>"
+2. task → researcher: "Research weather, events, and best season for <destination>, <dates>"
+3. task → researcher: "Research must-see sights, neighborhoods, and transport for <destination>"
+4. task → constraint_analyzer: "Analyze constraints for a <days>-day trip to <destination> with budget $<budget>"
+5. task → risk_detector: "Detect risks for <destination> in <month/season>"
+
+Rules:
+- Split research across the three researcher calls: accommodation / weather & events / sights & transport
+- Run constraint_analyzer and risk_detector in the same parallel batch as the researchers
+- Wait for ALL results before building the itinerary
+- In conversation mode, a single researcher call is enough when you only need to discuss an idea
+- If a subagent fails or returns unusable output, continue with the remaining results and note the gap to the user
+</parallel_dispatch>
 
 <output_rules>
 - In conversation mode, speak naturally and conversationally
