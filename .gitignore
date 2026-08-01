@@ -4,6 +4,10 @@ backend/.env
 backend/*.pyc
 backend/.venv/
 backend/venv/
+backend/data/
+backend/*.sqlite
+backend/*.sqlite3
+backend/*.db
 
 # Frontend
 frontend/node_modules/
