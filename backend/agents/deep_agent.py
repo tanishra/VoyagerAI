@@ -16,7 +16,7 @@ from langgraph.store.memory import InMemoryStore
 from langgraph.store.redis import RedisConnectionFactory, RedisStore
 from pydantic import BaseModel
 
-from agents.prompts import CHAT_AGENT_SYSTEM_PROMPT, TRAVEL_AGENT_SYSTEM_PROMPT
+from agents.prompts import CHAT_AGENT_SYSTEM_PROMPT
 from agents.subagents import get_subagents
 from config.settings import settings
 
@@ -106,156 +106,6 @@ def get_redis_file_store() -> InMemoryStore | RedisStore:
     return _file_store
 
 
-async def create_travel_agent(checkpointer=None, store=None, user_id=None):
-    if checkpointer is None:
-        checkpointer = await create_checkpointer()
-
-    if store is None:
-        if settings.STORE_BACKEND == "redis":
-            try:
-                store = create_redis_store()
-            except Exception:  # noqa: BLE001 (intentional fallback handler)
-                store = InMemoryStore()
-        else:
-            store = InMemoryStore()
-
-    model = ChatGoogleGenerativeAI(
-        model="gemini-2.5-pro",
-        google_api_key=settings.GEMINI_API_KEY,
-        temperature=0.4,
-    )
-
-    subagents = get_subagents()
-
-    uid = user_id or "anonymous"
-
-    def _make_backend(rt):
-        return CompositeBackend(
-            default=FilesystemBackend(root_dir="/tmp/agent_fs"),
-            routes={
-                "/memories/": StoreBackend(
-                    store=get_redis_file_store(),
-                    namespace=lambda _rt: (uid,),
-                ),
-            },
-        )
-
-    agent = create_deep_agent(
-        model=model,
-        tools=[],
-        subagents=subagents,
-        system_prompt=TRAVEL_AGENT_SYSTEM_PROMPT,
-        checkpointer=checkpointer,
-        store=store,
-        memory=["/memories/preferences.md"],
-        permissions=[
-            FilesystemPermission(
-                operations=["read", "write"],
-                paths=["/workspace/**", "/memories/**"],
-            ),
-        ],
-        backend=_make_backend,
-    )
-
-    return agent
-
-
-def _extract_itinerary(state: dict) -> dict:
-    messages = state.get("messages", [])
-    if not messages:
-        raise ValueError("No messages in agent response")
-
-    def _find_json_objects(text: str) -> list[dict]:
-        results = []
-        cleaned = text.strip()
-        if cleaned.startswith("```"):
-            first_nl = cleaned.index("\n") if "\n" in cleaned else len(cleaned)
-            cleaned = cleaned[first_nl + 1:]
-        cleaned = cleaned.removesuffix("```")
-        cleaned = cleaned.strip()
-        try:
-            parsed = json.loads(cleaned)
-            if isinstance(parsed, dict):
-                results.append(parsed)
-        except (json.JSONDecodeError, ValueError):
-            pass
-        return results
-
-    def _score_itinerary(obj: dict) -> int:
-        if not isinstance(obj, dict):
-            return 0
-        score = 0
-        if "destination" in obj:
-            score += 3
-        if "total_days" in obj:
-            score += 3
-        if "estimated_total_cost_usd" in obj:
-            score += 2
-        if "budget_status" in obj:
-            score += 2
-        if "days" in obj and isinstance(obj["days"], list):
-            score += 5
-            if obj["days"] and isinstance(obj["days"][0], dict):
-                score += 3
-        if "visa_note" in obj:
-            score += 1
-        if "best_season_note" in obj:
-            score += 1
-        return score
-
-    candidates: list[tuple[int, dict]] = []
-
-    for msg in messages:
-        c = msg.content
-        texts = []
-        if isinstance(c, str):
-            texts.append(c)
-        elif isinstance(c, list):
-            texts.extend(
-                p["text"] for p in c if isinstance(p, dict) and p.get("type") == "text"
-            )
-        for text in texts:
-            for obj in _find_json_objects(text):
-                score = _score_itinerary(obj)
-                if score > 0:
-                    candidates.append((score, obj))
-
-        if hasattr(msg, "tool_calls") and msg.tool_calls:
-            for tc in msg.tool_calls:
-                for arg_value in tc.get("args", {}).values():
-                    if isinstance(arg_value, str):
-                        for obj in _find_json_objects(arg_value):
-                            score = _score_itinerary(obj)
-                            if score >= 5:
-                                candidates.append((score, obj))
-
-    if not candidates:
-        raise ValueError("Could not extract itinerary JSON from agent response")
-
-    candidates.sort(key=lambda x: x[0], reverse=True)
-    return candidates[0][1]
-
-
-async def run_travel_agent(
-    user_message: str,
-    thread_id: str,
-    user_id: str | None = None,
-) -> dict:
-    agent = await create_travel_agent(user_id=user_id)
-    config = {
-        "configurable": {
-            "thread_id": thread_id,
-            "user_id": user_id or "anonymous",
-        },
-        "recursion_limit": 50,
-    }
-    result = await agent.ainvoke(
-        {"messages": [{"role": "user", "content": user_message}]},
-        config,
-    )
-    return _extract_itinerary(result)
-
-
 class _ModelStream:
     """Accumulate streamed model text per run from `astream_events` chunks.
 
@@ -300,36 +150,6 @@ class _ModelStream:
             if self._texts.get(run_id, "").strip():
                 return self._texts[run_id]
         return ""
-
-
-async def stream_travel_agent(
-    user_message: str,
-    thread_id: str,
-    user_id: str | None = None,
-):
-    agent = await create_travel_agent(user_id=user_id)
-    config = {
-        "configurable": {
-            "thread_id": thread_id,
-            "user_id": user_id or "anonymous",
-        },
-        "recursion_limit": 50,
-    }
-    stream = _ModelStream(agent, config)
-    async for event in stream.events(
-        {"messages": [{"role": "user", "content": user_message}]}
-    ):
-        yield event
-
-    try:
-        stream_text = stream.last_text()
-        itinerary = _extract_itinerary_from_text(stream_text) if stream_text else None
-        if itinerary is None:
-            state = await agent.aget_state(config)
-            itinerary = _extract_itinerary(state.values)
-        yield {"event": "final", "data": itinerary}
-    except (ValueError, json.JSONDecodeError) as exc:
-        yield {"event": "error", "data": str(exc)}
 
 
 async def create_chat_agent(checkpointer=None, store=None, user_id=None):

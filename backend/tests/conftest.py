@@ -16,19 +16,6 @@ def client():
 
 
 @pytest.fixture
-def valid_plan_payload() -> dict:
-    return {
-        "destination": "Tokyo, Japan",
-        "days": 5,
-        "budget_usd": 3000,
-        "travel_style": "cultural",
-        "group_type": "solo",
-        "dietary": "vegetarian",
-        "constraints": "no long walks",
-    }
-
-
-@pytest.fixture
 def sample_activity_dict() -> dict:
     return {"activity": "Test", "location": "Test", "cost_usd": 10, "duration": "1h"}
 

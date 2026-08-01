@@ -5,7 +5,7 @@ import { Sparkles } from 'lucide-react';
 import Link from 'next/link';
 
 const footerLinks = [
-  { href: '/plan', label: 'Plan Trip' },
+  { href: '/chat', label: 'Chat' },
   { href: '/about', label: 'About' },
   { href: '/faq', label: 'FAQ' },
 ];

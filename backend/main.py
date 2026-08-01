@@ -5,7 +5,7 @@ import hashlib
 import json
 import uuid
 
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -16,14 +16,12 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from agents import (
     get_redis_file_store,
-    run_travel_agent,
     stream_chat_agent,
-    stream_travel_agent,
 )
 from auth import verify_api_key
 from cache import cache_client
 from config import REQUEST_TIMEOUT_SECONDS, logger, settings
-from models import ChatRequest, Itinerary, PlanRequest, PlanResponse, ReplanRequest
+from models import ChatRequest
 from sanitize import sanitize_prompt_input
 
 ALLOWED_ORIGINS: list[str] = [
@@ -206,177 +204,6 @@ async def put_preferences(request: Request) -> dict[str, str]:
         return {"status": "error", "user_id": user_id, "error": "Preferences store unavailable"}
     logger.info("Saved preferences for user=%s (%d bytes)", user_id, len(content))
     return {"status": "ok", "user_id": user_id}
-
-
-@app.post(
-    "/plan",
-    response_model=PlanResponse,
-    summary="Generate travel plan",
-    tags=["planning"],
-    dependencies=[Depends(verify_api_key)],
-)
-@limiter.limit("5/minute")
-async def plan(plan_req: PlanRequest, request: Request) -> PlanResponse:
-    logger.info(
-        "POST /plan — destination=%s, days=%d, budget=%d, style=%s, group=%s",
-        plan_req.destination,
-        plan_req.days,
-        plan_req.budget_usd,
-        plan_req.travel_style.value,
-        plan_req.group_type.value,
-    )
-
-    cached = await cache_client.get(plan_req)
-    if cached is not None:
-        logger.info("Cache HIT for %s", plan_req.destination)
-        itinerary = Itinerary.model_validate(cached)
-        return PlanResponse(success=True, itinerary=itinerary)
-
-    _dest_safe = sanitize_prompt_input(plan_req.destination, "destination")
-    _diet_safe = sanitize_prompt_input(plan_req.dietary, "dietary")
-    _constr_safe = sanitize_prompt_input(plan_req.constraints, "constraints")
-
-    user_message = (
-        f"Plan a {plan_req.days}-day trip to {_dest_safe}. "
-        f"Budget: ${plan_req.budget_usd} USD. "
-        f"Style: {plan_req.travel_style.value}. "
-        f"Group: {plan_req.group_type.value}. "
-        f"Dietary: {_diet_safe or 'None'}. "
-        f"Constraints: {_constr_safe or 'None'}."
-    )
-
-    try:
-        user_id = _resolve_user_id(request)
-        thread_id = f"plan:{user_id}:{plan_req.destination}:{plan_req.days}:{plan_req.budget_usd}"
-
-        raw_itinerary = await run_travel_agent(
-            user_message=user_message,
-            thread_id=thread_id,
-            user_id=user_id,
-        )
-
-        itinerary = Itinerary.model_validate(raw_itinerary)
-        await cache_client.set(plan_req, itinerary.model_dump())
-
-        return PlanResponse(success=True, itinerary=itinerary)
-    except HTTPException:
-        raise
-    except Exception as exc:  # noqa: BLE001 (intentional fallback handler)
-        logger.error("Unexpected error in /plan: %s", exc)
-        return PlanResponse(success=False, error=f"Planning failed: {exc}")
-
-
-@app.post(
-    "/plan/stream",
-    summary="Stream travel plan generation",
-    tags=["planning"],
-    dependencies=[Depends(verify_api_key)],
-)
-@limiter.limit("5/minute")
-async def plan_stream(plan_req: PlanRequest, request: Request) -> EventSourceResponse:
-    _dest_safe = sanitize_prompt_input(plan_req.destination, "destination")
-    _diet_safe = sanitize_prompt_input(plan_req.dietary, "dietary")
-    _constr_safe = sanitize_prompt_input(plan_req.constraints, "constraints")
-
-    user_message = (
-        f"Plan a {plan_req.days}-day trip to {_dest_safe}. "
-        f"Budget: ${plan_req.budget_usd} USD. "
-        f"Style: {plan_req.travel_style.value}. "
-        f"Group: {plan_req.group_type.value}. "
-        f"Dietary: {_diet_safe or 'None'}. "
-        f"Constraints: {_constr_safe or 'None'}."
-    )
-
-    cached = await cache_client.get(plan_req)
-    if cached is not None:
-        logger.info("Stream cache HIT for %s", plan_req.destination)
-        async def cached_generator():
-            yield {
-                "event": "final",
-                "data": json.dumps({"event": "final", "data": cached}),
-            }
-        return EventSourceResponse(cached_generator())
-
-    user_id = _resolve_user_id(request)
-    request_id = uuid.uuid4().hex[:8]
-    thread_id = f"plan:{plan_req.destination}:{plan_req.days}:{plan_req.budget_usd}:{request_id}"
-
-    async def event_generator():
-        itinerary_result = None
-        async for event in stream_travel_agent(
-            user_message=user_message,
-            thread_id=thread_id,
-            user_id=user_id,
-        ):
-            if event.get("event") == "final":
-                itinerary_result = event.get("data")
-            yield {
-                "event": event.get("event", "data"),
-                "data": json.dumps(event),
-            }
-        if itinerary_result:
-            try:
-                validated = Itinerary.model_validate(itinerary_result)
-                await cache_client.set(plan_req, validated.model_dump())
-            except Exception:  # noqa: BLE001 (intentional fallback handler)
-                logger.warning("Failed to cache stream result", exc_info=True)
-
-    return EventSourceResponse(event_generator())
-
-
-@app.post(
-    "/replan-day",
-    response_model=PlanResponse,
-    summary="Replan a specific day",
-    tags=["planning"],
-    dependencies=[Depends(verify_api_key)],
-)
-@limiter.limit("10/minute")
-async def replan_day(replan_req: ReplanRequest, request: Request) -> PlanResponse:
-    logger.info(
-        "POST /replan-day — day=%d, reason=%s",
-        replan_req.day_number,
-        replan_req.reason[:80],
-    )
-
-    if replan_req.day_number > replan_req.itinerary.total_days or replan_req.day_number < 1:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Day {replan_req.day_number} is out of range. "
-                   f"Itinerary has {replan_req.itinerary.total_days} days.",
-        )
-
-    itinerary_dict = replan_req.itinerary.model_dump()
-    _reason_safe = sanitize_prompt_input(replan_req.reason, "reason")
-
-    user_message = (
-        f"Here is the current itinerary:\n"
-        f"{json.dumps(itinerary_dict, indent=2)}\n\n"
-        f"Please replan Day {replan_req.day_number}.\n"
-        f"Reason: {_reason_safe}\n\n"
-        f"Return the COMPLETE updated itinerary (all days) as JSON."
-    )
-
-    try:
-        user_id = _resolve_user_id(request)
-        thread_id = (
-            f"replan:{replan_req.day_number}:"
-            f"{hashlib.sha256(json.dumps(itinerary_dict, sort_keys=True).encode()).hexdigest()[:16]}"
-        )
-
-        raw_itinerary = await run_travel_agent(
-            user_message=user_message,
-            thread_id=thread_id,
-            user_id=user_id,
-        )
-
-        itinerary = Itinerary.model_validate(raw_itinerary)
-        return PlanResponse(success=True, itinerary=itinerary)
-    except HTTPException:
-        raise
-    except Exception as exc:  # noqa: BLE001 (intentional fallback handler)
-        logger.error("Unexpected error in /replan-day: %s", exc)
-        return PlanResponse(success=False, error=f"Replanning failed: {exc}")
 
 
 @app.post(

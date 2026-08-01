@@ -24,37 +24,13 @@ class TestAuth:
         resp = client.get("/health")
         assert resp.status_code == 200
 
-    def test_plan_401_without_api_key(
-        self, client: TestClient, valid_plan_payload: dict
-    ) -> None:
-        resp = client.post("/plan", json=valid_plan_payload)
+    def test_chat_stream_401_without_api_key(self, client: TestClient) -> None:
+        resp = client.post("/chat/stream", json={"message": "hello"})
         assert resp.status_code == 401
         assert "API key" in resp.json()["detail"]
 
-    def test_plan_401_with_wrong_api_key(
-        self, client: TestClient, valid_plan_payload: dict
-    ) -> None:
+    def test_chat_stream_401_with_wrong_api_key(self, client: TestClient) -> None:
         resp = client.post(
-            "/plan", json=valid_plan_payload, headers={"X-API-Key": "wrong_key"}
-        )
-        assert resp.status_code == 401
-
-    def test_plan_200_with_valid_api_key(
-        self, client: TestClient, valid_plan_payload: dict
-    ) -> None:
-        resp = client.post(
-            "/plan", json=valid_plan_payload, headers={"X-API-Key": "test_secret_key"}
-        )
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["success"] is True
-
-    def test_replan_401_without_api_key(self, client: TestClient) -> None:
-        resp = client.post("/replan-day", json={"bad": "data"})
-        assert resp.status_code == 401
-
-    def test_replan_401_with_wrong_api_key(self, client: TestClient) -> None:
-        resp = client.post(
-            "/replan-day", json={"bad": "data"}, headers={"X-API-Key": "wrong_key"}
+            "/chat/stream", json={"message": "hello"}, headers={"X-API-Key": "wrong_key"}
         )
         assert resp.status_code == 401

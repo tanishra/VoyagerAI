@@ -13,9 +13,9 @@ describe('CTASection', () => {
     expect(screen.getByText(/completely free/i)).toBeInTheDocument();
   });
 
-  it('renders CTA button linking to /plan', () => {
+  it('renders CTA button linking to /chat', () => {
     render(<CTASection />);
     const btn = screen.getByText('Plan Your Trip Now');
-    expect(btn.closest('a')).toHaveAttribute('href', '/plan');
+    expect(btn.closest('a')).toHaveAttribute('href', '/chat');
   });
 });

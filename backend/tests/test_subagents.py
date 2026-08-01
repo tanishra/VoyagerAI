@@ -5,7 +5,6 @@ from __future__ import annotations
 from agents.prompts import (
     CHAT_AGENT_SYSTEM_PROMPT,
     RESEARCHER_SYSTEM_PROMPT,
-    TRAVEL_AGENT_SYSTEM_PROMPT,
 )
 from agents.subagents import get_subagents
 from agents.subagents.constraint_analyzer import CONSTRAINT_ANALYZER_SYSTEM_PROMPT
@@ -45,26 +44,19 @@ class TestSubagentRegistry:
 
 
 class TestParallelDispatchPrompts:
-    def test_travel_prompt_has_parallel_dispatch(self):
-        assert "<parallel_dispatch>" in TRAVEL_AGENT_SYSTEM_PROMPT
-
     def test_chat_prompt_has_parallel_dispatch(self):
         assert "<parallel_dispatch>" in CHAT_AGENT_SYSTEM_PROMPT
-
-    def test_travel_dispatch_dispatches_all_workers(self):
-        for worker in ("researcher", "constraint_analyzer", "risk_detector"):
-            assert worker in TRAVEL_AGENT_SYSTEM_PROMPT
 
     def test_chat_dispatch_dispatches_all_workers(self):
         for worker in ("researcher", "constraint_analyzer", "risk_detector"):
             assert worker in CHAT_AGENT_SYSTEM_PROMPT
 
     def test_dispatch_mentions_parallel_execution(self):
-        assert "ONE message" in TRAVEL_AGENT_SYSTEM_PROMPT
-        assert "parallel" in TRAVEL_AGENT_SYSTEM_PROMPT
+        assert "ONE message" in CHAT_AGENT_SYSTEM_PROMPT
+        assert "parallel" in CHAT_AGENT_SYSTEM_PROMPT
 
     def test_dispatch_handles_subagent_failure(self):
-        assert "continue with the remaining results" in TRAVEL_AGENT_SYSTEM_PROMPT
+        assert "continue with the remaining results" in CHAT_AGENT_SYSTEM_PROMPT
 
     def test_researcher_prompt_parallel_searches(self):
         assert "MULTIPLE internet_search" in RESEARCHER_SYSTEM_PROMPT

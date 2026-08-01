@@ -418,41 +418,6 @@ class TestStreamTextExtraction:
         assert full_prose[:80] in retry_content  # full stream text fed back, not the stub
         assert captured["draft"] == full_prose
 
-    def test_travel_uses_stream_text_when_checkpoint_is_stub(self, monkeypatch):
-        import asyncio
-
-        import agents.deep_agent as deep_agent_module
-
-        full_json = '{"destination": "Udaipur, India", "total_days": 1, "days": []}'
-
-        class _Msg:
-            def __init__(self, content):
-                self.content = content
-
-        class _FakeAgent:
-            async def astream_events(self, *args, **kwargs):
-                yield _ev(
-                    "on_chat_model_stream",
-                    run_id="run-1",
-                    data={"chunk": _Chunk([{"type": "text", "text": full_json}])},
-                )
-
-            async def aget_state(self, config):
-                raise AssertionError("state must not be needed when stream text extracts")
-
-        async def _fake_factory(**kw):
-            return _FakeAgent()
-        monkeypatch.setattr(deep_agent_module, "create_travel_agent", _fake_factory)
-
-        events = asyncio.run(
-            self._collect(deep_agent_module.stream_travel_agent("plan a trip", "t1", "u1"))
-        )
-
-        assert events[-1] == (
-            "final",
-            {"destination": "Udaipur, India", "total_days": 1, "days": []},
-        )
-
 
 def json_data(payload: dict):
     import json

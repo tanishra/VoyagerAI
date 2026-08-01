@@ -10,7 +10,7 @@ describe('Footer', () => {
 
   it('renders footer links', () => {
     render(<Footer />);
-    expect(screen.getByText('Plan Trip')).toBeInTheDocument();
+    expect(screen.getByText('Chat')).toBeInTheDocument();
     expect(screen.getByText('About')).toBeInTheDocument();
     expect(screen.getByText('FAQ')).toBeInTheDocument();
   });

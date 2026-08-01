@@ -35,13 +35,7 @@ class Settings(BaseSettings):
     CORS_ORIGINS: str = "http://localhost:3000"
 
     REDIS_URL: str = "redis://localhost:6379/0"
-    CACHE_TTL: int = 3600
-
-    DATABASE_URL: str | None = None
-
-    REQUEST_TIMEOUT: int = 300
-
-    DAILY_TOKEN_LIMIT: int = 1_000_000
+    REQUEST_TIMEOUT_SECONDS: int = 300
 
     CHECKPOINTER_BACKEND: str = "redis"  # "redis", "sqlite", or "memory"
     CHECKPOINTER_DB_PATH: str = "./data/checkpoints.sqlite"

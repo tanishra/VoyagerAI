@@ -1,48 +1,20 @@
-"""Redis caching layer with graceful degradation.
+"""Redis health-check layer with graceful degradation.
 
-Architecture:
-    - Module-level ``cache_client`` singleton (lazy init on first use).
-    - All public methods catch exceptions internally — the app never
-      500s on a Redis outage. Failures are logged, and the caller sees
-      ``None`` (cache miss) or a silent no-op (cache set).
-    - Key format: ``"plan:v2:<sha256>"`` — the version tag allows
-      wholesale invalidation by bumping the prefix.
+Caching of plan requests/responses has been removed along with the form-based
+flow. This module retains a minimal Redis connection wrapper used by the
+/health endpoint to report Redis connectivity status.
 """
 
 from __future__ import annotations
 
-import hashlib
-import json
 import logging
 
-from redis import RedisError
 from redis.asyncio import Redis
+from redis.exceptions import RedisError
 
-from config import CACHE_TTL_SECONDS, REDIS_URL
-from models import PlanRequest
+from config import REDIS_URL
 
 logger = logging.getLogger("travel_agent.cache")
-
-KEY_PREFIX = "plan:v2"
-
-
-def _compute_key(plan_req: PlanRequest) -> str:
-    """Return a deterministic SHA-256 cache key for a ``PlanRequest``."""
-    canonical = json.dumps(
-        {
-            "destination": plan_req.destination,
-            "days": plan_req.days,
-            "budget_usd": plan_req.budget_usd,
-            "travel_style": plan_req.travel_style.value,
-            "group_type": plan_req.group_type.value,
-            "dietary": plan_req.dietary,
-            "constraints": plan_req.constraints,
-        },
-        sort_keys=True,
-        separators=(",", ":"),
-    )
-    digest = hashlib.sha256(canonical.encode()).hexdigest()
-    return f"{KEY_PREFIX}:{digest}"
 
 
 class CacheClient:
@@ -65,30 +37,6 @@ class CacheClient:
                 logger.warning("Redis unavailable — caching disabled: %s", exc)
                 self._redis = None
         return self._redis
-
-    async def get(self, plan_req: PlanRequest) -> dict | None:
-        r = await self._get_redis()
-        if r is None:
-            return None
-        key = _compute_key(plan_req)
-        try:
-            raw = await r.get(key)
-            if raw is None:
-                return None
-            return json.loads(raw)
-        except (RedisError, RuntimeError, json.JSONDecodeError) as exc:
-            logger.warning("Cache GET failed for key=%s: %s", key, exc)
-            return None
-
-    async def set(self, plan_req: PlanRequest, data: dict, ttl: int | None = None) -> None:
-        r = await self._get_redis()
-        if r is None:
-            return
-        key = _compute_key(plan_req)
-        try:
-            await r.setex(key, ttl or CACHE_TTL_SECONDS, json.dumps(data))
-        except (RedisError, RuntimeError) as exc:
-            logger.warning("Cache SET failed for key=%s: %s", key, exc)
 
     async def ping(self) -> bool:
         r = await self._get_redis()

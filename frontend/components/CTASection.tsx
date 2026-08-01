@@ -21,7 +21,7 @@ export default function CTASection() {
             Get a personalized, Gemini-generated itinerary in seconds — completely free.
           </p>
           <Link
-            href="/plan"
+            href="/chat"
             className="group inline-flex items-center gap-2 px-8 py-3.5 rounded-xl bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white font-semibold text-sm shadow-lg shadow-sky-500/20 transition-all duration-300 hover:shadow-xl hover:shadow-sky-500/30 hover:-translate-y-0.5 hover:scale-105"
           >
             <Globe className="w-4 h-4" />
