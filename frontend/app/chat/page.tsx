@@ -34,10 +34,10 @@ function ItineraryCard({ itinerary }: { itinerary: Itinerary }) {
   const totalDays = itinerary.total_days ?? days.length;
 
   return (
-    <div className="mt-3 rounded-xl border border-sky-500/20 bg-sky-500/5 overflow-hidden">
-      <div className="px-4 py-3 border-b border-sky-500/10">
-        <h3 className="font-semibold text-white flex items-center gap-2">
-          <Globe className="w-4 h-4 text-sky-400" />
+    <div className="mt-3 rounded-xl border border-indigo-500/20 bg-indigo-500/5 overflow-hidden bg-card">
+      <div className="px-4 py-3 border-b border-indigo-500/10">
+        <h3 className="font-semibold text-foreground flex items-center gap-2">
+          <Globe className="w-4 h-4 text-primary" />
           {itinerary.destination}
         </h3>
       </div>
@@ -45,17 +45,17 @@ function ItineraryCard({ itinerary }: { itinerary: Itinerary }) {
         <div className="grid grid-cols-2 gap-3">
           <div>
             <span className="text-muted-foreground">Duration</span>
-            <p className="text-white font-medium">{totalDays} days</p>
+            <p className="text-foreground font-medium">{totalDays} days</p>
           </div>
           <div>
             <span className="text-muted-foreground">Budget</span>
-            <p className="text-white font-medium">{cost === 'N/A' ? 'N/A' : `$${cost}`}</p>
+            <p className="text-foreground font-medium">{cost === 'N/A' ? 'N/A' : `$${cost}`}</p>
           </div>
         </div>
         <div className="space-y-2">
           {days.map((day) => (
-            <div key={day.day} className="p-2 rounded-lg bg-white/5">
-              <p className="font-medium text-white">
+            <div key={day.day} className="p-2 rounded-lg bg-muted border border-border">
+              <p className="font-medium text-foreground">
                 Day {day.day} — {day.theme ?? 'Day ' + day.day}
               </p>
               <p className="text-muted-foreground text-xs mt-0.5">
@@ -65,7 +65,7 @@ function ItineraryCard({ itinerary }: { itinerary: Itinerary }) {
           ))}
         </div>
         {warnings.length > 0 && (
-          <div className="text-xs text-amber-400/80">
+          <div className="text-xs text-amber-600">
             ⚠ {warnings[0]}
           </div>
         )}
@@ -262,31 +262,31 @@ export default function ChatPage() {
     <main className="relative min-h-screen overflow-hidden pt-16 flex flex-col">
       {/* Background gradients */}
       <div className="pointer-events-none fixed inset-0">
-        <div className="absolute top-0 right-1/4 w-[600px] h-[600px] bg-sky-500/[0.07] rounded-full blur-[120px]" />
-        <div className="absolute bottom-0 left-1/4 w-[500px] h-[500px] bg-blue-500/[0.05] rounded-full blur-[100px]" />
+        <div className="absolute top-0 right-1/4 w-[600px] h-[600px] bg-indigo-400/[0.06] rounded-full blur-[120px] animate-aurora" />
+        <div className="absolute bottom-0 left-1/4 w-[500px] h-[500px] bg-violet-400/[0.04] rounded-full blur-[100px] animate-float-slow" />
       </div>
 
       {/* Grid overlay */}
       <div
-        className="pointer-events-none fixed inset-0 opacity-[0.015]"
+        className="pointer-events-none fixed inset-0 opacity-[0.02]"
         style={{
-          backgroundImage: `linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)`,
+          backgroundImage: `linear-gradient(rgba(0,0,0,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(0,0,0,0.1) 1px, transparent 1px)`,
           backgroundSize: '60px 60px',
         }}
       />
 
       <div className="relative z-10 flex flex-col flex-1 max-w-3xl mx-auto w-full px-4">
         {/* Header */}
-        <header className="flex items-center justify-between py-4 border-b border-white/5">
+        <header className="flex items-center justify-between py-4 border-b border-border">
           <div className="flex items-center gap-2">
-            <div className="p-1.5 rounded-lg bg-gradient-to-br from-sky-500/20 to-blue-500/20 border border-sky-500/15">
-              <MessageSquare className="w-4 h-4 text-sky-400" />
+            <div className="p-1.5 rounded-lg bg-gradient-to-br from-indigo-500/10 to-violet-500/10 border border-indigo-500/15">
+              <MessageSquare className="w-4 h-4 text-primary" />
             </div>
-            <h1 className="text-lg font-semibold text-white">Chat Planner</h1>
+            <h1 className="text-lg font-semibold text-foreground">Chat Planner</h1>
           </div>
           <button
             onClick={handleNewChat}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white/60 hover:text-white bg-white/5 hover:bg-white/10 rounded-lg transition-colors cursor-pointer"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground bg-muted hover:bg-accent border border-border rounded-lg transition-colors cursor-pointer"
           >
             <RotateCcw className="w-3.5 h-3.5" />
             New Chat
@@ -302,7 +302,7 @@ export default function ChatPage() {
               exit={{ opacity: 0, y: -10 }}
               className="p-3 mt-2 rounded-xl bg-red-500/10 border border-red-500/20"
             >
-              <p className="text-red-300 text-sm">{error}</p>
+              <p className="text-red-600 text-sm">{error}</p>
             </motion.div>
           )}
         </AnimatePresence>
@@ -311,7 +311,7 @@ export default function ChatPage() {
         <div className="flex-1 overflow-y-auto py-4 space-y-4">
           <ErrorBoundary
             fallback={
-              <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-300 text-sm">
+              <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-600 text-sm">
                 Something went wrong rendering this conversation. Start a New Chat to continue.
               </div>
             }
@@ -327,8 +327,8 @@ export default function ChatPage() {
               <div
                 className={`max-w-[85%] rounded-2xl px-4 py-3 ${
                   msg.role === 'user'
-                    ? 'bg-sky-500/20 border border-sky-500/15 text-white'
-                    : 'bg-white/5 border border-white/10 text-white/90'
+                    ? 'bg-primary/10 border border-primary/20 text-foreground'
+                    : 'bg-card border border-border text-foreground/90 shadow-sm'
                 }`}
               >
                 <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
@@ -345,13 +345,13 @@ export default function ChatPage() {
               animate={{ opacity: 1, y: 0 }}
               className="flex justify-start"
             >
-              <div className="max-w-[85%] rounded-2xl px-4 py-3 bg-white/5 border border-white/10 text-white/90">
+              <div className="max-w-[85%] rounded-2xl px-4 py-3 bg-card border border-border text-foreground/90 shadow-sm">
                 {activeWorkers.length > 0 && (
                   <div className="flex flex-wrap gap-1.5 mb-2">
                     {activeWorkers.map((tool) => (
                       <span
                         key={tool}
-                        className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full bg-sky-500/10 border border-sky-500/20 text-[10px] font-medium text-sky-200"
+                        className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full bg-primary/10 border border-primary/20 text-[10px] font-medium text-primary"
                       >
                         <Loader2 className="w-3 h-3 animate-spin" />
                         {TOOL_ICONS[tool]}
@@ -363,14 +363,14 @@ export default function ChatPage() {
                 {streamingText ? (
                   <>
                     <p className="text-sm whitespace-pre-wrap">{streamingText}</p>
-                    <span className="inline-block w-2 h-4 bg-sky-400 animate-pulse ml-0.5" />
+                    <span className="inline-block w-2 h-4 bg-primary animate-pulse ml-0.5" />
                   </>
                 ) : (
                   <div className="flex items-center gap-2">
                     <div className="flex gap-1">
-                      <span className="w-2 h-2 bg-sky-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                      <span className="w-2 h-2 bg-sky-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                      <span className="w-2 h-2 bg-sky-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                      <span className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                      <span className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                      <span className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
                     </div>
                     <span className="text-xs text-muted-foreground">Thinking...</span>
                   </div>
@@ -386,7 +386,7 @@ export default function ChatPage() {
         </div>
 
         {/* Input bar */}
-        <div className="py-4 border-t border-white/5">
+        <div className="py-4 border-t border-border">
           <div className="flex items-end gap-2">
             <textarea
               ref={inputRef}
@@ -396,12 +396,12 @@ export default function ChatPage() {
               placeholder="Describe your dream trip..."
               rows={1}
               disabled={loading}
-              className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder:text-muted-foreground resize-none outline-none focus:border-sky-500/40 focus:bg-white/10 transition-colors disabled:opacity-50"
+              className="flex-1 bg-muted border border-border rounded-xl px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground/50 resize-none outline-none focus:border-primary/40 focus:bg-card transition-colors disabled:opacity-50"
             />
             <button
               onClick={handleSend}
               disabled={!input.trim() || loading}
-              className="p-3 bg-sky-500/20 hover:bg-sky-500/30 border border-sky-500/30 rounded-xl text-sky-400 transition-all disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+              className="p-3 bg-primary/10 hover:bg-primary/20 border border-primary/30 rounded-xl text-primary transition-all disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
               aria-label="Send message"
             >
               <Send className="w-4 h-4" />
@@ -409,7 +409,7 @@ export default function ChatPage() {
             {loading && (
               <button
                 onClick={() => abortRef.current?.abort()}
-                className="p-3 bg-red-500/10 hover:bg-red-500/20 border border-red-500/25 rounded-xl text-red-400 transition-all cursor-pointer"
+                className="p-3 bg-red-500/10 hover:bg-red-500/20 border border-red-500/25 rounded-xl text-red-600 transition-all cursor-pointer"
                 aria-label="Stop generating"
               >
                 <Square className="w-4 h-4" />

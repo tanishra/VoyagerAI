@@ -61,15 +61,15 @@ export default function PreferencesPage() {
   return (
     <main className="relative min-h-screen overflow-hidden pt-16">
       <div className="pointer-events-none fixed inset-0">
-        <div className="absolute top-0 left-1/4 w-[600px] h-[600px] bg-sky-500/[0.07] rounded-full blur-[120px]" />
-        <div className="absolute bottom-0 right-1/4 w-[500px] h-[500px] bg-blue-500/[0.05] rounded-full blur-[100px]" />
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[400px] bg-indigo-500/[0.03] rounded-full blur-[140px]" />
+        <div className="absolute top-0 left-1/4 w-[600px] h-[600px] bg-indigo-400/[0.06] rounded-full blur-[120px] animate-aurora" />
+        <div className="absolute bottom-0 right-1/4 w-[500px] h-[500px] bg-violet-400/[0.04] rounded-full blur-[100px] animate-float-slow" />
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[400px] bg-blue-300/[0.03] rounded-full blur-[140px]" />
       </div>
 
       <div
-        className="pointer-events-none fixed inset-0 opacity-[0.015]"
+        className="pointer-events-none fixed inset-0 opacity-[0.02]"
         style={{
-          backgroundImage: `linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)`,
+          backgroundImage: `linear-gradient(rgba(0,0,0,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(0,0,0,0.1) 1px, transparent 1px)`,
           backgroundSize: '60px 60px',
         }}
       />
@@ -85,11 +85,11 @@ export default function PreferencesPage() {
             <motion.div
               animate={{ rotate: [0, 10, -10, 0] }}
               transition={{ repeat: Infinity, duration: 6, ease: 'easeInOut' }}
-              className="p-2 rounded-xl bg-gradient-to-br from-sky-500/20 to-blue-500/20 border border-sky-500/15"
+              className="p-2 rounded-xl bg-gradient-to-br from-indigo-500/10 to-violet-500/10 border border-indigo-500/15"
             >
-              <Sparkles className="w-6 h-6 text-sky-400" />
+              <Sparkles className="w-6 h-6 text-primary" />
             </motion.div>
-            <h1 className="text-3xl md:text-4xl font-bold bg-gradient-to-r from-white via-white/90 to-white/60 bg-clip-text text-transparent">
+            <h1 className="text-3xl md:text-4xl font-bold text-foreground">
               Your Preferences
             </h1>
           </div>
@@ -104,8 +104,8 @@ export default function PreferencesPage() {
             animate={{ opacity: 1, y: 0 }}
             className={`mb-6 p-4 rounded-xl border text-sm flex items-center gap-3 ${
               message.type === 'success'
-                ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300'
-                : 'bg-red-500/10 border-red-500/20 text-red-300'
+                ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-600'
+                : 'bg-red-500/10 border-red-500/20 text-red-600'
             }`}
           >
             {message.type === 'success' ? (
@@ -119,7 +119,7 @@ export default function PreferencesPage() {
 
         {loading ? (
           <div className="flex items-center justify-center py-20">
-            <Loader2 className="w-8 h-8 text-sky-400 animate-spin" />
+            <Loader2 className="w-8 h-8 text-primary animate-spin" />
           </div>
         ) : (
           <motion.div
@@ -127,9 +127,9 @@ export default function PreferencesPage() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.1 }}
           >
-            <div className="rounded-xl border border-white/10 bg-black/40 backdrop-blur-xl overflow-hidden">
-              <div className="p-4 border-b border-white/5">
-                <label htmlFor="preferences" className="text-sm font-medium text-white/80">
+            <div className="rounded-xl border border-border bg-card backdrop-blur-xl overflow-hidden shadow-sm">
+              <div className="p-4 border-b border-border">
+                <label htmlFor="preferences" className="text-sm font-medium text-foreground/80">
                   Preferences file
                 </label>
                 <p className="text-xs text-muted-foreground mt-0.5">
@@ -140,18 +140,18 @@ export default function PreferencesPage() {
                 id="preferences"
                 value={content}
                 onChange={(e) => setContent(e.target.value)}
-                className="w-full min-h-[300px] p-4 bg-transparent text-sm text-white/90 font-mono outline-none resize-y border-0 focus:ring-0 placeholder:text-white/20"
+                className="w-full min-h-[300px] p-4 bg-transparent text-sm text-foreground/90 font-mono outline-none resize-y border-0 focus:ring-0 placeholder:text-muted-foreground/40"
                 placeholder="No preferences saved yet. The agent will create them on your first planning session."
                 spellCheck={false}
               />
-              <div className="p-4 border-t border-white/5 flex items-center justify-between">
+              <div className="p-4 border-t border-border flex items-center justify-between">
                 <span className="text-xs text-muted-foreground">
                   {content.length} characters
                 </span>
                 <button
                   onClick={handleSave}
                   disabled={saving}
-                  className="inline-flex items-center gap-2 px-5 py-2 text-sm font-medium rounded-lg bg-sky-500/20 text-sky-300 border border-sky-500/30 hover:bg-sky-500/30 hover:text-sky-200 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                  className="inline-flex items-center gap-2 px-5 py-2 text-sm font-medium rounded-lg bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
                 >
                   {saving ? (
                     <Loader2 className="w-4 h-4 animate-spin" />

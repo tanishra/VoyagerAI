@@ -11,8 +11,8 @@ interface FaqItem {
 
 const faqs: FaqItem[] = [
   {
-    q: 'How does Gemini generate my itinerary?',
-    a: 'Tell us your destination, budget, travel style, and group size. Gemini creates a complete day-by-day plan with activities, transport, accommodation, and costs — all optimized for your preferences.',
+    q: 'How does AI generate my itinerary?',
+    a: 'Tell us your destination, budget, travel style, and group size. AI creates a complete day-by-day plan with activities, transport, accommodation, and costs — all optimized for your preferences.',
   },
   {
     q: 'Is it really free?',
@@ -20,15 +20,15 @@ const faqs: FaqItem[] = [
   },
   {
     q: 'Can I customize the itinerary after it\'s generated?',
-    a: 'Absolutely. If a specific day doesn\'t match your expectations, you can use the "Replan This Day" feature to ask for changes. Gemini will regenerate that day while keeping the rest of your trip intact.',
+    a: 'Absolutely. If a specific day doesn\'t match your expectations, you can use the "Replan This Day" feature to ask for changes. AI will regenerate that day while keeping the rest of your trip intact.',
   },
   {
     q: 'How accurate is the budget tracking?',
-    a: 'Gemini estimates costs based on typical prices for each destination and activity type. The budget gauge shows you at a glance if you\'re within, over, or under your budget.',
+    a: 'AI estimates costs based on typical prices for each destination and activity type. The budget gauge shows you at a glance if you\'re within, over, or under your budget.',
   },
   {
     q: 'What destinations are supported?',
-    a: 'Any destination worldwide! From Tokyo to Timbuktu, Gemini has knowledge of destinations globally and can generate relevant itineraries.',
+    a: 'Any destination worldwide! From Tokyo to Timbuktu, AI has knowledge of destinations globally and can generate relevant itineraries.',
   },
   {
     q: 'How long does it take to generate a plan?',
@@ -40,7 +40,7 @@ const faqs: FaqItem[] = [
   },
   {
     q: 'What about dietary restrictions and accessibility?',
-    a: 'You can specify dietary preferences and accessibility constraints in the form. Gemini takes these into account when planning activities and meal suggestions.',
+    a: 'You can specify dietary preferences and accessibility constraints in the form. AI takes these into account when planning activities and meal suggestions.',
   },
 ];
 
@@ -53,18 +53,18 @@ function FaqAccordion({ item, index }: { item: FaqItem; index: number }) {
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true, margin: '-30px' }}
       transition={{ duration: 0.3, delay: index * 0.03 }}
-      className="border-b border-white/5 last:border-0"
+      className="border-b border-border last:border-0"
     >
       <button
         onClick={() => setOpen(!open)}
         className="flex items-center justify-between w-full text-left py-4 px-1 gap-3 cursor-pointer group"
         aria-expanded={open}
       >
-        <span className="text-sm text-white/80 group-hover:text-white transition-colors">
+        <span className="text-sm text-foreground/80 group-hover:text-foreground transition-colors">
           {item.q}
         </span>
         <ChevronDown
-          className={`w-4 h-4 text-white/30 shrink-0 transition-transform duration-300 ${
+          className={`w-4 h-4 text-muted-foreground/50 shrink-0 transition-transform duration-300 ${
             open ? 'rotate-180' : ''
           }`}
         />
@@ -78,7 +78,7 @@ function FaqAccordion({ item, index }: { item: FaqItem; index: number }) {
             transition={{ duration: 0.3 }}
             className="overflow-hidden"
           >
-            <p className="text-sm text-white/50 px-1 pb-4 leading-relaxed">
+            <p className="text-sm text-muted-foreground px-1 pb-4 leading-relaxed">
               {item.a}
             </p>
           </motion.div>
@@ -97,13 +97,13 @@ export default function FaqSection() {
   return (
     <div className="max-w-2xl mx-auto">
       <div className="relative mb-8">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/20" />
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/40" />
         <input
           type="text"
           placeholder="Search FAQs..."
           value={searchQuery}
           onChange={e => setSearchQuery(e.target.value)}
-          className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-white/5 border border-white/10 text-sm text-white placeholder:text-white/20 focus:outline-none focus:border-sky-500/50 transition-colors"
+          className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-muted border border-border text-sm text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:border-primary/50 transition-colors"
           aria-label="Search frequently asked questions"
         />
       </div>

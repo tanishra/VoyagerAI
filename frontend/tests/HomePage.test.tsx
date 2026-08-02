@@ -20,9 +20,9 @@ vi.mock('lucide-react', () => ({
 describe('Home landing page', () => {
   it('renders HeroSection content', () => {
     render(<Home />);
-    expect(screen.getByText('Gemini AI Travel Planning')).toBeInTheDocument();
+    expect(screen.getByText('AI-Powered Travel Planning')).toBeInTheDocument();
     expect(screen.getByText('Your Perfect Trip,')).toBeInTheDocument();
-    expect(screen.getByText('Planned by Gemini AI')).toBeInTheDocument();
+    expect(screen.getByText('Planned by AI')).toBeInTheDocument();
   });
 
   it('renders HowItWorks section', () => {
@@ -35,7 +35,7 @@ describe('Home landing page', () => {
   it('renders FeatureGrid section', () => {
     render(<Home />);
     expect(screen.getByText('Everything You Need')).toBeInTheDocument();
-    expect(screen.getByText('Gemini-Powered Planning')).toBeInTheDocument();
+    expect(screen.getByText('AI-Powered Planning')).toBeInTheDocument();
   });
 
   it('renders StatsSection section', () => {

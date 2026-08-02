@@ -49,5 +49,6 @@ vi.mock('framer-motion', () => {
     useAnimation: () => ({ start: () => {}, set: () => {} }),
     useMotionValue: (initial: number) => ({ get: () => initial, set: () => {} }),
     useTransform: () => ({ get: () => 0 }),
+    useInView: () => true,
   };
 });

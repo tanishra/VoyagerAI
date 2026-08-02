@@ -17,6 +17,6 @@ describe('Footer', () => {
 
   it('renders the tagline', () => {
     render(<Footer />);
-    expect(screen.getByText(/Built with Gemini/)).toBeInTheDocument();
+    expect(screen.getByText(/Built with AI/)).toBeInTheDocument();
   });
 });

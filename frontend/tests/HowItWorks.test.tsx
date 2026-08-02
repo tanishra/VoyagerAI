@@ -16,7 +16,7 @@ describe('HowItWorks', () => {
   it('renders all step titles', () => {
     render(<HowItWorks />);
     expect(screen.getByText('Tell Us Your Preferences')).toBeInTheDocument();
-    expect(screen.getByText('Gemini Generates Your Itinerary')).toBeInTheDocument();
+    expect(screen.getByText('AI Generates Your Itinerary')).toBeInTheDocument();
     expect(screen.getByText('Explore & Customize')).toBeInTheDocument();
   });
 

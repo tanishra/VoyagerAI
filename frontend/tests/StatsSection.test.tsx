@@ -7,7 +7,7 @@ describe('StatsSection', () => {
     render(<StatsSection />);
     expect(screen.getByText('Trips Planned')).toBeInTheDocument();
     expect(screen.getByText('Destinations')).toBeInTheDocument();
-    expect(screen.getByText('Gemini Accuracy')).toBeInTheDocument();
+    expect(screen.getByText('AI Accuracy')).toBeInTheDocument();
     expect(screen.getByText('Years Running')).toBeInTheDocument();
   });
 

@@ -10,7 +10,7 @@ describe('FeatureGrid', () => {
 
   it('renders all feature titles', () => {
     render(<FeatureGrid />);
-    expect(screen.getByText('Gemini-Powered Planning')).toBeInTheDocument();
+    expect(screen.getByText('AI-Powered Planning')).toBeInTheDocument();
     expect(screen.getByText('Budget Tracking')).toBeInTheDocument();
     expect(screen.getByText('Day-by-Day Plans')).toBeInTheDocument();
     expect(screen.getByText('Local Tips')).toBeInTheDocument();
@@ -20,7 +20,7 @@ describe('FeatureGrid', () => {
 
   it('renders feature descriptions', () => {
     render(<FeatureGrid />);
-    expect(screen.getByText(/Gemini generates/i)).toBeInTheDocument();
+    expect(screen.getByText(/AI generates/i)).toBeInTheDocument();
     expect(screen.getByText(/real-time budget gauge/i)).toBeInTheDocument();
   });
 });

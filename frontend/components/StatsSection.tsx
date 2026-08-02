@@ -7,7 +7,7 @@ import { Globe, MapPin, Sparkles, Award } from 'lucide-react';
 const stats = [
   { value: 5000, label: 'Trips Planned', icon: Globe, suffix: '+' },
   { value: 150, label: 'Destinations', icon: MapPin, suffix: '+' },
-  { value: 99, label: 'Gemini Accuracy', icon: Sparkles, suffix: '%' },
+  { value: 99, label: 'AI Accuracy', icon: Sparkles, suffix: '%' },
   { value: 3, label: 'Years Running', icon: Award, suffix: '+' },
 ];
 
@@ -47,7 +47,7 @@ function CountUp({ target, suffix }: { target: number; suffix: string }) {
 
 export default function StatsSection() {
   return (
-    <section className="py-16 md:py-20 border-t border-white/5">
+    <section className="py-16 md:py-20 border-t border-border">
       <div className="max-w-4xl mx-auto px-4">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
           {stats.map((stat, i) => (
@@ -60,10 +60,10 @@ export default function StatsSection() {
               transition={{ duration: 0.5, delay: i * 0.1 }}
               className="text-center group cursor-default"
             >
-              <div className="inline-flex p-2.5 rounded-xl bg-white/[0.03] border border-white/5 mb-3 group-hover:scale-110 group-hover:border-sky-500/30 transition-all duration-200">
-                <stat.icon className="w-5 h-5 text-sky-400" />
+              <div className="inline-flex p-2.5 rounded-xl bg-muted border border-border mb-3 group-hover:scale-110 group-hover:border-primary/30 transition-all duration-200">
+                <stat.icon className="w-5 h-5 text-primary" />
               </div>
-              <div className="text-2xl md:text-3xl font-bold text-white tabular-nums mb-1">
+              <div className="text-2xl md:text-3xl font-bold text-foreground tabular-nums mb-1">
                 <CountUp target={stat.value} suffix={stat.suffix} />
               </div>
               <p className="text-xs text-muted-foreground">{stat.label}</p>

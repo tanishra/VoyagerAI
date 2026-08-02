@@ -10,7 +10,7 @@ describe('FaqSection', () => {
 
   it('renders all FAQ questions', () => {
     render(<FaqSection />);
-    expect(screen.getByText('How does Gemini generate my itinerary?')).toBeInTheDocument();
+    expect(screen.getByText('How does AI generate my itinerary?')).toBeInTheDocument();
     expect(screen.getByText('Is it really free?')).toBeInTheDocument();
     expect(screen.getByText("Can I customize the itinerary after it's generated?")).toBeInTheDocument();
     expect(screen.getByText('How accurate is the budget tracking?')).toBeInTheDocument();

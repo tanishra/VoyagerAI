@@ -6,9 +6,9 @@ import { Globe, ChevronDown, ChevronUp, Wallet, Scale, Sparkles } from 'lucide-r
 import type { ComparisonData, PlanTier } from '@/lib/types';
 
 const TIER_CONFIG: Record<string, { icon: typeof Wallet; label: string; color: string; border: string; bg: string }> = {
-  budget: { icon: Wallet, label: 'Budget', color: 'text-emerald-400', border: 'border-emerald-500/20', bg: 'bg-emerald-500/5' },
-  balanced: { icon: Scale, label: 'Balanced', color: 'text-sky-400', border: 'border-sky-500/30', bg: 'bg-sky-500/5' },
-  premium: { icon: Sparkles, label: 'Premium', color: 'text-amber-400', border: 'border-amber-500/20', bg: 'bg-amber-500/5' },
+  budget: { icon: Wallet, label: 'Budget', color: 'text-emerald-600', border: 'border-emerald-500/20', bg: 'bg-emerald-500/5' },
+  balanced: { icon: Scale, label: 'Balanced', color: 'text-indigo-600', border: 'border-indigo-500/20', bg: 'bg-indigo-500/5' },
+  premium: { icon: Sparkles, label: 'Premium', color: 'text-amber-600', border: 'border-amber-500/20', bg: 'bg-amber-500/5' },
 };
 
 function PlanCard({ plan, onSelect }: { plan: PlanTier; onSelect: (tier: string) => void }) {
@@ -20,15 +20,15 @@ function PlanCard({ plan, onSelect }: { plan: PlanTier; onSelect: (tier: string)
   const breakdown = plan.cost_breakdown;
 
   return (
-    <div className={`rounded-xl border ${cfg.border} ${cfg.bg} overflow-hidden flex flex-col`}>
+    <div className={`rounded-xl border ${cfg.border} ${cfg.bg} overflow-hidden flex flex-col bg-card`}>
       {/* Tier header */}
-      <div className="px-4 py-3 border-b border-white/5">
+      <div className="px-4 py-3 border-b border-border">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Icon className={`w-4 h-4 ${cfg.color}`} />
             <span className={`font-semibold text-sm capitalize ${cfg.color}`}>{cfg.label}</span>
           </div>
-          <span className="text-lg font-bold text-white">
+          <span className="text-lg font-bold text-foreground">
             ${itinerary.estimated_total_cost_usd ?? breakdown?.total ?? 'N/A'}
           </span>
         </div>
@@ -36,23 +36,23 @@ function PlanCard({ plan, onSelect }: { plan: PlanTier; onSelect: (tier: string)
 
       {/* Cost breakdown */}
       {breakdown && (
-        <div className="px-4 py-2.5 border-b border-white/5">
+        <div className="px-4 py-2.5 border-b border-border">
           <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
             <div className="flex justify-between">
               <span className="text-muted-foreground">Stay</span>
-              <span className="text-white/80">${breakdown.accommodation}</span>
+              <span className="text-foreground/80">${breakdown.accommodation}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">Food</span>
-              <span className="text-white/80">${breakdown.food}</span>
+              <span className="text-foreground/80">${breakdown.food}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">Activities</span>
-              <span className="text-white/80">${breakdown.activities}</span>
+              <span className="text-foreground/80">${breakdown.activities}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">Transport</span>
-              <span className="text-white/80">${breakdown.transport}</span>
+              <span className="text-foreground/80">${breakdown.transport}</span>
             </div>
           </div>
         </div>
@@ -60,11 +60,11 @@ function PlanCard({ plan, onSelect }: { plan: PlanTier; onSelect: (tier: string)
 
       {/* Tradeoffs */}
       {plan.tradeoffs && plan.tradeoffs.length > 0 && (
-        <div className="px-4 py-2.5 border-b border-white/5">
+        <div className="px-4 py-2.5 border-b border-border">
           <ul className="space-y-1">
             {plan.tradeoffs.slice(0, 3).map((t, i) => (
-              <li key={i} className="text-xs text-white/60 flex items-start gap-1.5">
-                <span className="text-white/40 mt-0.5">•</span>
+              <li key={i} className="text-xs text-muted-foreground flex items-start gap-1.5">
+                <span className="text-muted-foreground/50 mt-0.5">•</span>
                 <span>{t}</span>
               </li>
             ))}
@@ -76,7 +76,7 @@ function PlanCard({ plan, onSelect }: { plan: PlanTier; onSelect: (tier: string)
       <div className="flex-1">
         <button
           onClick={() => setExpanded(!expanded)}
-          className="w-full px-4 py-2 flex items-center justify-between text-xs text-muted-foreground hover:text-white/80 transition-colors cursor-pointer"
+          className="w-full px-4 py-2 flex items-center justify-between text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
         >
           <span>{days.length} days · {itinerary.destination}</span>
           {expanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
@@ -91,8 +91,8 @@ function PlanCard({ plan, onSelect }: { plan: PlanTier; onSelect: (tier: string)
             >
               <div className="px-4 pb-3 space-y-1.5">
                 {days.map((day) => (
-                  <div key={day.day} className="p-2 rounded-lg bg-white/5">
-                    <p className="font-medium text-white/90 text-xs">
+                  <div key={day.day} className="p-2 rounded-lg bg-muted border border-border">
+                    <p className="font-medium text-foreground/90 text-xs">
                       Day {day.day} — {day.theme ?? 'Day ' + day.day}
                     </p>
                     <p className="text-muted-foreground text-[10px] mt-0.5">
@@ -107,10 +107,10 @@ function PlanCard({ plan, onSelect }: { plan: PlanTier; onSelect: (tier: string)
       </div>
 
       {/* Select button */}
-      <div className="p-3 border-t border-white/5">
+      <div className="p-3 border-t border-border">
         <button
           onClick={() => onSelect(plan.tier)}
-          className="w-full py-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-medium text-white/80 hover:text-white transition-all cursor-pointer"
+          className="w-full py-2 rounded-lg bg-muted hover:bg-accent border border-border text-xs font-medium text-foreground/80 hover:text-foreground transition-all cursor-pointer"
         >
           Select {cfg.label}
         </button>
@@ -130,18 +130,18 @@ export default function ComparisonView({
   const tiers = ['budget', 'balanced', 'premium'] as const;
 
   return (
-    <div className="mt-3 rounded-xl border border-white/10 bg-black/20 overflow-hidden">
+    <div className="mt-3 rounded-xl border border-border bg-card overflow-hidden shadow-sm">
       {/* Header */}
-      <div className="px-4 py-3 border-b border-white/5">
-        <h3 className="font-semibold text-white flex items-center gap-2 text-sm">
-          <Globe className="w-4 h-4 text-sky-400" />
+      <div className="px-4 py-3 border-b border-border">
+        <h3 className="font-semibold text-foreground flex items-center gap-2 text-sm">
+          <Globe className="w-4 h-4 text-primary" />
           Compare Plans
         </h3>
       </div>
 
       {/* Comparison matrix strip */}
       {matrix && (
-        <div className="px-4 py-3 border-b border-white/5 overflow-x-auto">
+        <div className="px-4 py-3 border-b border-border overflow-x-auto">
           <table className="w-full text-xs">
             <thead>
               <tr className="text-muted-foreground">
@@ -158,10 +158,10 @@ export default function ComparisonView({
                 { label: 'Food', key: 'food_style' as const },
                 { label: 'Transport', key: 'transport_mode' as const },
               ]).map((row) => (
-                <tr key={row.key} className="border-t border-white/5">
+                <tr key={row.key} className="border-t border-border">
                   <td className="py-1.5 pr-3 text-muted-foreground">{row.label}</td>
                   {tiers.map((t) => (
-                    <td key={t} className="py-1.5 px-2 text-white/80">
+                    <td key={t} className="py-1.5 px-2 text-foreground/80">
                       {row.prefix}{matrix[row.key]?.[t] ?? '—'}
                     </td>
                   ))}
