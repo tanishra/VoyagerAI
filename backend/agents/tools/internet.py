@@ -1,9 +1,8 @@
 from __future__ import annotations
 
+from config.settings import settings
 from langchain_core.tools import tool
 from tavily import TavilyClient
-
-from config.settings import settings
 
 _tavily_client: TavilyClient | None = None
 

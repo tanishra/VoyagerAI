@@ -1,5 +1,5 @@
 import { getUserId } from '@/lib/user-id';
-import type { ChatStreamCallbacks, Itinerary } from './types';
+import type { ChatStreamCallbacks, ComparisonData, Itinerary } from './types';
 
 function parseSSELine(line: string): { event?: string; data?: string } | null {
   if (line.startsWith('event: ')) return { event: line.slice(7).trim() };
@@ -11,7 +11,7 @@ export async function streamChat(
   body: { message: string; thread_id?: string },
   callbacks: ChatStreamCallbacks,
 ): Promise<string | undefined> {
-  const { onToken, onItinerary, onStatus, onThreadId, onDone, onError, onAbort, signal } = callbacks;
+  const { onToken, onItinerary, onComparison, onStatus, onThreadId, onDone, onError, onAbort, signal } = callbacks;
   let resolvedThreadId: string | undefined;
 
   try {
@@ -58,6 +58,7 @@ export async function streamChat(
             {
               onToken,
               onItinerary,
+              onComparison,
               onStatus,
               onThreadId: (tid) => {
                 resolvedThreadId = tid;
@@ -125,13 +126,14 @@ function handleChatEvent(
   callbacks: {
     onToken?: (text: string) => void;
     onItinerary?: (itinerary: Itinerary) => void;
+    onComparison?: (data: ComparisonData) => void;
     onStatus?: (status: { tool: string; status: string }) => void;
     onThreadId?: (threadId: string) => void;
     onError?: (error: string) => void;
     onDone?: () => void;
   },
 ) {
-  const { onToken, onItinerary, onStatus, onThreadId, onError, onDone } = callbacks;
+  const { onToken, onItinerary, onComparison, onStatus, onThreadId, onError, onDone } = callbacks;
 
   switch (event) {
     case 'token': {
@@ -142,6 +144,11 @@ function handleChatEvent(
     case 'itinerary': {
       const data = parsed.data as Itinerary;
       onItinerary?.(data);
+      break;
+    }
+    case 'comparison': {
+      const data = parsed.data as ComparisonData;
+      onComparison?.(data);
       break;
     }
     case 'status': {

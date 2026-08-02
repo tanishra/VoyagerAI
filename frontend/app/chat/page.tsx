@@ -5,7 +5,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Send, Square, MessageSquare, RotateCcw, Globe, Search, ShieldAlert, ListChecks, Loader2 } from 'lucide-react';
 import { streamChat } from '@/lib/chat-api';
 import ErrorBoundary from '@/components/ErrorBoundary';
-import type { ChatMessage, Itinerary } from '@/lib/types';
+import ComparisonView from './ComparisonView';
+import type { ChatMessage, ComparisonData, Itinerary } from '@/lib/types';
 
 const THREAD_STORAGE_KEY = 'voyagerai_chat_thread_id';
 
@@ -16,12 +17,14 @@ const TOOL_LABELS: Record<string, string> = {
   validator: 'Validating',
   enricher: 'Adding local tips',
   cost_optimizer: 'Optimizing budget',
+  multi_plan_generator: 'Generating plans',
 };
 
 const TOOL_ICONS: Record<string, React.ReactNode> = {
   researcher: <Search className="w-3 h-3" />,
   risk_detector: <ShieldAlert className="w-3 h-3" />,
   constraint_analyzer: <ListChecks className="w-3 h-3" />,
+  multi_plan_generator: <Globe className="w-3 h-3" />,
 };
 
 function ItineraryCard({ itinerary }: { itinerary: Itinerary }) {
@@ -82,6 +85,7 @@ export default function ChatPage() {
   const [error, setError] = useState<string | null>(null);
   const [streamingText, setStreamingText] = useState('');
   const [streamingItinerary, setStreamingItinerary] = useState<Itinerary | null>(null);
+  const [streamingComparison, setStreamingComparison] = useState<ComparisonData | null>(null);
   const [activeWorkers, setActiveWorkers] = useState<string[]>([]);
   const [threadId, setThreadId] = useState<string | null>(() => {
     if (typeof window !== 'undefined') {
@@ -126,6 +130,7 @@ export default function ChatPage() {
     setError(null);
     setStreamingText('');
     setStreamingItinerary(null);
+    setStreamingComparison(null);
     setActiveWorkers([]);
 
     const userMessage: ChatMessage = {
@@ -145,6 +150,7 @@ export default function ChatPage() {
 
     let accumulatedText = '';
     let accumulatedItinerary: Itinerary | null = null;
+    let accumulatedComparison: ComparisonData | null = null;
     let streamFailed = false;
     let errorMessage = '';
     let aborted = false;
@@ -161,6 +167,10 @@ export default function ChatPage() {
           onItinerary: (itinerary) => {
             accumulatedItinerary = itinerary;
             setStreamingItinerary(itinerary);
+          },
+          onComparison: (data) => {
+            accumulatedComparison = data;
+            setStreamingComparison(data);
           },
           onThreadId: (tid) => {
             if (sessionResetRef.current) return;
@@ -209,6 +219,7 @@ export default function ChatPage() {
               ...updated[idx],
               content: accumulatedText,
               itinerary: accumulatedItinerary ?? undefined,
+              comparison: accumulatedComparison ?? undefined,
             };
           }
         }
@@ -217,6 +228,7 @@ export default function ChatPage() {
 
       setStreamingText('');
       setStreamingItinerary(null);
+      setStreamingComparison(null);
 
       if (newThreadId && !sessionResetRef.current) {
         setThreadId(newThreadId);
@@ -233,6 +245,11 @@ export default function ChatPage() {
       sendingRef.current = false;
     }
   }, [input, loading, threadId]);
+
+  const handleSelectPlan = useCallback((tier: string) => {
+    setInput(`I'll go with the ${tier} plan`);
+    inputRef.current?.focus();
+  }, []);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
@@ -315,6 +332,7 @@ export default function ChatPage() {
                 }`}
               >
                 <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+                {msg.comparison && <ComparisonView data={msg.comparison} onSelect={handleSelectPlan} />}
                 {msg.itinerary && <ItineraryCard itinerary={msg.itinerary} />}
               </div>
             </motion.div>
@@ -357,6 +375,7 @@ export default function ChatPage() {
                     <span className="text-xs text-muted-foreground">Thinking...</span>
                   </div>
                 )}
+                {streamingComparison && <ComparisonView data={streamingComparison} onSelect={handleSelectPlan} />}
                 {streamingItinerary && <ItineraryCard itinerary={streamingItinerary} />}
               </div>
             </motion.div>

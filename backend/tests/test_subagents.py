@@ -4,15 +4,16 @@ from __future__ import annotations
 
 from agents.prompts import (
     CHAT_AGENT_SYSTEM_PROMPT,
+    CONSTRAINT_ANALYZER_SYSTEM_PROMPT,
+    MULTI_PLAN_GENERATOR_SYSTEM_PROMPT,
     RESEARCHER_SYSTEM_PROMPT,
+    RISK_DETECTOR_SYSTEM_PROMPT,
 )
 from agents.subagents import get_subagents
-from agents.subagents.constraint_analyzer import CONSTRAINT_ANALYZER_SYSTEM_PROMPT
-from agents.subagents.risk_detector import RISK_DETECTOR_SYSTEM_PROMPT
 
 
 class TestSubagentRegistry:
-    def test_all_six_subagents_registered(self):
+    def test_all_seven_subagents_registered(self):
         names = [s["name"] for s in get_subagents()]
         assert names == [
             "researcher",
@@ -21,6 +22,7 @@ class TestSubagentRegistry:
             "cost_optimizer",
             "risk_detector",
             "constraint_analyzer",
+            "multi_plan_generator",
         ]
 
     def test_risk_detector_has_internet_tools(self):
@@ -41,6 +43,7 @@ class TestSubagentRegistry:
         by_name = {s["name"]: s for s in get_subagents()}
         assert "risks" in by_name["risk_detector"]["description"].lower()
         assert "constraints" in by_name["constraint_analyzer"]["description"].lower()
+        assert "itinerary" in by_name["multi_plan_generator"]["description"].lower() or "plan" in by_name["multi_plan_generator"]["description"].lower()
 
 
 class TestParallelDispatchPrompts:
@@ -91,3 +94,37 @@ class TestConstraintAnalyzerPrompt:
     def test_distinguishes_active_and_inferred(self):
         assert '"active"' in CONSTRAINT_ANALYZER_SYSTEM_PROMPT
         assert '"inferred"' in CONSTRAINT_ANALYZER_SYSTEM_PROMPT
+
+
+class TestMultiPlanGeneratorPrompt:
+    def test_defines_three_tiers(self):
+        for tier in ("Budget", "Balanced", "Premium"):
+            assert tier in MULTI_PLAN_GENERATOR_SYSTEM_PROMPT
+
+    def test_has_comparison_matrix_output(self):
+        assert "comparison_matrix" in MULTI_PLAN_GENERATOR_SYSTEM_PROMPT
+
+    def test_has_cost_breakdown(self):
+        assert "cost_breakdown" in MULTI_PLAN_GENERATOR_SYSTEM_PROMPT
+
+    def test_has_tradeoffs(self):
+        assert "tradeoffs" in MULTI_PLAN_GENERATOR_SYSTEM_PROMPT
+
+    def test_budget_tiers_target_percentages(self):
+        assert "60%" in MULTI_PLAN_GENERATOR_SYSTEM_PROMPT
+        assert "100%" in MULTI_PLAN_GENERATOR_SYSTEM_PROMPT
+        assert "150%" in MULTI_PLAN_GENERATOR_SYSTEM_PROMPT
+
+
+class TestChatPromptComparisonMode:
+    def test_chat_prompt_has_comparison_format(self):
+        assert "<comparison_format>" in CHAT_AGENT_SYSTEM_PROMPT
+
+    def test_chat_prompt_has_comparison_tags(self):
+        assert "<comparison>" in CHAT_AGENT_SYSTEM_PROMPT
+
+    def test_chat_prompt_mentions_multi_plan_generator(self):
+        assert "multi_plan_generator" in CHAT_AGENT_SYSTEM_PROMPT
+
+    def test_chat_prompt_has_itinerary_format(self):
+        assert "<itinerary_format>" in CHAT_AGENT_SYSTEM_PROMPT

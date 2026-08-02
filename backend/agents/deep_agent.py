@@ -6,6 +6,7 @@ import os
 import re
 
 import aiosqlite
+from config.settings import settings
 from deepagents import FilesystemPermission, create_deep_agent
 from deepagents.backends import CompositeBackend, FilesystemBackend, StoreBackend
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -18,7 +19,6 @@ from pydantic import BaseModel
 
 from agents.prompts import CHAT_AGENT_SYSTEM_PROMPT
 from agents.subagents import get_subagents
-from config.settings import settings
 
 logger = logging.getLogger("travel_agent.deep_agent")
 
@@ -207,6 +207,7 @@ async def create_chat_agent(checkpointer=None, store=None, user_id=None):
 
 
 _ITINERARY_TAG_RE = re.compile(r"<itinerary>\s*(.*?)\s*</itinerary>", re.DOTALL)
+_COMPARISON_TAG_RE = re.compile(r"<comparison>\s*(.*?)\s*</comparison>", re.DOTALL)
 
 
 def _find_largest_json_object(text: str) -> dict | None:
@@ -248,6 +249,42 @@ def _extract_itinerary_from_text(text: str) -> dict | None:
         except (json.JSONDecodeError, ValueError):
             logger.warning("Found <itinerary> tags but content is not valid JSON")
     return _find_largest_json_object(text)
+
+
+def _find_largest_comparison_object(text: str) -> dict | None:
+    """Best-effort fallback: locate the largest balanced JSON object that looks like a comparison (has 'plans' key)."""
+    spans: list[str] = []
+    for m in re.finditer(r"\{", text):
+        depth = 0
+        for i in range(m.start(), len(text)):
+            ch = text[i]
+            if ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    spans.append(text[m.start():i + 1])
+                    break
+    for span in reversed(spans):
+        try:
+            parsed = json.loads(span)
+        except (json.JSONDecodeError, ValueError):
+            continue
+        if isinstance(parsed, dict) and "plans" in parsed and isinstance(parsed["plans"], list):
+            return parsed
+    return None
+
+
+def _extract_comparison_from_text(text: str) -> dict | None:
+    if not text:
+        return None
+    match = _COMPARISON_TAG_RE.search(text)
+    if match:
+        try:
+            return json.loads(match.group(1))
+        except (json.JSONDecodeError, ValueError):
+            logger.warning("Found <comparison> tags but content is not valid JSON")
+    return _find_largest_comparison_object(text)
 
 
 def _extract_chat_itinerary(state: dict) -> dict | None:
@@ -384,38 +421,48 @@ async def stream_chat_agent(
         yield event
 
     stream_text = stream.last_text()
-    itinerary = _extract_itinerary_from_text(stream_text) if stream_text else None
-    if itinerary is None:
-        state = await agent.aget_state(config)
-        itinerary = _extract_chat_itinerary(state.values)
 
-    if itinerary is None:
-        retry = _ModelStream(agent, config)
-        async for event in retry.events(
-            {
-                "messages": [
-                    {
-                        "role": "user",
-                        "content": _extraction_failure_hint(state.values, stream_text),
-                    }
-                ]
-            }
-        ):
-            yield event
-        retry_text = retry.last_text()
-        itinerary = _extract_itinerary_from_text(retry_text) if retry_text else None
+    # Check for comparison (3-plan) output first
+    comparison = _extract_comparison_from_text(stream_text) if stream_text else None
+
+    if comparison is None:
+        # Fall back to single itinerary (refinement turns)
+        itinerary = _extract_itinerary_from_text(stream_text) if stream_text else None
         if itinerary is None:
             state = await agent.aget_state(config)
             itinerary = _extract_chat_itinerary(state.values)
-        if itinerary is None:
-            stream_text = retry_text or stream_text
 
-    if itinerary is None:
-        draft = stream_text or _last_assistant_text(state.values)
-        itinerary = await _format_itinerary(draft, message)
+        if itinerary is None:
+            retry = _ModelStream(agent, config)
+            async for event in retry.events(
+                {
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": _extraction_failure_hint(state.values, stream_text),
+                        }
+                    ]
+                }
+            ):
+                yield event
+            retry_text = retry.last_text()
+            itinerary = _extract_itinerary_from_text(retry_text) if retry_text else None
+            if itinerary is None:
+                state = await agent.aget_state(config)
+                itinerary = _extract_chat_itinerary(state.values)
+            if itinerary is None:
+                stream_text = retry_text or stream_text
+
+        if itinerary is None:
+            draft = stream_text or _last_assistant_text(state.values)
+            itinerary = await _format_itinerary(draft, message)
+    else:
+        itinerary = None
 
     try:
-        if itinerary is not None:
+        if comparison is not None:
+            yield {"event": "comparison", "data": comparison}
+        elif itinerary is not None:
             yield {"event": "itinerary", "data": itinerary}
         yield {"event": "done", "data": None}
     except (ValueError, json.JSONDecodeError) as exc:

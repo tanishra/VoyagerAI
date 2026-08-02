@@ -9,10 +9,9 @@ from __future__ import annotations
 
 import logging
 
+from config import REDIS_URL
 from redis.asyncio import Redis
 from redis.exceptions import RedisError
-
-from config import REDIS_URL
 
 logger = logging.getLogger("travel_agent.cache")
 

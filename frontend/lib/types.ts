@@ -29,16 +29,46 @@ export interface Itinerary {
   packing_essentials: string[];
 }
 
+export interface CostBreakdown {
+  accommodation: number;
+  food: number;
+  activities: number;
+  transport: number;
+  total: number;
+}
+
+export interface PlanTier {
+  tier: 'budget' | 'balanced' | 'premium';
+  itinerary: Itinerary;
+  cost_breakdown: CostBreakdown;
+  tradeoffs: string[];
+}
+
+export interface ComparisonMatrix {
+  total_cost: Record<string, number>;
+  accommodation_type: Record<string, string>;
+  food_style: Record<string, string>;
+  activity_count: Record<string, number>;
+  transport_mode: Record<string, string>;
+}
+
+export interface ComparisonData {
+  plans: PlanTier[];
+  comparison_matrix: ComparisonMatrix;
+}
+
 export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
   content: string;
   itinerary?: Itinerary;
+  comparison?: ComparisonData;
 }
 
 export interface ChatStreamCallbacks {
   onToken?: (text: string) => void;
   onItinerary?: (itinerary: Itinerary) => void;
+  onComparison?: (data: ComparisonData) => void;
   onStatus?: (status: { tool: string; status: string }) => void;
   onThreadId?: (threadId: string) => void;
   onDone?: () => void;

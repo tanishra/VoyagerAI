@@ -5,15 +5,6 @@ import hashlib
 import json
 import uuid
 
-from fastapi import Depends, FastAPI, Request
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import PlainTextResponse
-from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.errors import RateLimitExceeded
-from slowapi.util import get_remote_address
-from sse_starlette.sse import EventSourceResponse
-from starlette.middleware.base import BaseHTTPMiddleware
-
 from agents import (
     get_redis_file_store,
     stream_chat_agent,
@@ -21,8 +12,16 @@ from agents import (
 from auth import verify_api_key
 from cache import cache_client
 from config import REQUEST_TIMEOUT_SECONDS, logger, settings
+from fastapi import Depends, FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import PlainTextResponse
 from models import ChatRequest
 from sanitize import sanitize_prompt_input
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
+from sse_starlette.sse import EventSourceResponse
+from starlette.middleware.base import BaseHTTPMiddleware
 
 ALLOWED_ORIGINS: list[str] = [
     orig.strip()
@@ -100,6 +99,8 @@ def _parse_chat_event(event: dict, active_tasks: dict[str, str]) -> list[dict]:
 
     if event_type == "itinerary" and event_data is not None:
         return [_sse("itinerary", event_data)]
+    if event_type == "comparison" and event_data is not None:
+        return [_sse("comparison", event_data)]
     if event_type == "done":
         return [_sse("done", None)]
     if event_type == "error":
