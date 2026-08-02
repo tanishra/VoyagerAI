@@ -9,7 +9,6 @@ import aiosqlite
 from config.settings import settings
 from deepagents import FilesystemPermission, create_deep_agent
 from deepagents.backends import CompositeBackend, FilesystemBackend, StoreBackend
-from langchain_google_genai import ChatGoogleGenerativeAI
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.checkpoint.redis.aio import AsyncRedisSaver
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
@@ -17,6 +16,7 @@ from langgraph.store.memory import InMemoryStore
 from langgraph.store.redis import RedisConnectionFactory, RedisStore
 from pydantic import BaseModel
 
+from agents.llm import get_formatter_model, get_orchestrator_model
 from agents.prompts import CHAT_AGENT_SYSTEM_PROMPT
 from agents.subagents import get_subagents
 
@@ -165,11 +165,7 @@ async def create_chat_agent(checkpointer=None, store=None, user_id=None):
         else:
             store = InMemoryStore()
 
-    model = ChatGoogleGenerativeAI(
-        model="gemini-2.5-pro",
-        google_api_key=settings.GEMINI_API_KEY,
-        temperature=0.2,
-    )
+    model = get_orchestrator_model()
 
     subagents = get_subagents()
 
@@ -372,12 +368,7 @@ async def _format_itinerary(draft_text: str, user_message: str) -> dict | None:
     global _formatter_model
     try:
         if _formatter_model is None:
-            model = ChatGoogleGenerativeAI(
-                model="gemini-2.5-pro",
-                google_api_key=settings.GEMINI_API_KEY,
-                temperature=0.1,
-            )
-            _formatter_model = model.with_structured_output(_ItineraryDraft)
+            _formatter_model = get_formatter_model(_ItineraryDraft)
         result = await _formatter_model.ainvoke(
             [
                 (

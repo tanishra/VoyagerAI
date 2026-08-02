@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 
-from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 logging.basicConfig(
@@ -20,10 +19,19 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    GEMINI_API_KEY: str = Field(...)
+    GEMINI_API_KEY: str | None = None
     GOOGLE_GENAI_USE_VERTEXAI: bool = False
 
     TAVILY_API_KEY: str | None = None
+
+    # LLM provider config — LiteLLM model strings
+    # Format: "provider/model-name" (e.g. "gemini/gemini-2.5-pro", "openai/gpt-4o")
+    LLM_ORCHESTRATOR_MODEL: str = "gemini/gemini-2.5-pro"
+    LLM_ORCHESTRATOR_FALLBACK: str | None = None
+    LLM_SUBAGENT_MODEL: str = "gemini/gemini-3.5-flash"
+    LLM_SUBAGENT_FALLBACK: str | None = None
+    LLM_TEMPERATURE_ORCHESTRATOR: float = 0.2
+    LLM_TEMPERATURE_SUBAGENT: float = 0.3
 
     LANGSMITH_API_KEY: str | None = None
     LANGSMITH_PROJECT: str = "voyagerai"

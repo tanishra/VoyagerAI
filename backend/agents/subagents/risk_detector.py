@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 from deepagents import SubAgent
-from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_core.language_models import BaseChatModel
 
 from agents.prompts import RISK_DETECTOR_SYSTEM_PROMPT
 from agents.tools import get_internet_tools
 
 
-def build_risk_detector(model: ChatGoogleGenerativeAI, tools: list | None = None) -> SubAgent:
+def build_risk_detector(model: BaseChatModel, tools: list | None = None) -> SubAgent:
     return SubAgent(
         name="risk_detector",
         description=(

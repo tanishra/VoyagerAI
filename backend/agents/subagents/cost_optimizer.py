@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 from deepagents import SubAgent
-from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_core.language_models import BaseChatModel
 
 from agents.prompts import COST_OPTIMIZER_SYSTEM_PROMPT
 from agents.tools import get_internet_tools
 
 
-def build_cost_optimizer(model: ChatGoogleGenerativeAI, tools: list | None = None) -> SubAgent:
+def build_cost_optimizer(model: BaseChatModel, tools: list | None = None) -> SubAgent:
     return SubAgent(
         name="cost_optimizer",
         description=(

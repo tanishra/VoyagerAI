@@ -34,10 +34,12 @@ class TestSubagentRegistry:
         by_name = {s["name"]: s for s in get_subagents()}
         assert by_name["constraint_analyzer"]["tools"] == []
 
-    def test_subagents_use_flash_model(self):
+    def test_subagents_use_subagent_model(self):
+        from config.settings import settings
+
         by_name = {s["name"]: s for s in get_subagents()}
         for name in ("risk_detector", "constraint_analyzer"):
-            assert getattr(by_name[name]["model"], "model", None) == "gemini-2.5-flash"
+            assert getattr(by_name[name]["model"], "model", None) == settings.LLM_SUBAGENT_MODEL
 
     def test_subagent_descriptions_mention_purpose(self):
         by_name = {s["name"]: s for s in get_subagents()}

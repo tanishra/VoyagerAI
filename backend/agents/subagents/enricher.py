@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 from deepagents import SubAgent
-from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_core.language_models import BaseChatModel
 
 from agents.prompts import ENRICHER_SYSTEM_PROMPT
 from agents.tools import get_internet_tools
 
 
-def build_enricher(model: ChatGoogleGenerativeAI, tools: list | None = None) -> SubAgent:
+def build_enricher(model: BaseChatModel, tools: list | None = None) -> SubAgent:
     return SubAgent(
         name="enricher",
         description=(

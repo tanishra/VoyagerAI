@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 from deepagents import SubAgent
-from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_core.language_models import BaseChatModel
 
 from agents.prompts import CONSTRAINT_ANALYZER_SYSTEM_PROMPT
 
 
-def build_constraint_analyzer(model: ChatGoogleGenerativeAI, tools: list | None = None) -> SubAgent:
+def build_constraint_analyzer(model: BaseChatModel, tools: list | None = None) -> SubAgent:
     return SubAgent(
         name="constraint_analyzer",
         description=(

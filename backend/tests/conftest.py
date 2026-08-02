@@ -8,8 +8,12 @@ from fastapi.testclient import TestClient
 
 @pytest.fixture
 def client():
-    if not os.getenv("GEMINI_API_KEY"):
-        pytest.skip("GEMINI_API_KEY not set — required for app startup")
+    has_provider_key = any(
+        os.getenv(key)
+        for key in ("GEMINI_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY")
+    )
+    if not has_provider_key:
+        pytest.skip("No LLM provider API key set — required for app startup")
     from main import app
     with TestClient(app) as c:
         yield c

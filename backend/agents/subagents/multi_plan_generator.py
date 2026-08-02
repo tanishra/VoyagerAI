@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 from deepagents import SubAgent
-from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_core.language_models import BaseChatModel
 
 from agents.prompts import MULTI_PLAN_GENERATOR_SYSTEM_PROMPT
 
 
 def build_multi_plan_generator(
-    model: ChatGoogleGenerativeAI, tools: list | None = None
+    model: BaseChatModel, tools: list | None = None
 ) -> SubAgent:
     return SubAgent(
         name="multi_plan_generator",

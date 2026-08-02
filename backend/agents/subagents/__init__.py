@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-from config.settings import settings
-from langchain_google_genai import ChatGoogleGenerativeAI
-
+from agents.llm import get_subagent_model
 from agents.subagents.constraint_analyzer import build_constraint_analyzer
 from agents.subagents.cost_optimizer import build_cost_optimizer
 from agents.subagents.enricher import build_enricher
@@ -13,16 +11,8 @@ from agents.subagents.validator import build_validator
 from agents.tools import get_internet_tools
 
 
-def _get_model() -> ChatGoogleGenerativeAI:
-    return ChatGoogleGenerativeAI(
-        model="gemini-3.5-flash",
-        google_api_key=settings.GEMINI_API_KEY,
-        temperature=0.3,
-    )
-
-
 def get_subagents() -> list:
-    model = _get_model()
+    model = get_subagent_model()
     internet_tools = get_internet_tools()
 
     return [
