@@ -18,6 +18,7 @@ const TOOL_LABELS: Record<string, string> = {
   enricher: 'Adding local tips',
   cost_optimizer: 'Optimizing budget',
   multi_plan_generator: 'Generating plans',
+  quality_scorer: 'Scoring quality',
 };
 
 const TOOL_ICONS: Record<string, React.ReactNode> = {
@@ -25,6 +26,7 @@ const TOOL_ICONS: Record<string, React.ReactNode> = {
   risk_detector: <ShieldAlert className="w-3 h-3" />,
   constraint_analyzer: <ListChecks className="w-3 h-3" />,
   multi_plan_generator: <Globe className="w-3 h-3" />,
+  quality_scorer: <ListChecks className="w-3 h-3" />,
 };
 
 function ItineraryCard({ itinerary }: { itinerary: Itinerary }) {
