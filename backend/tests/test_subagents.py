@@ -6,6 +6,7 @@ from agents.prompts import (
     CHAT_AGENT_SYSTEM_PROMPT,
     CONSTRAINT_ANALYZER_SYSTEM_PROMPT,
     MULTI_PLAN_GENERATOR_SYSTEM_PROMPT,
+    QUALITY_SCORER_SYSTEM_PROMPT,
     RESEARCHER_SYSTEM_PROMPT,
     RISK_DETECTOR_SYSTEM_PROMPT,
 )
@@ -13,7 +14,7 @@ from agents.subagents import get_subagents
 
 
 class TestSubagentRegistry:
-    def test_all_seven_subagents_registered(self):
+    def test_all_eight_subagents_registered(self):
         names = [s["name"] for s in get_subagents()]
         assert names == [
             "researcher",
@@ -23,6 +24,7 @@ class TestSubagentRegistry:
             "risk_detector",
             "constraint_analyzer",
             "multi_plan_generator",
+            "quality_scorer",
         ]
 
     def test_risk_detector_has_internet_tools(self):
@@ -46,6 +48,7 @@ class TestSubagentRegistry:
         assert "risks" in by_name["risk_detector"]["description"].lower()
         assert "constraints" in by_name["constraint_analyzer"]["description"].lower()
         assert "itinerary" in by_name["multi_plan_generator"]["description"].lower() or "plan" in by_name["multi_plan_generator"]["description"].lower()
+        assert "score" in by_name["quality_scorer"]["description"].lower() or "quality" in by_name["quality_scorer"]["description"].lower()
 
 
 class TestParallelDispatchPrompts:
@@ -130,3 +133,41 @@ class TestChatPromptComparisonMode:
 
     def test_chat_prompt_has_itinerary_format(self):
         assert "<itinerary_format>" in CHAT_AGENT_SYSTEM_PROMPT
+
+
+class TestQualityScorerPrompt:
+    def test_covers_all_ten_criteria(self):
+        for check in ("Budget accuracy", "Constraint satisfaction", "Route efficiency",
+                      "Activity density", "Seasonal appropriateness", "Safety",
+                      "Diversity", "Local authenticity", "Internal consistency", "Completeness"):
+            assert check in QUALITY_SCORER_SYSTEM_PROMPT
+
+    def test_has_structured_output_format(self):
+        assert "<output_format>" in QUALITY_SCORER_SYSTEM_PROMPT
+        assert '"score"' in QUALITY_SCORER_SYSTEM_PROMPT
+        assert '"issues"' in QUALITY_SCORER_SYSTEM_PROMPT
+        assert '"improved_plan"' in QUALITY_SCORER_SYSTEM_PROMPT
+
+    def test_has_severity_levels(self):
+        assert '"error"' in QUALITY_SCORER_SYSTEM_PROMPT
+        assert '"warning"' in QUALITY_SCORER_SYSTEM_PROMPT
+
+    def test_has_fix_guidance(self):
+        assert '"fix"' in QUALITY_SCORER_SYSTEM_PROMPT
+
+    def test_score_threshold_rule(self):
+        assert "80" in QUALITY_SCORER_SYSTEM_PROMPT
+
+
+class TestChatPromptSelfCritique:
+    def test_chat_prompt_has_self_critique_block(self):
+        assert "<self_critique>" in CHAT_AGENT_SYSTEM_PROMPT
+
+    def test_chat_prompt_mentions_quality_scorer(self):
+        assert "quality_scorer" in CHAT_AGENT_SYSTEM_PROMPT
+
+    def test_self_critique_mentions_parallel_scoring(self):
+        assert "ONE message" in CHAT_AGENT_SYSTEM_PROMPT.split("<self_critique>")[1].split("</self_critique>")[0]
+
+    def test_self_critique_mentions_max_iterations(self):
+        assert "2 fix iterations" in CHAT_AGENT_SYSTEM_PROMPT
