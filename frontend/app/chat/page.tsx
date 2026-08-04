@@ -2,10 +2,12 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Send, Square, MessageSquare, RotateCcw, Globe, Search, ShieldAlert, ListChecks, Loader2 } from 'lucide-react';
+import { Send, Square, MessageSquare, RotateCcw, Globe, Search, ShieldAlert, ListChecks, Loader2, PanelLeft } from 'lucide-react';
 import { streamChat } from '@/lib/chat-api';
+import { listThreads, getThreadHistory, deleteThread, type ThreadMeta } from '@/lib/threads-api';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import ComparisonView from './ComparisonView';
+import ThreadSidebar from './ThreadSidebar';
 import type { ChatMessage, ComparisonData, Itinerary } from '@/lib/types';
 
 const THREAD_STORAGE_KEY = 'voyagerai_chat_thread_id';
@@ -95,12 +97,19 @@ export default function ChatPage() {
     }
     return null;
   });
+  const [showSidebar, setShowSidebar] = useState(true);
+  const [threads, setThreads] = useState<ThreadMeta[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
 
   const abortRef = useRef<AbortController | null>(null);
   const sendingRef = useRef(false);
   const sessionResetRef = useRef(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    listThreads().then(setThreads);
+  }, []);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -119,7 +128,55 @@ export default function ChatPage() {
     setError(null);
     setStreamingText('');
     setStreamingItinerary(null);
+    setStreamingComparison(null);
     setActiveWorkers([]);
+  };
+
+  const handleSelectThread = async (selectedThreadId: string) => {
+    if (selectedThreadId === threadId) return;
+
+    abortRef.current?.abort();
+    setLoadingHistory(true);
+    setThreadId(selectedThreadId);
+    try {
+      localStorage.setItem(THREAD_STORAGE_KEY, selectedThreadId);
+    } catch {
+      // storage unavailable
+    }
+
+    const history = await getThreadHistory(selectedThreadId);
+    const historyMessages: ChatMessage[] = history.map((msg, i) => ({
+      id: `history-${i}`,
+      role: msg.role,
+      content: msg.content,
+    }));
+
+    if (historyMessages.length === 0) {
+      setMessages([{
+        id: 'welcome',
+        role: 'assistant',
+        content: "Hi! I'm your AI travel planner. Tell me about the trip you're dreaming of — where would you like to go, for how long, and what's your budget?",
+      }]);
+    } else {
+      setMessages(historyMessages);
+    }
+
+    setError(null);
+    setStreamingText('');
+    setStreamingItinerary(null);
+    setStreamingComparison(null);
+    setActiveWorkers([]);
+    setLoadingHistory(false);
+  };
+
+  const handleDeleteThread = async (threadIdToDelete: string) => {
+    const ok = await deleteThread(threadIdToDelete);
+    if (ok) {
+      setThreads((prev) => prev.filter((t) => t.thread_id !== threadIdToDelete));
+      if (threadIdToDelete === threadId) {
+        handleNewChat();
+      }
+    }
   };
 
   const handleSend = useCallback(async () => {
@@ -245,6 +302,7 @@ export default function ChatPage() {
       abortRef.current = null;
       setActiveWorkers([]);
       sendingRef.current = false;
+      listThreads().then(setThreads);
     }
   }, [input, loading, threadId]);
 
@@ -277,10 +335,40 @@ export default function ChatPage() {
         }}
       />
 
-      <div className="relative z-10 flex flex-col flex-1 max-w-3xl mx-auto w-full px-4">
+      <div className="relative z-10 flex flex-1 overflow-hidden">
+        {/* Sidebar */}
+        <AnimatePresence initial={false}>
+          {showSidebar && (
+            <motion.div
+              initial={{ width: 0, opacity: 0 }}
+              animate={{ width: 260, opacity: 1 }}
+              exit={{ width: 0, opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="overflow-hidden"
+            >
+              <ThreadSidebar
+                threads={threads}
+                activeThreadId={threadId}
+                loadingHistory={loadingHistory}
+                onSelect={handleSelectThread}
+                onDelete={handleDeleteThread}
+                onNewChat={handleNewChat}
+              />
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        <div className="flex flex-col flex-1 max-w-3xl mx-auto w-full px-4">
         {/* Header */}
         <header className="flex items-center justify-between py-4 border-b border-border">
           <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowSidebar(!showSidebar)}
+              className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+              aria-label={showSidebar ? 'Hide sidebar' : 'Show sidebar'}
+            >
+              <PanelLeft className="w-4 h-4" />
+            </button>
             <div className="p-1.5 rounded-lg bg-gradient-to-br from-indigo-500/10 to-violet-500/10 border border-indigo-500/15">
               <MessageSquare className="w-4 h-4 text-primary" />
             </div>
@@ -421,6 +509,7 @@ export default function ChatPage() {
           <p className="text-[10px] text-muted-foreground/40 mt-1.5 text-center">
             Press Enter to send · Shift+Enter for new line
           </p>
+        </div>
         </div>
       </div>
     </main>
