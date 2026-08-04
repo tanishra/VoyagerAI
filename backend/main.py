@@ -4,24 +4,28 @@ import asyncio
 import hashlib
 import json
 import uuid
+from dataclasses import asdict
+
+from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import PlainTextResponse
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
+from sse_starlette.sse import EventSourceResponse
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from agents import (
+    create_chat_agent,
     get_redis_file_store,
     stream_chat_agent,
 )
 from auth import verify_api_key
 from cache import cache_client
 from config import REQUEST_TIMEOUT_SECONDS, logger, settings
-from fastapi import Depends, FastAPI, Request
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import PlainTextResponse
 from models import ChatRequest
 from sanitize import sanitize_prompt_input
-from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.errors import RateLimitExceeded
-from slowapi.util import get_remote_address
-from sse_starlette.sse import EventSourceResponse
-from starlette.middleware.base import BaseHTTPMiddleware
+from threads import thread_store
 
 ALLOWED_ORIGINS: list[str] = [
     orig.strip()
@@ -249,8 +253,92 @@ async def chat_stream(chat_req: ChatRequest, request: Request) -> EventSourceRes
                 exc_info=True,
             )
             yield _sse("error", f"Streaming failed: {exc}")
+        finally:
+            # Save/update thread metadata — never blocks or breaks the stream
+            try:
+                await thread_store.upsert_thread(user_id, thread_id, _msg_safe[:100])
+            except Exception:  # noqa: BLE001 (intentional fallback handler)
+                logger.warning("Failed to save thread metadata", exc_info=True)
 
     return EventSourceResponse(event_generator())
+
+
+@app.get(
+    "/threads",
+    summary="List user's recent threads",
+    tags=["threads"],
+    dependencies=[Depends(verify_api_key)],
+)
+@limiter.limit("30/minute")
+async def list_threads(request: Request) -> list[dict]:
+    user_id = _resolve_user_id(request)
+    threads = await thread_store.list_threads(user_id)
+    return [asdict(t) for t in threads]
+
+
+@app.get(
+    "/threads/{thread_id}/history",
+    summary="Get thread message history",
+    tags=["threads"],
+    dependencies=[Depends(verify_api_key)],
+)
+@limiter.limit("30/minute")
+async def get_thread_history(thread_id: str, request: Request) -> list[dict]:
+    user_id = _resolve_user_id(request)
+
+    # Security: verify the thread belongs to this user
+    user_tag = hashlib.sha256(user_id.encode()).hexdigest()[:12]
+    if not thread_id.startswith(f"chat:{user_tag}:"):
+        raise HTTPException(status_code=403, detail="Thread does not belong to this user")
+
+    try:
+        agent = await create_chat_agent(user_id=user_id)
+        config = {
+            "configurable": {"thread_id": thread_id, "user_id": user_id},
+            "recursion_limit": 50,
+        }
+        state = await agent.aget_state(config)
+    except Exception:  # noqa: BLE001 (intentional fallback handler)
+        logger.warning("Failed to load thread history for %s", thread_id, exc_info=True)
+        raise HTTPException(status_code=503, detail="Failed to load thread history")
+
+    if state is None or not state.values or not state.values.get("messages"):
+        raise HTTPException(status_code=404, detail="Thread not found or empty")
+
+    messages = state.values.get("messages", [])
+    result: list[dict] = []
+    for msg in messages:
+        role = "user" if getattr(msg, "type", "") == "human" else "assistant"
+        content = getattr(msg, "content", "")
+        if not isinstance(content, str):
+            content = str(content)
+        if content.strip():
+            result.append({"role": role, "content": content})
+
+    return result
+
+
+@app.delete(
+    "/threads/{thread_id}",
+    summary="Delete a thread",
+    tags=["threads"],
+    dependencies=[Depends(verify_api_key)],
+)
+@limiter.limit("30/minute")
+async def delete_thread(thread_id: str, request: Request) -> dict:
+    user_id = _resolve_user_id(request)
+
+    # Security: verify ownership via prefix check
+    user_tag = hashlib.sha256(user_id.encode()).hexdigest()[:12]
+    if not thread_id.startswith(f"chat:{user_tag}:"):
+        raise HTTPException(status_code=403, detail="Thread does not belong to this user")
+
+    deleted = await thread_store.delete_thread(user_id, thread_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Thread not found")
+
+    logger.info("Deleted thread metadata for user=%s thread=%s", user_id, thread_id)
+    return {"status": "ok", "thread_id": thread_id}
 
 
 if __name__ == "__main__":
