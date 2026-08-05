@@ -20,12 +20,17 @@ from agents import (
     get_redis_file_store,
     stream_chat_agent,
 )
+from agents.deep_agent import (
+    _extract_comparison_from_text,
+    _extract_itinerary_from_text,
+    create_checkpointer,
+)
 from auth import verify_api_key
 from cache import cache_client
 from config import REQUEST_TIMEOUT_SECONDS, logger, settings
 from models import ChatRequest
 from sanitize import sanitize_prompt_input
-from threads import thread_store
+from threads import generate_summary, thread_store
 
 ALLOWED_ORIGINS: list[str] = [
     orig.strip()
@@ -236,6 +241,14 @@ async def chat_stream(chat_req: ChatRequest, request: Request) -> EventSourceRes
         yield _sse("status", {"tool": "agent", "status": "thinking"})
 
         active_tasks: dict[str, str] = {}
+        stream_failed = False
+        stream_text = ""
+
+        # Mark thread as busy at the start of the stream
+        try:
+            await thread_store.update_status(user_id, thread_id, "busy")
+        except Exception:  # noqa: BLE001, S110
+            pass
 
         try:
             async for event in stream_chat_agent(
@@ -244,6 +257,9 @@ async def chat_stream(chat_req: ChatRequest, request: Request) -> EventSourceRes
                 user_id=user_id,
             ):
                 for payload in _parse_chat_event(event, active_tasks):
+                    if payload.get("event") == "token":
+                        raw = json.loads(payload["data"])
+                        stream_text += raw.get("data", "")
                     yield payload
         except Exception as exc:  # noqa: BLE001 (intentional fallback handler)
             logger.error(
@@ -252,13 +268,24 @@ async def chat_stream(chat_req: ChatRequest, request: Request) -> EventSourceRes
                 exc,
                 exc_info=True,
             )
+            stream_failed = True
             yield _sse("error", f"Streaming failed: {exc}")
         finally:
-            # Save/update thread metadata — never blocks or breaks the stream
+            # Save/update thread metadata with AI summary and status — never blocks stream
             try:
-                await thread_store.upsert_thread(user_id, thread_id, _msg_safe[:100])
+                final_status = "error" if stream_failed else "idle"
+                summary = await generate_summary(_msg_safe, stream_text)
+                await thread_store.upsert_thread(
+                    user_id, thread_id, summary, status=final_status,
+                )
             except Exception:  # noqa: BLE001 (intentional fallback handler)
                 logger.warning("Failed to save thread metadata", exc_info=True)
+                try:
+                    await thread_store.upsert_thread(
+                        user_id, thread_id, _msg_safe[:100], status="error" if stream_failed else "idle",
+                    )
+                except Exception:  # noqa: BLE001, S110
+                    pass
 
     return EventSourceResponse(event_generator())
 
@@ -270,10 +297,14 @@ async def chat_stream(chat_req: ChatRequest, request: Request) -> EventSourceRes
     dependencies=[Depends(verify_api_key)],
 )
 @limiter.limit("30/minute")
-async def list_threads(request: Request) -> list[dict]:
+async def list_threads(request: Request, offset: int = 0, limit: int = 20) -> dict:
     user_id = _resolve_user_id(request)
-    threads = await thread_store.list_threads(user_id)
-    return [asdict(t) for t in threads]
+    threads = await thread_store.list_threads(user_id, limit=limit, offset=offset)
+    total = await thread_store.count_threads(user_id)
+    return {
+        "threads": [asdict(t) for t in threads],
+        "has_more": (offset + limit) < total,
+    }
 
 
 @app.get(
@@ -313,7 +344,15 @@ async def get_thread_history(thread_id: str, request: Request) -> list[dict]:
         if not isinstance(content, str):
             content = str(content)
         if content.strip():
-            result.append({"role": role, "content": content})
+            entry: dict = {"role": role, "content": content}
+            if role == "assistant":
+                itinerary = _extract_itinerary_from_text(content)
+                comparison = _extract_comparison_from_text(content)
+                if itinerary:
+                    entry["itinerary"] = itinerary
+                if comparison:
+                    entry["comparison"] = comparison
+            result.append(entry)
 
     return result
 
@@ -337,8 +376,42 @@ async def delete_thread(thread_id: str, request: Request) -> dict:
     if not deleted:
         raise HTTPException(status_code=404, detail="Thread not found")
 
-    logger.info("Deleted thread metadata for user=%s thread=%s", user_id, thread_id)
+    # Also clean up the underlying checkpointer state (message history, agent state)
+    try:
+        checkpointer = await create_checkpointer()
+        config = {"configurable": {"thread_id": thread_id}}
+        if hasattr(checkpointer, "adelete_thread"):
+            await checkpointer.adelete_thread(config)
+    except Exception:  # noqa: BLE001 (intentional fallback handler)
+        logger.warning("Failed to delete checkpoint state for %s", thread_id, exc_info=True)
+
+    logger.info("Deleted thread metadata + checkpoint for user=%s thread=%s", user_id, thread_id)
     return {"status": "ok", "thread_id": thread_id}
+
+
+@app.on_event("startup")
+async def _start_thread_cleanup_task() -> None:
+    """Launch a background task that periodically cleans up expired thread checkpoints."""
+
+    async def _cleanup_loop() -> None:
+        while True:
+            await asyncio.sleep(3600)  # run every hour
+            try:
+                expired = await thread_store.cleanup_expired_threads()
+                if expired:
+                    logger.info("Cleaning up %d expired thread checkpoints", len(expired))
+                    checkpointer = await create_checkpointer()
+                    for tid in expired:
+                        try:
+                            config = {"configurable": {"thread_id": tid}}
+                            if hasattr(checkpointer, "adelete_thread"):
+                                await checkpointer.adelete_thread(config)
+                        except Exception:  # noqa: BLE001, S110
+                            pass
+            except Exception:  # noqa: BLE001
+                logger.warning("Thread cleanup task error", exc_info=True)
+
+    asyncio.create_task(_cleanup_loop())
 
 
 if __name__ == "__main__":
