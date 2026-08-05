@@ -100,6 +100,8 @@ export default function ChatPage() {
   const [showSidebar, setShowSidebar] = useState(true);
   const [threads, setThreads] = useState<ThreadMeta[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
+  const [hasMoreThreads, setHasMoreThreads] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
 
   const abortRef = useRef<AbortController | null>(null);
   const sendingRef = useRef(false);
@@ -108,7 +110,10 @@ export default function ChatPage() {
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
-    listThreads().then(setThreads);
+    listThreads().then((res) => {
+      setThreads(res.threads);
+      setHasMoreThreads(res.has_more);
+    });
   }, []);
 
   useEffect(() => {
@@ -149,6 +154,8 @@ export default function ChatPage() {
       id: `history-${i}`,
       role: msg.role,
       content: msg.content,
+      itinerary: msg.itinerary,
+      comparison: msg.comparison,
     }));
 
     if (historyMessages.length === 0) {
@@ -302,7 +309,10 @@ export default function ChatPage() {
       abortRef.current = null;
       setActiveWorkers([]);
       sendingRef.current = false;
-      listThreads().then(setThreads);
+      listThreads().then((res) => {
+        setThreads(res.threads);
+        setHasMoreThreads(res.has_more);
+      });
     }
   }, [input, loading, threadId]);
 
@@ -350,9 +360,18 @@ export default function ChatPage() {
                 threads={threads}
                 activeThreadId={threadId}
                 loadingHistory={loadingHistory}
+                hasMore={hasMoreThreads}
+                loadingMore={loadingMore}
                 onSelect={handleSelectThread}
                 onDelete={handleDeleteThread}
                 onNewChat={handleNewChat}
+                onLoadMore={async () => {
+                  setLoadingMore(true);
+                  const res = await listThreads(threads.length);
+                  setThreads((prev) => [...prev, ...res.threads]);
+                  setHasMoreThreads(res.has_more);
+                  setLoadingMore(false);
+                }}
               />
             </motion.div>
           )}
