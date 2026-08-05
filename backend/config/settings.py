@@ -49,5 +49,7 @@ class Settings(BaseSettings):
     CHECKPOINTER_DB_PATH: str = "./data/checkpoints.sqlite"
     STORE_BACKEND: str = "redis"
 
+    THREAD_TTL_DAYS: int = 30  # threads expire after N days of inactivity
+
 
 settings = Settings()
