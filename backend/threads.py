@@ -2,8 +2,16 @@
 
 The langgraph checkpointer stores full agent state per thread_id but has no
 "list threads by user" API. This module maintains a simple Redis-backed index
-mapping user_id → [{thread_id, summary, created_at, updated_at}] so the
-frontend can list, resume, and delete past conversations.
+mapping user_id → [{thread_id, summary, created_at, updated_at, status, message_count}]
+so the frontend can list, resume, and delete past conversations.
+
+Includes:
+- Cursor-based pagination (offset + limit)
+- Thread status tracking (idle, busy, error)
+- Message count per thread
+- TTL-based automatic expiration (Redis key EXPIRE)
+- AI-generated summaries (via generate_summary helper)
+- Cleanup of expired thread metadata
 
 Falls back to an in-memory dict when Redis is unavailable (same graceful
 degradation pattern as cache.py).
@@ -19,9 +27,11 @@ from dataclasses import dataclass
 from redis.asyncio import Redis
 from redis.exceptions import RedisError
 
-from config import REDIS_URL
+from config import REDIS_URL, settings
 
 logger = logging.getLogger("travel_agent.threads")
+
+_TTL_SECONDS: int = settings.THREAD_TTL_DAYS * 86_400
 
 
 @dataclass
@@ -30,6 +40,8 @@ class ThreadMeta:
     summary: str
     created_at: float
     updated_at: float
+    status: str = "idle"
+    message_count: int = 0
 
 
 def _user_tag(user_id: str) -> str:
@@ -55,14 +67,15 @@ class ThreadStore:
                 self._redis = None
         return self._redis
 
-    async def list_threads(self, user_id: str, limit: int = 20) -> list[ThreadMeta]:
-        """Return the user's most recent threads, sorted by updated_at descending."""
+    async def list_threads(
+        self, user_id: str, limit: int = 20, offset: int = 0
+    ) -> list[ThreadMeta]:
+        """Return the user's threads, sorted by updated_at descending, with pagination."""
         tag = _user_tag(user_id)
         r = await self._get_redis()
         if r is not None:
             try:
-                # Get thread IDs from the sorted set (highest score = most recent first)
-                thread_ids = await r.zrevrange(f"threads:{tag}", 0, limit - 1)
+                thread_ids = await r.zrevrange(f"threads:{tag}", offset, offset + limit - 1)
                 if not thread_ids:
                     return []
                 pipe = r.pipeline()
@@ -77,6 +90,8 @@ class ThreadStore:
                             summary=data.get("summary", ""),
                             created_at=float(data.get("created_at", 0)),
                             updated_at=float(data.get("updated_at", 0)),
+                            status=data.get("status", "idle"),
+                            message_count=int(data.get("message_count", 0)),
                         ))
                 return threads
             except (RedisError, RuntimeError) as exc:
@@ -85,10 +100,17 @@ class ThreadStore:
         # In-memory fallback
         user_threads = self._mem.get(user_id, {})
         sorted_threads = sorted(user_threads.values(), key=lambda t: t.updated_at, reverse=True)
-        return sorted_threads[:limit]
+        return sorted_threads[offset : offset + limit]
 
-    async def upsert_thread(self, user_id: str, thread_id: str, summary: str) -> None:
-        """Insert or update a thread's metadata. Updates summary and updated_at."""
+    async def upsert_thread(
+        self,
+        user_id: str,
+        thread_id: str,
+        summary: str,
+        status: str = "idle",
+        message_count: int = 0,
+    ) -> None:
+        """Insert or update a thread's metadata. Updates summary, status, and updated_at."""
         tag = _user_tag(user_id)
         now = time.time()
         r = await self._get_redis()
@@ -97,14 +119,20 @@ class ThreadStore:
                 key = f"threads:{tag}:{thread_id}"
                 existing = await r.hgetall(key)
                 created_at = float(existing.get("created_at", now)) if existing else now
+                prev_count = int(existing.get("message_count", 0)) if existing else 0
+                # If message_count not provided, preserve existing count
+                count = message_count if message_count > 0 else prev_count
                 pipe = r.pipeline()
                 pipe.hset(key, mapping={
                     "thread_id": thread_id,
                     "summary": summary[:100],
                     "created_at": str(created_at),
                     "updated_at": str(now),
+                    "status": status,
+                    "message_count": str(count),
                 })
                 pipe.zadd(f"threads:{tag}", {thread_id: now})
+                pipe.expire(key, _TTL_SECONDS)
                 await pipe.execute()
                 return
             except (RedisError, RuntimeError) as exc:
@@ -114,11 +142,15 @@ class ThreadStore:
         user_threads = self._mem.setdefault(user_id, {})
         existing = user_threads.get(thread_id)
         created_at = existing.created_at if existing else now
+        prev_count = existing.message_count if existing else 0
+        count = message_count if message_count > 0 else prev_count
         user_threads[thread_id] = ThreadMeta(
             thread_id=thread_id,
             summary=summary[:100],
             created_at=created_at,
             updated_at=now,
+            status=status,
+            message_count=count,
         )
 
     async def delete_thread(self, user_id: str, thread_id: str) -> bool:
@@ -155,6 +187,8 @@ class ThreadStore:
                     summary=data.get("summary", ""),
                     created_at=float(data.get("created_at", 0)),
                     updated_at=float(data.get("updated_at", 0)),
+                    status=data.get("status", "idle"),
+                    message_count=int(data.get("message_count", 0)),
                 )
             except (RedisError, RuntimeError) as exc:
                 logger.warning("ThreadStore get_thread Redis error — falling back: %s", exc)
@@ -163,5 +197,130 @@ class ThreadStore:
         user_threads = self._mem.get(user_id, {})
         return user_threads.get(thread_id)
 
+    async def update_status(self, user_id: str, thread_id: str, status: str) -> None:
+        """Update only the status field of a thread (e.g., busy → idle)."""
+        tag = _user_tag(user_id)
+        r = await self._get_redis()
+        if r is not None:
+            try:
+                key = f"threads:{tag}:{thread_id}"
+                exists = await r.exists(key)
+                if not exists:
+                    return
+                pipe = r.pipeline()
+                pipe.hset(key, "status", status)
+                pipe.expire(key, _TTL_SECONDS)
+                await pipe.execute()
+                return
+            except (RedisError, RuntimeError) as exc:
+                logger.warning("ThreadStore update_status Redis error — falling back: %s", exc)
+
+        # In-memory fallback
+        user_threads = self._mem.get(user_id, {})
+        if thread_id in user_threads:
+            user_threads[thread_id].status = status
+
+    async def count_threads(self, user_id: str) -> int:
+        """Return the total number of threads for a user."""
+        tag = _user_tag(user_id)
+        r = await self._get_redis()
+        if r is not None:
+            try:
+                return await r.zcard(f"threads:{tag}")
+            except (RedisError, RuntimeError) as exc:
+                logger.warning("ThreadStore count_threads Redis error — falling back: %s", exc)
+
+        # In-memory fallback
+        return len(self._mem.get(user_id, {}))
+
+    async def cleanup_expired_threads(self) -> list[str]:
+        """Find thread IDs still in sorted sets whose hash metadata has expired.
+
+        Returns a list of thread_ids that need checkpoint cleanup.
+        Called periodically by the background cleanup task.
+        """
+        expired_ids: list[str] = []
+        r = await self._get_redis()
+        if r is None:
+            return expired_ids
+
+        try:
+            # Scan all sorted set keys (pattern: threads:*)
+            cursor = 0
+            while True:
+                cursor, keys = await r.scan(cursor, match="threads:*", count=100)
+                for key in keys:
+                    # Skip hash keys (they contain colons after the tag)
+                    key_str = key if isinstance(key, str) else key.decode()
+                    parts = key_str.split(":")
+                    # Sorted set keys are "threads:{tag}" (2 parts)
+                    # Hash keys are "threads:{tag}:{thread_id}" (3+ parts)
+                    if len(parts) != 2:
+                        continue
+
+                    # Get all thread IDs in this sorted set
+                    thread_ids = await r.zrange(key_str, 0, -1)
+                    if not thread_ids:
+                        continue
+
+                    # Check which ones have expired hash metadata
+                    pipe = r.pipeline()
+                    for tid in thread_ids:
+                        pipe.exists(f"{key_str}:{tid}")
+                    exists_results = await pipe.execute()
+
+                    for tid, exists in zip(thread_ids, exists_results, strict=False):
+                        if not exists:
+                            # Hash expired but still in sorted set — clean up
+                            await r.zrem(key_str, tid)
+                            tid_str = tid if isinstance(tid, str) else tid.decode()
+                            expired_ids.append(tid_str)
+                if cursor == 0:
+                    break
+        except (RedisError, RuntimeError) as exc:
+            logger.warning("ThreadStore cleanup_expired_threads error: %s", exc)
+
+        return expired_ids
+
 
 thread_store = ThreadStore()
+
+
+async def generate_summary(user_message: str, assistant_text: str) -> str:
+    """Generate a one-line AI summary of the conversation turn.
+
+    Uses the cheap subagent model. Falls back to first 100 chars of user
+    message if the LLM call fails.
+    """
+    try:
+        from agents.llm import get_subagent_model
+
+        model = get_subagent_model()
+        response = await model.ainvoke([
+            {
+                "role": "system",
+                "content": (
+                    "Summarize this travel conversation in ONE short sentence "
+                    "(max 80 chars). Focus on destination, duration, and budget. "
+                    "No preamble, no quotes."
+                ),
+            },
+            {
+                "role": "user",
+                "content": (
+                    f"User: {user_message[:200]}\n"
+                    f"Assistant: {assistant_text[:300]}"
+                ),
+            },
+        ])
+        content = getattr(response, "content", "")
+        if isinstance(content, list):
+            content = " ".join(
+                p.get("text", "") for p in content
+                if isinstance(p, dict) and p.get("type") == "text"
+            )
+        summary = content.strip() if isinstance(content, str) else str(content).strip()
+        return summary[:100] if summary else user_message[:100]
+    except Exception:  # noqa: BLE001 (intentional fallback)
+        logger.warning("AI summary generation failed, using fallback")
+        return user_message[:100]
