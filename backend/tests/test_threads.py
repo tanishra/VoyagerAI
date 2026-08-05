@@ -127,6 +127,51 @@ class TestThreadStore:
     async def test_get_thread_nonexistent_returns_none(self, fresh_store):
         assert await fresh_store.get_thread("alice", "chat:abc:nope") is None
 
+    @pytest.mark.asyncio
+    async def test_upsert_with_status(self, fresh_store):
+        await fresh_store.upsert_thread("alice", "chat:abc:t1", "Trip", status="busy")
+        thread = (await fresh_store.list_threads("alice"))[0]
+        assert thread.status == "busy"
+
+    @pytest.mark.asyncio
+    async def test_update_status(self, fresh_store):
+        await fresh_store.upsert_thread("alice", "chat:abc:t1", "Trip")
+        await fresh_store.update_status("alice", "chat:abc:t1", "error")
+        thread = (await fresh_store.get_thread("alice", "chat:abc:t1"))
+        assert thread is not None
+        assert thread.status == "error"
+
+    @pytest.mark.asyncio
+    async def test_count_threads(self, fresh_store):
+        assert await fresh_store.count_threads("alice") == 0
+        await fresh_store.upsert_thread("alice", "chat:abc:t1", "Trip 1")
+        await fresh_store.upsert_thread("alice", "chat:abc:t2", "Trip 2")
+        assert await fresh_store.count_threads("alice") == 2
+
+    @pytest.mark.asyncio
+    async def test_pagination_offset(self, fresh_store):
+        for i in range(5):
+            await fresh_store.upsert_thread("alice", f"chat:abc:t{i}", f"Trip {i}")
+            await asyncio.sleep(0.01)
+
+        page1 = await fresh_store.list_threads("alice", limit=2, offset=0)
+        page2 = await fresh_store.list_threads("alice", limit=2, offset=2)
+        assert len(page1) == 2
+        assert len(page2) == 2
+        assert page1[0].thread_id != page2[0].thread_id
+        assert page1[1].thread_id != page2[1].thread_id
+
+    @pytest.mark.asyncio
+    async def test_upsert_preserves_message_count(self, fresh_store):
+        await fresh_store.upsert_thread("alice", "chat:abc:t1", "Trip", message_count=5)
+        thread = (await fresh_store.list_threads("alice"))[0]
+        assert thread.message_count == 5
+
+        # Upsert without message_count should preserve existing
+        await fresh_store.upsert_thread("alice", "chat:abc:t1", "Updated trip")
+        thread = (await fresh_store.list_threads("alice"))[0]
+        assert thread.message_count == 5
+
 
 # ---------------------------------------------------------------------------
 # TestThreadsEndpoint — API tests with TestClient
@@ -134,10 +179,12 @@ class TestThreadStore:
 
 
 class TestThreadsEndpoint:
-    def test_get_threads_empty_returns_empty_array(self, client):
+    def test_get_threads_empty_returns_empty_response(self, client):
         resp = client.get("/threads", headers={"X-User-Id": "alice"})
         assert resp.status_code == 200
-        assert resp.json() == []
+        data = resp.json()
+        assert data["threads"] == []
+        assert data["has_more"] is False
 
     def test_get_threads_returns_list(self, client, fresh_store):
         import asyncio
@@ -146,16 +193,30 @@ class TestThreadsEndpoint:
         resp = client.get("/threads", headers={"X-User-Id": "alice"})
         assert resp.status_code == 200
         data = resp.json()
-        assert len(data) == 1
-        assert data[0]["thread_id"] == "chat:abc:t1"
-        assert data[0]["summary"] == "Tokyo trip"
+        assert len(data["threads"]) == 1
+        assert data["threads"][0]["thread_id"] == "chat:abc:t1"
+        assert data["threads"][0]["summary"] == "Tokyo trip"
+        assert data["threads"][0]["status"] == "idle"
+        assert data["has_more"] is False
 
-    def test_delete_thread_returns_ok(self, client, fresh_store):
+    def test_delete_thread_returns_ok(self, client, fresh_store, monkeypatch):
         import asyncio
 
         user_tag = hashlib.sha256(b"alice").hexdigest()[:12]
         thread_id = f"chat:{user_tag}:t1"
         asyncio.run(fresh_store.upsert_thread("alice", thread_id, "Trip"))
+
+        # Mock create_checkpointer to avoid Redis dependency
+        class _FakeCheckpointer:
+            async def adelete_thread(self, config):
+                pass
+
+        async def _fake_create_checkpointer():
+            return _FakeCheckpointer()
+
+        import main as main_module
+        monkeypatch.setattr(main_module, "create_checkpointer", _fake_create_checkpointer)
+
         resp = client.delete(f"/threads/{thread_id}", headers={"X-User-Id": "alice"})
         assert resp.status_code == 200
         assert resp.json()["status"] == "ok"
@@ -247,6 +308,43 @@ class TestThreadHistoryEndpoint:
         assert data[1]["role"] == "assistant"
         assert data[1]["content"] == "Sure! Let me help you plan that."
 
+    def test_get_history_extracts_itinerary(self, client, monkeypatch):
+        user_tag = hashlib.sha256(b"alice").hexdigest()[:12]
+        thread_id = f"chat:{user_tag}:t1"
+
+        itinerary_json = '{"destination": "Tokyo", "days": [{"day": 1, "theme": "Temples"}], "total_days": 1, "estimated_total_cost_usd": 500, "budget_status": "within", "visa_note": "none", "best_season_note": "spring", "warnings": [], "packing_essentials": []}'
+
+        class _Msg:
+            def __init__(self, msg_type, content):
+                self.type = msg_type
+                self.content = content
+
+        class _FakeState:
+            values: ClassVar[dict] = {
+                "messages": [
+                    _Msg("human", "Plan a Tokyo trip"),
+                    _Msg("ai", f"Here is your plan:\n<itinerary>{itinerary_json}</itinerary>"),
+                ]
+            }
+
+        class _FakeAgent:
+            async def aget_state(self, config):
+                return _FakeState()
+
+        import main as main_module
+
+        async def _fake_create(**kw):
+            return _FakeAgent()
+
+        monkeypatch.setattr(main_module, "create_chat_agent", _fake_create)
+        resp = client.get(f"/threads/{thread_id}/history", headers={"X-User-Id": "alice"})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data) == 2
+        assert data[1]["role"] == "assistant"
+        assert "itinerary" in data[1]
+        assert data[1]["itinerary"]["destination"] == "Tokyo"
+
 
 # ---------------------------------------------------------------------------
 # TestThreadAutoSave — verify chat stream saves thread metadata
@@ -254,9 +352,16 @@ class TestThreadHistoryEndpoint:
 
 
 class TestThreadAutoSave:
-    def test_chat_stream_saves_thread_metadata(self, client, fresh_store):
+    def test_chat_stream_saves_thread_metadata(self, client, fresh_store, monkeypatch):
         import asyncio
         import json as _json
+
+        # Mock generate_summary to avoid LLM call in tests
+        async def _fake_summary(msg, text):
+            return msg[:100]
+
+        import main as main_module
+        monkeypatch.setattr(main_module, "generate_summary", _fake_summary)
 
         with client.stream(
             "POST", "/chat/stream",
@@ -272,3 +377,4 @@ class TestThreadAutoSave:
         threads = asyncio.run(fresh_store.list_threads("alice"))
         assert len(threads) == 1
         assert "Tokyo" in threads[0].summary
+        assert threads[0].status == "idle"
