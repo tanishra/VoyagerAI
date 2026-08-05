@@ -6,7 +6,6 @@ import os
 import re
 
 import aiosqlite
-from config.settings import settings
 from deepagents import FilesystemPermission, create_deep_agent
 from deepagents.backends import CompositeBackend, FilesystemBackend, StoreBackend
 from langgraph.checkpoint.memory import MemorySaver
@@ -19,6 +18,7 @@ from pydantic import BaseModel
 from agents.llm import get_formatter_model, get_orchestrator_model
 from agents.prompts import CHAT_AGENT_SYSTEM_PROMPT
 from agents.subagents import get_subagents
+from config.settings import settings
 
 logger = logging.getLogger("travel_agent.deep_agent")
 
