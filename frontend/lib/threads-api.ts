@@ -1,28 +1,43 @@
 import { getUserId } from '@/lib/user-id';
+import type { Itinerary, ComparisonData } from '@/lib/types';
 
 export interface ThreadMeta {
   thread_id: string;
   summary: string;
   created_at: number;
   updated_at: number;
+  status: string;
+  message_count: number;
+}
+
+export interface ThreadListResponse {
+  threads: ThreadMeta[];
+  has_more: boolean;
 }
 
 export interface ThreadMessage {
   role: 'user' | 'assistant';
   content: string;
+  itinerary?: Itinerary;
+  comparison?: ComparisonData;
 }
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
-export async function listThreads(): Promise<ThreadMeta[]> {
+export async function listThreads(offset: number = 0): Promise<ThreadListResponse> {
   try {
-    const res = await fetch(`${API_URL}/threads`, {
+    const res = await fetch(`${API_URL}/threads?offset=${offset}`, {
       headers: { 'X-User-Id': getUserId() },
     });
-    if (!res.ok) return [];
-    return res.json();
+    if (!res.ok) return { threads: [], has_more: false };
+    const data = await res.json();
+    // Backward-compatible: if response is an array, wrap it
+    if (Array.isArray(data)) {
+      return { threads: data, has_more: false };
+    }
+    return data;
   } catch {
-    return [];
+    return { threads: [], has_more: false };
   }
 }
 
