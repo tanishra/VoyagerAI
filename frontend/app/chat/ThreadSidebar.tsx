@@ -90,7 +90,15 @@ export default function ThreadSidebar({
                 <div
                   key={thread.thread_id}
                   onClick={() => onSelect(thread.thread_id)}
-                  className={`group relative px-3 py-2.5 rounded-lg cursor-pointer transition-all ${
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      onSelect(thread.thread_id);
+                    }
+                  }}
+                  role="button"
+                  tabIndex={0}
+                  className={`group relative px-3 py-2.5 rounded-lg cursor-pointer transition-all focus:outline-none focus:ring-2 focus:ring-primary/40 ${
                     isActive
                       ? 'border-l-2 border-primary bg-primary/5'
                       : 'hover:bg-muted border-l-2 border-transparent'
