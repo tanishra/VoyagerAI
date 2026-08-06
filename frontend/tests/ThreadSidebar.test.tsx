@@ -157,4 +157,46 @@ describe('ThreadSidebar', () => {
     );
     expect(screen.queryByText('Load more')).not.toBeInTheDocument();
   });
+
+  it('calls onSelect when Enter key is pressed on a thread item', () => {
+    const onSelect = vi.fn();
+    render(
+      <ThreadSidebar
+        threads={mockThreads}
+        activeThreadId={null}
+        loadingHistory={false}
+        hasMore={false}
+        loadingMore={false}
+        onSelect={onSelect}
+        onDelete={() => {}}
+        onNewChat={() => {}}
+        onLoadMore={() => {}}
+      />,
+    );
+    const threadItem = screen.getByText('Plan a 3-day Tokyo trip').closest('[role="button"]');
+    expect(threadItem).not.toBeNull();
+    fireEvent.keyDown(threadItem!, { key: 'Enter' });
+    expect(onSelect).toHaveBeenCalledWith('chat:abc:t1');
+  });
+
+  it('calls onSelect when Space key is pressed on a thread item', () => {
+    const onSelect = vi.fn();
+    render(
+      <ThreadSidebar
+        threads={mockThreads}
+        activeThreadId={null}
+        loadingHistory={false}
+        hasMore={false}
+        loadingMore={false}
+        onSelect={onSelect}
+        onDelete={() => {}}
+        onNewChat={() => {}}
+        onLoadMore={() => {}}
+      />,
+    );
+    const threadItem = screen.getByText('Plan a 3-day Tokyo trip').closest('[role="button"]');
+    expect(threadItem).not.toBeNull();
+    fireEvent.keyDown(threadItem!, { key: ' ' });
+    expect(onSelect).toHaveBeenCalledWith('chat:abc:t1');
+  });
 });
