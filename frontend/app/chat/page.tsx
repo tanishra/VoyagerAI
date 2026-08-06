@@ -2,10 +2,11 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Send, Square, MessageSquare, RotateCcw, Globe, Search, ShieldAlert, ListChecks, Loader2, PanelLeft } from 'lucide-react';
+import { Send, Square, MessageSquare, RotateCcw, Globe, Search, ShieldAlert, ListChecks, Loader2, PanelLeft, ChevronDown } from 'lucide-react';
 import { streamChat } from '@/lib/chat-api';
 import { listThreads, getThreadHistory, deleteThread, type ThreadMeta } from '@/lib/threads-api';
 import ErrorBoundary from '@/components/ErrorBoundary';
+import MarkdownRenderer from '@/components/MarkdownRenderer';
 import ComparisonView from './ComparisonView';
 import ThreadSidebar from './ThreadSidebar';
 import type { ChatMessage, ComparisonData, Itinerary } from '@/lib/types';
@@ -98,16 +99,20 @@ export default function ChatPage() {
     return null;
   });
   const [showSidebar, setShowSidebar] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [threads, setThreads] = useState<ThreadMeta[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [hasMoreThreads, setHasMoreThreads] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
+  const [isAtBottom, setIsAtBottom] = useState(true);
 
   const abortRef = useRef<AbortController | null>(null);
   const sendingRef = useRef(false);
   const sessionResetRef = useRef(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     listThreads().then((res) => {
@@ -116,13 +121,55 @@ export default function ChatPage() {
     });
   }, []);
 
+  // Auto-scroll only when user is at bottom
   useEffect(() => {
+    if (isAtBottom) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [messages, streamingText, isAtBottom]);
+
+  // Elapsed timer for typing indicator
+  useEffect(() => {
+    if (!loading) {
+      return;
+    }
+    const interval = setInterval(() => {
+      setElapsed((prev) => prev + 1);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [loading]);
+
+  // Global keyboard shortcuts
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setSidebarOpen(false);
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        inputRef.current?.focus();
+      }
+    };
+    document.addEventListener('keydown', handleGlobalKeyDown);
+    return () => document.removeEventListener('keydown', handleGlobalKeyDown);
+  }, []);
+
+  const handleScroll = useCallback(() => {
+    const el = messagesContainerRef.current;
+    if (!el) return;
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 100;
+    setIsAtBottom(atBottom);
+  }, []);
+
+  const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, streamingText]);
+    setIsAtBottom(true);
+  }, []);
 
   const handleNewChat = () => {
     abortRef.current?.abort();
     sessionResetRef.current = true;
+    setSidebarOpen(false);
     setMessages([{
       id: 'welcome',
       role: 'assistant',
@@ -143,6 +190,7 @@ export default function ChatPage() {
     abortRef.current?.abort();
     setLoadingHistory(true);
     setThreadId(selectedThreadId);
+    setSidebarOpen(false);
     try {
       localStorage.setItem(THREAD_STORAGE_KEY, selectedThreadId);
     } catch {
@@ -210,6 +258,7 @@ export default function ChatPage() {
     setMessages((prev) => [...prev, { id: assistantId, role: 'assistant', content: '' }]);
 
     setLoading(true);
+    setElapsed(0);
 
     const controller = new AbortController();
     abortRef.current = controller;
@@ -346,7 +395,7 @@ export default function ChatPage() {
       />
 
       <div className="relative z-10 flex flex-1 overflow-hidden">
-        {/* Sidebar */}
+        {/* Desktop sidebar (inline) */}
         <AnimatePresence initial={false}>
           {showSidebar && (
             <motion.div
@@ -354,7 +403,7 @@ export default function ChatPage() {
               animate={{ width: 260, opacity: 1 }}
               exit={{ width: 0, opacity: 0 }}
               transition={{ duration: 0.2 }}
-              className="overflow-hidden"
+              className="hidden md:block overflow-hidden"
             >
               <ThreadSidebar
                 threads={threads}
@@ -377,21 +426,70 @@ export default function ChatPage() {
           )}
         </AnimatePresence>
 
-        <div className="flex flex-col flex-1 max-w-3xl mx-auto w-full px-4">
+        {/* Mobile sidebar (overlay) */}
+        <AnimatePresence>
+          {sidebarOpen && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="fixed inset-0 z-50 md:hidden"
+              role="dialog"
+              aria-modal="true"
+              aria-label="Conversation history"
+            >
+              <div className="absolute inset-0 bg-black/40" onClick={() => setSidebarOpen(false)} />
+              <motion.div
+                initial={{ x: -260 }}
+                animate={{ x: 0 }}
+                exit={{ x: -260 }}
+                transition={{ duration: 0.2 }}
+                className="absolute left-0 top-0 h-full w-[260px]"
+              >
+                <ThreadSidebar
+                  threads={threads}
+                  activeThreadId={threadId}
+                  loadingHistory={loadingHistory}
+                  hasMore={hasMoreThreads}
+                  loadingMore={loadingMore}
+                  onSelect={handleSelectThread}
+                  onDelete={handleDeleteThread}
+                  onNewChat={handleNewChat}
+                  onLoadMore={async () => {
+                    setLoadingMore(true);
+                    const res = await listThreads(threads.length);
+                    setThreads((prev) => [...prev, ...res.threads]);
+                    setHasMoreThreads(res.has_more);
+                    setLoadingMore(false);
+                  }}
+                />
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        <div className="flex flex-col flex-1 max-w-3xl mx-auto w-full px-2 sm:px-4">
         {/* Header */}
         <header className="flex items-center justify-between py-4 border-b border-border">
           <div className="flex items-center gap-2">
             <button
-              onClick={() => setShowSidebar(!showSidebar)}
+              onClick={() => {
+                if (window.innerWidth < 768) {
+                  setSidebarOpen(true);
+                } else {
+                  setShowSidebar(!showSidebar);
+                }
+              }}
               className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-              aria-label={showSidebar ? 'Hide sidebar' : 'Show sidebar'}
+              aria-label="Toggle sidebar"
             >
               <PanelLeft className="w-4 h-4" />
             </button>
             <div className="p-1.5 rounded-lg bg-gradient-to-br from-indigo-500/10 to-violet-500/10 border border-indigo-500/15">
               <MessageSquare className="w-4 h-4 text-primary" />
             </div>
-            <h1 className="text-lg font-semibold text-foreground">Chat Planner</h1>
+            <h1 className="text-lg font-semibold text-foreground hidden sm:block">Chat Planner</h1>
           </div>
           <button
             onClick={handleNewChat}
@@ -409,6 +507,7 @@ export default function ChatPage() {
               initial={{ opacity: 0, y: -10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
+              role="alert"
               className="p-3 mt-2 rounded-xl bg-red-500/10 border border-red-500/20"
             >
               <p className="text-red-600 text-sm">{error}</p>
@@ -417,7 +516,14 @@ export default function ChatPage() {
         </AnimatePresence>
 
         {/* Messages */}
-        <div className="flex-1 overflow-y-auto py-4 space-y-4">
+        <div
+          ref={messagesContainerRef}
+          onScroll={handleScroll}
+          role="log"
+          aria-live="polite"
+          aria-label="Chat messages"
+          className="flex-1 overflow-y-auto py-4 space-y-4 relative md:px-4"
+        >
           <ErrorBoundary
             fallback={
               <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-600 text-sm">
@@ -432,6 +538,8 @@ export default function ChatPage() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.3 }}
               className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+              role="article"
+              aria-label={msg.role === 'user' ? 'User message' : 'Assistant message'}
             >
               <div
                 className={`max-w-[85%] rounded-2xl px-4 py-3 ${
@@ -439,8 +547,13 @@ export default function ChatPage() {
                     ? 'bg-primary/10 border border-primary/20 text-foreground'
                     : 'bg-card border border-border text-foreground/90 shadow-sm'
                 }`}
+                tabIndex={0}
               >
-                <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+                {msg.role === 'assistant' ? (
+                  <MarkdownRenderer content={msg.content} />
+                ) : (
+                  <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+                )}
                 {msg.comparison && <ComparisonView data={msg.comparison} onSelect={handleSelectPlan} />}
                 {msg.itinerary && <ItineraryCard itinerary={msg.itinerary} />}
               </div>
@@ -471,7 +584,7 @@ export default function ChatPage() {
                 )}
                 {streamingText ? (
                   <>
-                    <p className="text-sm whitespace-pre-wrap">{streamingText}</p>
+                    <MarkdownRenderer content={streamingText} />
                     <span className="inline-block w-2 h-4 bg-primary animate-pulse ml-0.5" />
                   </>
                 ) : (
@@ -481,7 +594,9 @@ export default function ChatPage() {
                       <span className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
                       <span className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
                     </div>
-                    <span className="text-xs text-muted-foreground">Thinking...</span>
+                    <span className="text-xs text-muted-foreground">
+                      {elapsed < 5 ? 'Thinking...' : elapsed < 15 ? `Thinking... ${elapsed}s` : `Still thinking... ${elapsed}s`}
+                    </span>
                   </div>
                 )}
                 {streamingComparison && <ComparisonView data={streamingComparison} onSelect={handleSelectPlan} />}
@@ -492,6 +607,22 @@ export default function ChatPage() {
 
           <div ref={messagesEndRef} />
           </ErrorBoundary>
+
+          {/* Scroll to bottom button */}
+          <AnimatePresence>
+            {!isAtBottom && (messages.length > 4 || loading) && (
+              <motion.button
+                initial={{ opacity: 0, scale: 0.8 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.8 }}
+                onClick={scrollToBottom}
+                className="absolute bottom-4 left-1/2 -translate-x-1/2 p-2 rounded-full bg-card border border-border shadow-lg hover:bg-accent transition-colors cursor-pointer z-10"
+                aria-label="Scroll to latest message"
+              >
+                <ChevronDown className="w-4 h-4 text-foreground" />
+              </motion.button>
+            )}
+          </AnimatePresence>
         </div>
 
         {/* Input bar */}
@@ -505,7 +636,8 @@ export default function ChatPage() {
               placeholder="Describe your dream trip..."
               rows={1}
               disabled={loading}
-              className="flex-1 bg-muted border border-border rounded-xl px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground/50 resize-none outline-none focus:border-primary/40 focus:bg-card transition-colors disabled:opacity-50"
+              aria-label="Message input"
+              className="flex-1 bg-muted border border-border rounded-xl px-3 sm:px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground/50 resize-none outline-none focus:border-primary/40 focus:bg-card transition-colors disabled:opacity-50"
             />
             <button
               onClick={handleSend}
