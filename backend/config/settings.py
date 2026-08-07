@@ -51,5 +51,12 @@ class Settings(BaseSettings):
 
     THREAD_TTL_DAYS: int = 30  # threads expire after N days of inactivity
 
+    # OAuth / session settings
+    GOOGLE_CLIENT_ID: str | None = None
+    GOOGLE_CLIENT_SECRET: str | None = None
+    OAUTH_REDIRECT_URI: str = "http://localhost:8000/auth/callback"
+    SESSION_SECRET_KEY: str = "dev-only-insecure-key-change-in-production"
+    AUTH_DEV_BYPASS: bool = False
+
 
 settings = Settings()
