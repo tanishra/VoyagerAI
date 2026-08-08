@@ -50,6 +50,7 @@ class Settings(BaseSettings):
     STORE_BACKEND: str = "redis"
 
     THREAD_TTL_DAYS: int = 30  # threads expire after N days of inactivity
+    SHARE_TTL_DAYS: int = 7  # share links expire after N days
 
     # OAuth / session settings
     GOOGLE_CLIENT_ID: str | None = None
