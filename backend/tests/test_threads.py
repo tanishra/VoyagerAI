@@ -31,10 +31,11 @@ def fresh_store():
 
 
 @pytest.fixture
-def client(fresh_store):
+def client(fresh_store, monkeypatch):
     """TestClient with the thread_store patched to use in-memory."""
     import main as main_module
 
+    monkeypatch.setattr("config.settings.AUTH_DEV_BYPASS", True)
     with (
         patch.object(main_module, "thread_store", fresh_store),
         patch.object(main_module, "stream_chat_agent", _fake_stream),
@@ -180,7 +181,7 @@ class TestThreadStore:
 
 class TestThreadsEndpoint:
     def test_get_threads_empty_returns_empty_response(self, client):
-        resp = client.get("/threads", headers={"X-User-Id": "alice"})
+        resp = client.get("/threads")
         assert resp.status_code == 200
         data = resp.json()
         assert data["threads"] == []
@@ -189,8 +190,8 @@ class TestThreadsEndpoint:
     def test_get_threads_returns_list(self, client, fresh_store):
         import asyncio
 
-        asyncio.run(fresh_store.upsert_thread("alice", "chat:abc:t1", "Tokyo trip"))
-        resp = client.get("/threads", headers={"X-User-Id": "alice"})
+        asyncio.run(fresh_store.upsert_thread("dev@localhost", "chat:abc:t1", "Tokyo trip"))
+        resp = client.get("/threads")
         assert resp.status_code == 200
         data = resp.json()
         assert len(data["threads"]) == 1
@@ -202,9 +203,9 @@ class TestThreadsEndpoint:
     def test_delete_thread_returns_ok(self, client, fresh_store, monkeypatch):
         import asyncio
 
-        user_tag = hashlib.sha256(b"alice").hexdigest()[:12]
+        user_tag = hashlib.sha256(b"dev@localhost").hexdigest()[:12]
         thread_id = f"chat:{user_tag}:t1"
-        asyncio.run(fresh_store.upsert_thread("alice", thread_id, "Trip"))
+        asyncio.run(fresh_store.upsert_thread("dev@localhost", thread_id, "Trip"))
 
         # Mock create_checkpointer to avoid Redis dependency
         class _FakeCheckpointer:
@@ -217,7 +218,7 @@ class TestThreadsEndpoint:
         import main as main_module
         monkeypatch.setattr(main_module, "create_checkpointer", _fake_create_checkpointer)
 
-        resp = client.delete(f"/threads/{thread_id}", headers={"X-User-Id": "alice"})
+        resp = client.delete(f"/threads/{thread_id}")
         assert resp.status_code == 200
         assert resp.json()["status"] == "ok"
 
@@ -227,14 +228,14 @@ class TestThreadsEndpoint:
         alice_tag = hashlib.sha256(b"alice").hexdigest()[:12]
         thread_id = f"chat:{alice_tag}:t1"
         asyncio.run(fresh_store.upsert_thread("alice", thread_id, "Alice trip"))
-        # Bob tries to delete Alice's thread — the prefix won't match bob's hash
-        resp = client.delete(f"/threads/{thread_id}", headers={"X-User-Id": "bob"})
+        # Dev user tries to delete Alice's thread — the prefix won't match dev@localhost's hash
+        resp = client.delete(f"/threads/{thread_id}")
         assert resp.status_code == 403
 
     def test_delete_nonexistent_returns_404(self, client):
-        user_tag = hashlib.sha256(b"alice").hexdigest()[:12]
+        user_tag = hashlib.sha256(b"dev@localhost").hexdigest()[:12]
         fake_id = f"chat:{user_tag}:nonexistent"
-        resp = client.delete(f"/threads/{fake_id}", headers={"X-User-Id": "alice"})
+        resp = client.delete(f"/threads/{fake_id}")
         assert resp.status_code == 404
 
 
@@ -247,12 +248,12 @@ class TestThreadHistoryEndpoint:
     def test_get_history_cross_user_returns_403(self, client):
         user_tag = hashlib.sha256(b"alice").hexdigest()[:12]
         thread_id = f"chat:{user_tag}:t1"
-        # Bob tries to access Alice's thread history
-        resp = client.get(f"/threads/{thread_id}/history", headers={"X-User-Id": "bob"})
+        # Dev user tries to access Alice's thread history
+        resp = client.get(f"/threads/{thread_id}/history")
         assert resp.status_code == 403
 
     def test_get_history_nonexistent_returns_404(self, client, monkeypatch):
-        user_tag = hashlib.sha256(b"alice").hexdigest()[:12]
+        user_tag = hashlib.sha256(b"dev@localhost").hexdigest()[:12]
         thread_id = f"chat:{user_tag}:nonexistent"
 
         # Mock create_chat_agent to return an agent with empty state
@@ -269,11 +270,11 @@ class TestThreadHistoryEndpoint:
             return _FakeAgent()
 
         monkeypatch.setattr(main_module, "create_chat_agent", _fake_create)
-        resp = client.get(f"/threads/{thread_id}/history", headers={"X-User-Id": "alice"})
+        resp = client.get(f"/threads/{thread_id}/history")
         assert resp.status_code == 404
 
     def test_get_history_returns_messages(self, client, monkeypatch):
-        user_tag = hashlib.sha256(b"alice").hexdigest()[:12]
+        user_tag = hashlib.sha256(b"dev@localhost").hexdigest()[:12]
         thread_id = f"chat:{user_tag}:t1"
 
         class _Msg:
@@ -299,7 +300,7 @@ class TestThreadHistoryEndpoint:
             return _FakeAgent()
 
         monkeypatch.setattr(main_module, "create_chat_agent", _fake_create)
-        resp = client.get(f"/threads/{thread_id}/history", headers={"X-User-Id": "alice"})
+        resp = client.get(f"/threads/{thread_id}/history")
         assert resp.status_code == 200
         data = resp.json()
         assert len(data) == 2
@@ -309,7 +310,7 @@ class TestThreadHistoryEndpoint:
         assert data[1]["content"] == "Sure! Let me help you plan that."
 
     def test_get_history_extracts_itinerary(self, client, monkeypatch):
-        user_tag = hashlib.sha256(b"alice").hexdigest()[:12]
+        user_tag = hashlib.sha256(b"dev@localhost").hexdigest()[:12]
         thread_id = f"chat:{user_tag}:t1"
 
         itinerary_json = '{"destination": "Tokyo", "days": [{"day": 1, "theme": "Temples"}], "total_days": 1, "estimated_total_cost_usd": 500, "budget_status": "within", "visa_note": "none", "best_season_note": "spring", "warnings": [], "packing_essentials": []}'
@@ -337,7 +338,7 @@ class TestThreadHistoryEndpoint:
             return _FakeAgent()
 
         monkeypatch.setattr(main_module, "create_chat_agent", _fake_create)
-        resp = client.get(f"/threads/{thread_id}/history", headers={"X-User-Id": "alice"})
+        resp = client.get(f"/threads/{thread_id}/history")
         assert resp.status_code == 200
         data = resp.json()
         assert len(data) == 2
@@ -366,7 +367,6 @@ class TestThreadAutoSave:
         with client.stream(
             "POST", "/chat/stream",
             json={"message": "Plan a 3-day Tokyo trip"},
-            headers={"X-User-Id": "alice"},
         ) as r:
             assert r.status_code == 200
             for line in r.iter_lines():
@@ -374,7 +374,7 @@ class TestThreadAutoSave:
                     _json.loads(line[6:])  # consume all events
 
         # The thread metadata should now be in the store
-        threads = asyncio.run(fresh_store.list_threads("alice"))
+        threads = asyncio.run(fresh_store.list_threads("dev@localhost"))
         assert len(threads) == 1
         assert "Tokyo" in threads[0].summary
         assert threads[0].status == "idle"
