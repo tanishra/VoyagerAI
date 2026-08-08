@@ -156,3 +156,16 @@
   animation: float-slow 8s ease-in-out infinite;
   will-change: transform;
 }
+
+@media print {
+  .print-hidden {
+    display: none !important;
+  }
+  .print-break-inside-avoid {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  body {
+    background: white !important;
+  }
+}
