@@ -3,6 +3,11 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import ThreadSidebar from '@/app/chat/ThreadSidebar';
 import type { ThreadMeta } from '@/lib/threads-api';
 
+vi.mock('@/lib/share-api', () => ({
+  listShares: vi.fn().mockResolvedValue([]),
+  revokeShare: vi.fn().mockResolvedValue(true),
+}));
+
 const mockThreads: ThreadMeta[] = [
   {
     thread_id: 'chat:abc:t1',
