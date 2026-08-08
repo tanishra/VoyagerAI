@@ -1,4 +1,3 @@
-import { getUserId } from '@/lib/user-id';
 import type { Itinerary, ComparisonData } from '@/lib/types';
 
 export interface ThreadMeta {
@@ -27,8 +26,12 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 export async function listThreads(offset: number = 0): Promise<ThreadListResponse> {
   try {
     const res = await fetch(`${API_URL}/threads?offset=${offset}`, {
-      headers: { 'X-User-Id': getUserId() },
+      credentials: 'include',
     });
+    if (res.status === 401) {
+      window.location.href = '/login';
+      return { threads: [], has_more: false };
+    }
     if (!res.ok) return { threads: [], has_more: false };
     const data = await res.json();
     // Backward-compatible: if response is an array, wrap it
@@ -44,8 +47,12 @@ export async function listThreads(offset: number = 0): Promise<ThreadListRespons
 export async function getThreadHistory(threadId: string): Promise<ThreadMessage[]> {
   try {
     const res = await fetch(`${API_URL}/threads/${threadId}/history`, {
-      headers: { 'X-User-Id': getUserId() },
+      credentials: 'include',
     });
+    if (res.status === 401) {
+      window.location.href = '/login';
+      return [];
+    }
     if (!res.ok) return [];
     return res.json();
   } catch {
@@ -57,8 +64,12 @@ export async function deleteThread(threadId: string): Promise<boolean> {
   try {
     const res = await fetch(`${API_URL}/threads/${threadId}`, {
       method: 'DELETE',
-      headers: { 'X-User-Id': getUserId() },
+      credentials: 'include',
     });
+    if (res.status === 401) {
+      window.location.href = '/login';
+      return false;
+    }
     return res.ok;
   } catch {
     return false;
