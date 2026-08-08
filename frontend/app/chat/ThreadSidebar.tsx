@@ -1,8 +1,9 @@
 'use client';
 
-import { useState } from 'react';
-import { Plus, Trash2, MessageSquare, Loader2, ChevronDown } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Plus, Trash2, MessageSquare, Loader2, ChevronDown, Link2, Copy as CopyIcon, Check, X } from 'lucide-react';
 import type { ThreadMeta } from '@/lib/threads-api';
+import { listShares, revokeShare, type ShareLink } from '@/lib/share-api';
 
 function formatRelativeTime(timestamp: number): string {
   const now = Date.now() / 1000;
@@ -46,6 +47,39 @@ export default function ThreadSidebar({
   onLoadMore,
 }: ThreadSidebarProps) {
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [shares, setShares] = useState<ShareLink[]>([]);
+  const [sharesExpanded, setSharesExpanded] = useState(false);
+  const [copiedToken, setCopiedToken] = useState<string | null>(null);
+  const [revokingToken, setRevokingToken] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    listShares().then((result) => {
+      if (!cancelled) setShares(result);
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  const handleCopy = async (e: React.MouseEvent, share: ShareLink) => {
+    e.stopPropagation();
+    try {
+      await navigator.clipboard.writeText(share.share_url);
+      setCopiedToken(share.token);
+      setTimeout(() => setCopiedToken(null), 2000);
+    } catch {
+      // clipboard not available
+    }
+  };
+
+  const handleRevoke = async (e: React.MouseEvent, token: string) => {
+    e.stopPropagation();
+    setRevokingToken(token);
+    const ok = await revokeShare(token);
+    if (ok) {
+      setShares((prev) => prev.filter((s) => s.token !== token));
+    }
+    setRevokingToken(null);
+  };
 
   const handleDelete = (e: React.MouseEvent, threadId: string) => {
     e.stopPropagation();
@@ -157,6 +191,77 @@ export default function ThreadSidebar({
               </button>
             )}
           </>
+        )}
+      </div>
+
+      {/* Shared Links section */}
+      <div className="border-t border-border">
+        <button
+          onClick={() => setSharesExpanded(!sharesExpanded)}
+          className="w-full flex items-center justify-between px-3 py-2 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+        >
+          <span className="flex items-center gap-1.5">
+            <Link2 className="w-3.5 h-3.5" />
+            Shared Links
+            {shares.length > 0 && (
+              <span className="px-1.5 py-0.5 rounded-full bg-primary/10 text-primary text-[10px] font-medium">
+                {shares.length}
+              </span>
+            )}
+          </span>
+          <ChevronDown className={`w-3.5 h-3.5 transition-transform ${sharesExpanded ? 'rotate-180' : ''}`} />
+        </button>
+        {sharesExpanded && (
+          <div className="px-2 pb-2 space-y-1 max-h-48 overflow-y-auto">
+            {shares.length === 0 ? (
+              <p className="text-[11px] text-muted-foreground px-3 py-2">
+                No shared links yet. Use the share button on an itinerary to create one.
+              </p>
+            ) : (
+              shares.map((share) => (
+                <div
+                  key={share.token}
+                  className="group px-3 py-2 rounded-lg hover:bg-muted transition-colors"
+                >
+                  <div className="flex items-center justify-between gap-1">
+                    <p className="text-xs text-foreground truncate flex-1">
+                      {share.destination}
+                    </p>
+                    <div className="flex items-center gap-0.5 shrink-0">
+                      <button
+                        onClick={(e) => handleCopy(e, share)}
+                        className="p-1 rounded text-muted-foreground hover:text-foreground cursor-pointer"
+                        aria-label="Copy share link"
+                        title="Copy link"
+                      >
+                        {copiedToken === share.token ? (
+                          <Check className="w-3 h-3 text-green-500" />
+                        ) : (
+                          <CopyIcon className="w-3 h-3" />
+                        )}
+                      </button>
+                      <button
+                        onClick={(e) => handleRevoke(e, share.token)}
+                        disabled={revokingToken === share.token}
+                        className="p-1 rounded text-muted-foreground hover:text-red-600 cursor-pointer disabled:opacity-50"
+                        aria-label="Revoke share link"
+                        title="Revoke"
+                      >
+                        {revokingToken === share.token ? (
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                        ) : (
+                          <X className="w-3 h-3" />
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-muted-foreground mt-0.5">
+                    Expires {formatRelativeTime(share.expires_at)}
+                  </p>
+                </div>
+              ))
+            )}
+          </div>
         )}
       </div>
     </div>
