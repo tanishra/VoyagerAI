@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Sparkles, Save, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
-import { getUserId } from '@/lib/user-id';
+import { getSession } from '@/lib/auth';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -18,8 +18,12 @@ export default function PreferencesPage() {
     setMessage(null);
     try {
       const res = await fetch(`${API_BASE}/preferences`, {
-        headers: { 'X-User-Id': getUserId() },
+        credentials: 'include',
       });
+      if (res.status === 401) {
+        window.location.href = '/login';
+        return;
+      }
       const text = await res.text();
       setContent(text);
     } catch {
@@ -30,10 +34,16 @@ export default function PreferencesPage() {
   }
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      fetchPreferences();
-    }, 0);
-    return () => clearTimeout(timer);
+    getSession().then((user) => {
+      if (!user) {
+        window.location.href = '/login';
+        return;
+      }
+      const timer = setTimeout(() => {
+        fetchPreferences();
+      }, 0);
+      return () => clearTimeout(timer);
+    });
   }, []);
 
   async function handleSave() {
@@ -42,9 +52,14 @@ export default function PreferencesPage() {
     try {
       const res = await fetch(`${API_BASE}/preferences`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'text/plain', 'X-User-Id': getUserId() },
+        headers: { 'Content-Type': 'text/plain' },
         body: content,
+        credentials: 'include',
       });
+      if (res.status === 401) {
+        window.location.href = '/login';
+        return;
+      }
       if (res.ok) {
         setMessage({ type: 'success', text: 'Preferences saved!' });
       } else {
