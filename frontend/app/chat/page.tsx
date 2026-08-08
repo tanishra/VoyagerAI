@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Send, Square, MessageSquare, RotateCcw, Globe, Search, ShieldAlert, ListChecks, Loader2, PanelLeft, ChevronDown } from 'lucide-react';
 import { streamChat } from '@/lib/chat-api';
 import { listThreads, getThreadHistory, deleteThread, type ThreadMeta } from '@/lib/threads-api';
+import { getSession } from '@/lib/auth';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import MarkdownRenderer from '@/components/MarkdownRenderer';
 import ComparisonView from './ComparisonView';
@@ -106,6 +107,7 @@ export default function ChatPage() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [isAtBottom, setIsAtBottom] = useState(true);
+  const [authChecked, setAuthChecked] = useState(false);
 
   const abortRef = useRef<AbortController | null>(null);
   const sendingRef = useRef(false);
@@ -115,9 +117,16 @@ export default function ChatPage() {
   const messagesContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    listThreads().then((res) => {
-      setThreads(res.threads);
-      setHasMoreThreads(res.has_more);
+    getSession().then((user) => {
+      if (!user) {
+        window.location.href = '/login';
+        return;
+      }
+      setAuthChecked(true);
+      listThreads().then((res) => {
+        setThreads(res.threads);
+        setHasMoreThreads(res.has_more);
+      });
     });
   }, []);
 
@@ -376,6 +385,14 @@ export default function ChatPage() {
       handleSend();
     }
   };
+
+  if (!authChecked) {
+    return (
+      <main className="min-h-screen flex items-center justify-center pt-16">
+        <Loader2 className="w-8 h-8 text-primary animate-spin" />
+      </main>
+    );
+  }
 
   return (
     <main className="relative min-h-screen overflow-hidden pt-16 flex flex-col">
