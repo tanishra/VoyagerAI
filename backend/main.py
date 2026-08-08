@@ -21,6 +21,7 @@ from agents import (
     stream_chat_agent,
 )
 from agents.deep_agent import (
+    _extract_chat_itinerary,
     _extract_comparison_from_text,
     _extract_itinerary_from_text,
     create_checkpointer,
@@ -39,6 +40,7 @@ from oauth import (
     oauth,
 )
 from sanitize import sanitize_prompt_input
+from share_store import share_store
 from threads import generate_summary, thread_store
 
 ALLOWED_ORIGINS: list[str] = [
@@ -464,6 +466,200 @@ async def auth_logout(request: Request) -> JSONResponse:
 async def auth_me(user: dict = Depends(get_current_user)) -> dict:
     """Return current user info from session."""
     return user
+
+
+# ─── Share & Export endpoints ───────────────────────────────────
+
+
+def _itinerary_to_markdown(itinerary: dict) -> str:
+    """Convert an itinerary dict to a readable Markdown document."""
+    lines = [
+        f"# {itinerary.get('destination', 'Trip Itinerary')}",
+        "",
+        f"**Duration:** {itinerary.get('total_days', '?')} days  ",
+        f"**Estimated Cost:** ${itinerary.get('estimated_total_cost_usd', 'N/A')}  ",
+        f"**Budget Status:** {itinerary.get('budget_status', 'N/A')}  ",
+        f"**Visa Note:** {itinerary.get('visa_note', 'N/A')}  ",
+        f"**Best Season:** {itinerary.get('best_season_note', 'N/A')}",
+        "",
+    ]
+    for day in itinerary.get("days", []):
+        lines.append(f"## Day {day.get('day', '?')} — {day.get('theme', '')}")
+        lines.append("")
+        for slot_name in ("morning", "afternoon", "evening"):
+            slot = day.get(slot_name)
+            if slot:
+                lines.append(f"**{slot_name.title()}:** {slot.get('activity', '—')} at {slot.get('location', '—')} (${slot.get('cost_usd', 0)}, {slot.get('duration', '')})")
+        lines.append(f"**Transport:** {day.get('transport', 'N/A')}")
+        lines.append(f"**Accommodation:** {day.get('accommodation', 'N/A')}")
+        lines.append(f"**Daily Cost:** ${day.get('daily_cost_usd', 'N/A')}")
+        tips = day.get("tips", [])
+        if tips:
+            lines.append("**Tips:**")
+            for tip in tips:
+                lines.append(f"- {tip}")
+        lines.append("")
+    warnings = itinerary.get("warnings", [])
+    if warnings:
+        lines.append("## ⚠ Warnings")
+        for w in warnings:
+            lines.append(f"- {w}")
+        lines.append("")
+    packing = itinerary.get("packing_essentials", [])
+    if packing:
+        lines.append("## 🎒 Packing Essentials")
+        for item in packing:
+            lines.append(f"- {item}")
+        lines.append("")
+    return "\n".join(lines)
+
+
+async def _get_latest_itinerary(thread_id: str, user_id: str) -> dict | None:
+    """Extract the latest itinerary from a thread's checkpointer state."""
+    user_tag = hashlib.sha256(user_id.encode()).hexdigest()[:12]
+    if not thread_id.startswith(f"chat:{user_tag}:"):
+        return None
+    try:
+        agent = await create_chat_agent(user_id=user_id)
+        config = {
+            "configurable": {"thread_id": thread_id, "user_id": user_id},
+            "recursion_limit": 50,
+        }
+        state = await agent.aget_state(config)
+    except Exception:  # noqa: BLE001
+        logger.warning("Failed to load state for export/share thread=%s", thread_id, exc_info=True)
+        return None
+    if state is None or not state.values:
+        return None
+    return _extract_chat_itinerary(state.values)
+
+
+@app.post(
+    "/share/{thread_id}",
+    summary="Create a shareable link for an itinerary",
+    tags=["share"],
+    dependencies=[Depends(verify_api_key)],
+)
+@limiter.limit("10/minute")
+async def create_share_link(
+    thread_id: str,
+    request: Request,
+    user: dict = Depends(get_current_user),
+) -> dict:
+    user_id = user["user_id"]
+    itinerary = await _get_latest_itinerary(thread_id, user_id)
+    if itinerary is None:
+        raise HTTPException(status_code=404, detail="No itinerary found in this thread")
+    destination = itinerary.get("destination", "Untitled Trip")
+    itinerary_json = json.dumps(itinerary)
+    token, expires_at = await share_store.create_share(
+        user_id, thread_id, itinerary_json, destination,
+    )
+    share_url = f"http://localhost:3000/share/{token}"
+    logger.info("Created share link for user=%s thread=%s token=%s", user_id, thread_id, token[:8])
+    return {"share_url": share_url, "expires_at": expires_at, "destination": destination}
+
+
+@app.get(
+    "/share/{token}",
+    summary="Get shared itinerary (public, no auth)",
+    tags=["share"],
+)
+@limiter.limit("60/minute")
+async def get_shared_itinerary(
+    token: str,
+    request: Request,
+) -> dict:
+    data = await share_store.get_share(token)
+    if data is None:
+        raise HTTPException(status_code=404, detail="Share link not found or expired")
+    try:
+        itinerary = json.loads(data["itinerary_json"])
+    except (json.JSONDecodeError, KeyError):
+        raise HTTPException(status_code=500, detail="Corrupted share data")
+    return {
+        "itinerary": itinerary,
+        "destination": data["destination"],
+        "created_at": data["created_at"],
+        "expires_at": data["expires_at"],
+    }
+
+
+@app.delete(
+    "/share/{token}",
+    summary="Revoke a share link",
+    tags=["share"],
+    dependencies=[Depends(verify_api_key)],
+)
+@limiter.limit("20/minute")
+async def revoke_share_link(
+    token: str,
+    request: Request,
+    user: dict = Depends(get_current_user),
+) -> dict:
+    user_id = user["user_id"]
+    revoked = await share_store.revoke_share(user_id, token)
+    if not revoked:
+        raise HTTPException(status_code=404, detail="Share link not found")
+    logger.info("Revoked share link for user=%s token=%s", user_id, token[:8])
+    return {"status": "ok"}
+
+
+@app.get(
+    "/shares",
+    summary="List user's active share links",
+    tags=["share"],
+    dependencies=[Depends(verify_api_key)],
+)
+@limiter.limit("30/minute")
+async def list_shares(
+    request: Request,
+    user: dict = Depends(get_current_user),
+) -> list[dict]:
+    user_id = user["user_id"]
+    shares = await share_store.list_shares(user_id)
+    return [
+        {
+            "token": s.token,
+            "thread_id": s.thread_id,
+            "destination": s.destination,
+            "created_at": s.created_at,
+            "expires_at": s.expires_at,
+            "share_url": f"http://localhost:3000/share/{s.token}",
+        }
+        for s in shares
+    ]
+
+
+@app.get(
+    "/export/{thread_id}",
+    summary="Export itinerary as JSON or Markdown",
+    tags=["export"],
+    dependencies=[Depends(verify_api_key)],
+    response_model=None,
+)
+@limiter.limit("10/minute")
+async def export_itinerary(
+    thread_id: str,
+    request: Request,
+    fmt: str = "json",
+    user: dict = Depends(get_current_user),
+) -> JSONResponse | PlainTextResponse:
+    user_id = user["user_id"]
+    itinerary = await _get_latest_itinerary(thread_id, user_id)
+    if itinerary is None:
+        raise HTTPException(status_code=404, detail="No itinerary found in this thread")
+    if fmt == "markdown":
+        md = _itinerary_to_markdown(itinerary)
+        return PlainTextResponse(
+            md,
+            media_type="text/markdown",
+            headers={"Content-Disposition": f'attachment; filename="{itinerary.get("destination", "itinerary").replace(" ", "_")}.md"'},
+        )
+    return JSONResponse(
+        itinerary,
+        headers={"Content-Disposition": f'attachment; filename="{itinerary.get("destination", "itinerary").replace(" ", "_")}.json"'},
+    )
 
 
 @app.on_event("startup")
