@@ -8,6 +8,7 @@ import { listThreads, getThreadHistory, deleteThread, type ThreadMeta } from '@/
 import { getSession } from '@/lib/auth';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import MarkdownRenderer from '@/components/MarkdownRenderer';
+import ItineraryCard from '@/components/ItineraryCard';
 import ComparisonView from './ComparisonView';
 import ThreadSidebar from './ThreadSidebar';
 import type { ChatMessage, ComparisonData, Itinerary } from '@/lib/types';
@@ -32,53 +33,6 @@ const TOOL_ICONS: Record<string, React.ReactNode> = {
   multi_plan_generator: <Globe className="w-3 h-3" />,
   quality_scorer: <ListChecks className="w-3 h-3" />,
 };
-
-function ItineraryCard({ itinerary }: { itinerary: Itinerary }) {
-  const days = itinerary.days ?? [];
-  const warnings = itinerary.warnings ?? [];
-  const cost: number | string = itinerary.estimated_total_cost_usd ?? 'N/A';
-  const totalDays = itinerary.total_days ?? days.length;
-
-  return (
-    <div className="mt-3 rounded-xl border border-indigo-500/20 bg-indigo-500/5 overflow-hidden bg-card">
-      <div className="px-4 py-3 border-b border-indigo-500/10">
-        <h3 className="font-semibold text-foreground flex items-center gap-2">
-          <Globe className="w-4 h-4 text-primary" />
-          {itinerary.destination}
-        </h3>
-      </div>
-      <div className="p-4 space-y-3 text-sm">
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <span className="text-muted-foreground">Duration</span>
-            <p className="text-foreground font-medium">{totalDays} days</p>
-          </div>
-          <div>
-            <span className="text-muted-foreground">Budget</span>
-            <p className="text-foreground font-medium">{cost === 'N/A' ? 'N/A' : `$${cost}`}</p>
-          </div>
-        </div>
-        <div className="space-y-2">
-          {days.map((day) => (
-            <div key={day.day} className="p-2 rounded-lg bg-muted border border-border">
-              <p className="font-medium text-foreground">
-                Day {day.day} — {day.theme ?? 'Day ' + day.day}
-              </p>
-              <p className="text-muted-foreground text-xs mt-0.5">
-                {day.morning?.activity ?? '—'} → {day.afternoon?.activity ?? '—'} → {day.evening?.activity ?? '—'}
-              </p>
-            </div>
-          ))}
-        </div>
-        {warnings.length > 0 && (
-          <div className="text-xs text-amber-600">
-            ⚠ {warnings[0]}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
 
 export default function ChatPage() {
   const [messages, setMessages] = useState<ChatMessage[]>([{
@@ -572,7 +526,7 @@ export default function ChatPage() {
                   <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
                 )}
                 {msg.comparison && <ComparisonView data={msg.comparison} onSelect={handleSelectPlan} />}
-                {msg.itinerary && <ItineraryCard itinerary={msg.itinerary} />}
+                {msg.itinerary && <ItineraryCard itinerary={msg.itinerary} threadId={threadId ?? undefined} />}
               </div>
             </motion.div>
           ))}
@@ -617,7 +571,7 @@ export default function ChatPage() {
                   </div>
                 )}
                 {streamingComparison && <ComparisonView data={streamingComparison} onSelect={handleSelectPlan} />}
-                {streamingItinerary && <ItineraryCard itinerary={streamingItinerary} />}
+                {streamingItinerary && <ItineraryCard itinerary={streamingItinerary} threadId={threadId ?? undefined} />}
               </div>
             </motion.div>
           )}
