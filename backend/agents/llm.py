@@ -6,9 +6,10 @@ All model instantiation goes through this module so provider switching
 
 from __future__ import annotations
 
-from config.settings import settings
 from langchain_core.language_models import BaseChatModel
 from langchain_litellm import ChatLiteLLM
+
+from config.settings import settings
 
 
 def _build_fallbacks(fallback: str | None) -> list[str] | None:
