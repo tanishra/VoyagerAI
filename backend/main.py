@@ -8,7 +8,7 @@ from dataclasses import asdict
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import JSONResponse, PlainTextResponse, RedirectResponse
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
@@ -29,6 +29,15 @@ from auth import verify_api_key
 from cache import cache_client
 from config import REQUEST_TIMEOUT_SECONDS, logger, settings
 from models import ChatRequest
+from oauth import (
+    DEV_USER,
+    SESSION_COOKIE_NAME,
+    SESSION_TTL,
+    create_session,
+    delete_session,
+    get_current_user,
+    oauth,
+)
 from sanitize import sanitize_prompt_input
 from threads import generate_summary, thread_store
 
@@ -72,10 +81,6 @@ app.add_middleware(TimeoutMiddleware)
 limiter = Limiter(key_func=get_remote_address, default_limits=["30/hour"])
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
-
-
-def _resolve_user_id(request: Request) -> str:
-    return request.headers.get("x-user-id") or request.query_params.get("user_id", "anonymous")
 
 
 def _scoped_chat_thread_id(client_thread_id: str | None, user_id: str) -> str:
@@ -181,8 +186,8 @@ async def health() -> dict[str, str]:
     dependencies=[Depends(verify_api_key)],
 )
 @limiter.limit("30/minute")
-async def get_preferences(request: Request) -> PlainTextResponse:
-    user_id = _resolve_user_id(request)
+async def get_preferences(request: Request, user: dict = Depends(get_current_user)) -> PlainTextResponse:
+    user_id = user["user_id"]
     try:
         store = get_redis_file_store()
         item = store.get((user_id,), "/preferences.md")
@@ -202,8 +207,8 @@ async def get_preferences(request: Request) -> PlainTextResponse:
     dependencies=[Depends(verify_api_key)],
 )
 @limiter.limit("30/minute")
-async def put_preferences(request: Request) -> dict[str, str]:
-    user_id = _resolve_user_id(request)
+async def put_preferences(request: Request, user: dict = Depends(get_current_user)) -> dict[str, str]:
+    user_id = user["user_id"]
     body = await request.body()
     content = body.decode("utf-8") if body else ""
     try:
@@ -223,10 +228,14 @@ async def put_preferences(request: Request) -> dict[str, str]:
     dependencies=[Depends(verify_api_key)],
 )
 @limiter.limit("20/minute")
-async def chat_stream(chat_req: ChatRequest, request: Request) -> EventSourceResponse:
+async def chat_stream(
+    chat_req: ChatRequest,
+    request: Request,
+    user: dict = Depends(get_current_user),
+) -> EventSourceResponse:
     _msg_safe = sanitize_prompt_input(chat_req.message, "message")
 
-    user_id = _resolve_user_id(request)
+    user_id = user["user_id"]
     thread_id = _scoped_chat_thread_id(chat_req.thread_id, user_id)
 
     logger.info(
@@ -297,8 +306,13 @@ async def chat_stream(chat_req: ChatRequest, request: Request) -> EventSourceRes
     dependencies=[Depends(verify_api_key)],
 )
 @limiter.limit("30/minute")
-async def list_threads(request: Request, offset: int = 0, limit: int = 20) -> dict:
-    user_id = _resolve_user_id(request)
+async def list_threads(
+    request: Request,
+    offset: int = 0,
+    limit: int = 20,
+    user: dict = Depends(get_current_user),
+) -> dict:
+    user_id = user["user_id"]
     threads = await thread_store.list_threads(user_id, limit=limit, offset=offset)
     total = await thread_store.count_threads(user_id)
     return {
@@ -314,8 +328,12 @@ async def list_threads(request: Request, offset: int = 0, limit: int = 20) -> di
     dependencies=[Depends(verify_api_key)],
 )
 @limiter.limit("30/minute")
-async def get_thread_history(thread_id: str, request: Request) -> list[dict]:
-    user_id = _resolve_user_id(request)
+async def get_thread_history(
+    thread_id: str,
+    request: Request,
+    user: dict = Depends(get_current_user),
+) -> list[dict]:
+    user_id = user["user_id"]
 
     # Security: verify the thread belongs to this user
     user_tag = hashlib.sha256(user_id.encode()).hexdigest()[:12]
@@ -364,8 +382,12 @@ async def get_thread_history(thread_id: str, request: Request) -> list[dict]:
     dependencies=[Depends(verify_api_key)],
 )
 @limiter.limit("30/minute")
-async def delete_thread(thread_id: str, request: Request) -> dict:
-    user_id = _resolve_user_id(request)
+async def delete_thread(
+    thread_id: str,
+    request: Request,
+    user: dict = Depends(get_current_user),
+) -> dict:
+    user_id = user["user_id"]
 
     # Security: verify ownership via prefix check
     user_tag = hashlib.sha256(user_id.encode()).hexdigest()[:12]
@@ -387,6 +409,61 @@ async def delete_thread(thread_id: str, request: Request) -> dict:
 
     logger.info("Deleted thread metadata + checkpoint for user=%s thread=%s", user_id, thread_id)
     return {"status": "ok", "thread_id": thread_id}
+
+
+@app.get("/auth/login", summary="Google OAuth login", tags=["auth"])
+async def auth_login(request: Request) -> RedirectResponse:
+    """Redirect to Google OAuth consent screen (or dev-bypass session)."""
+    if settings.AUTH_DEV_BYPASS:
+        session_id = await create_session(DEV_USER)
+        resp = RedirectResponse(url="http://localhost:3000/auth/callback?success=1")
+        resp.set_cookie(
+            SESSION_COOKIE_NAME, session_id,
+            max_age=SESSION_TTL, httponly=True, samesite="lax",
+        )
+        return resp
+    redirect_uri = settings.OAUTH_REDIRECT_URI
+    return await oauth.google.authorize_redirect(request, redirect_uri)
+
+
+@app.get("/auth/callback", summary="OAuth callback handler", tags=["auth"])
+async def auth_callback(request: Request) -> RedirectResponse:
+    """Handle Google OAuth callback — exchange code for user info, create session."""
+    token = await oauth.google.authorize_access_token(request)
+    user_info = token.get("userinfo") or {}
+    email = user_info.get("email")
+    if not email:
+        raise HTTPException(status_code=400, detail="No email in Google response")
+    session_data = {
+        "user_id": email,
+        "display_name": user_info.get("name", email.split("@")[0]),
+        "avatar_url": user_info.get("picture"),
+        "email": email,
+    }
+    session_id = await create_session(session_data)
+    resp = RedirectResponse(url="http://localhost:3000/auth/callback?success=1")
+    resp.set_cookie(
+        SESSION_COOKIE_NAME, session_id,
+        max_age=SESSION_TTL, httponly=True, samesite="lax",
+    )
+    return resp
+
+
+@app.post("/auth/logout", summary="Logout", tags=["auth"])
+async def auth_logout(request: Request) -> JSONResponse:
+    """Clear session cookie and delete session from Redis."""
+    session_id = request.cookies.get(SESSION_COOKIE_NAME)
+    if session_id:
+        await delete_session(session_id)
+    response = JSONResponse({"status": "ok"})
+    response.delete_cookie(SESSION_COOKIE_NAME)
+    return response
+
+
+@app.get("/auth/me", summary="Get current user", tags=["auth"])
+async def auth_me(user: dict = Depends(get_current_user)) -> dict:
+    """Return current user info from session."""
+    return user
 
 
 @app.on_event("startup")
