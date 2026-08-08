@@ -9,8 +9,9 @@ from __future__ import annotations
 
 import hmac
 
-from config import API_AUTH_KEY, AUTH_MODE, logger
 from fastapi import Header, HTTPException, status
+
+from config import API_AUTH_KEY, AUTH_MODE, logger
 
 
 async def verify_api_key(
