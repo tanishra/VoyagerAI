@@ -1,4 +1,3 @@
-import { getUserId } from '@/lib/user-id';
 import type { ChatStreamCallbacks, ComparisonData, Itinerary } from './types';
 
 function parseSSELine(line: string): { event?: string; data?: string } | null {
@@ -22,12 +21,17 @@ export async function streamChat(
         headers: {
           'Content-Type': 'application/json',
           Accept: 'text/event-stream',
-          'X-User-Id': getUserId(),
         },
         body: JSON.stringify(body),
         signal,
+        credentials: 'include',
       },
     );
+
+    if (response.status === 401) {
+      window.location.href = '/login';
+      return undefined;
+    }
 
     if (!response.ok) {
       const text = await response.text().catch(() => '');
