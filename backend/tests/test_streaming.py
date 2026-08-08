@@ -438,8 +438,9 @@ class TestRedisCheckpointer:
     killed every /chat/stream run when Redis was reachable."""
 
     def test_factory_uses_async_saver(self):
-        import agents.deep_agent as deep_agent_module
         from langgraph.checkpoint.redis.aio import AsyncRedisSaver
+
+        import agents.deep_agent as deep_agent_module
 
         assert deep_agent_module.AsyncRedisSaver is AsyncRedisSaver
         assert "aget_tuple" in AsyncRedisSaver.__dict__ or any(
@@ -476,8 +477,9 @@ class TestSqliteCheckpointer:
     def test_sqlite_checkpointer_supports_aget_tuple(self, tmp_path, monkeypatch):
         import asyncio
 
-        import agents.deep_agent as deep_agent_module
         from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+
+        import agents.deep_agent as deep_agent_module
 
         db = tmp_path / "checkpoints.sqlite"
         monkeypatch.setattr(deep_agent_module, "_sqlite_checkpointer", None)
@@ -495,8 +497,9 @@ class TestSqliteCheckpointer:
     def test_checkpointer_backend_selects_sqlite(self, tmp_path, monkeypatch):
         import asyncio
 
-        import agents.deep_agent as deep_agent_module
         from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+
+        import agents.deep_agent as deep_agent_module
 
         db = tmp_path / "checkpoints.sqlite"
         monkeypatch.setattr(deep_agent_module, "_sqlite_checkpointer", None)
@@ -509,8 +512,9 @@ class TestSqliteCheckpointer:
     def test_checkpointer_backend_redis_falls_back_gracefully(self, tmp_path, monkeypatch):
         import asyncio
 
-        import agents.deep_agent as deep_agent_module
         from langgraph.checkpoint.memory import MemorySaver
+
+        import agents.deep_agent as deep_agent_module
 
         monkeypatch.setattr(deep_agent_module.settings, "CHECKPOINTER_BACKEND", "redis")
         monkeypatch.setattr(deep_agent_module, "create_redis_checkpointer", _raise_on_call)
@@ -530,8 +534,9 @@ class TestChatStreamEndpoint:
     def test_event_sequence(self, monkeypatch):
         import json as _json
 
-        import main as main_module
         from fastapi.testclient import TestClient
+
+        import main as main_module
 
         async def fake_stream_chat_agent(message, thread_id, user_id=None):
             yield {"event": "on_chat_model_stream", "data": {"chunk": _Chunk([{"type": "text-delta", "text": "Hi"}])}}
@@ -541,10 +546,10 @@ class TestChatStreamEndpoint:
             yield {"event": "done", "data": None}
 
         monkeypatch.setattr(main_module, "stream_chat_agent", fake_stream_chat_agent)
+        monkeypatch.setattr("config.settings.AUTH_DEV_BYPASS", True)
         with TestClient(main_module.app) as c, c.stream(
             "POST", "/chat/stream",
             json={"message": "hello"},
-            headers={"X-User-Id": "tester"},
         ) as r:
             assert r.status_code == 200
             parsed = []
@@ -564,8 +569,9 @@ class TestChatStreamEndpoint:
     def test_tool_error_event_sequence(self, monkeypatch):
         import json as _json
 
-        import main as main_module
         from fastapi.testclient import TestClient
+
+        import main as main_module
 
         async def fake_stream_chat_agent(message, thread_id, user_id=None):
             yield {"event": "on_tool_start", "name": "task", "run_id": "r9", "data": {"input": {"subagent_type": "risk_detector"}}}
@@ -573,10 +579,10 @@ class TestChatStreamEndpoint:
             yield {"event": "done", "data": None}
 
         monkeypatch.setattr(main_module, "stream_chat_agent", fake_stream_chat_agent)
+        monkeypatch.setattr("config.settings.AUTH_DEV_BYPASS", True)
         with TestClient(main_module.app) as c, c.stream(
             "POST", "/chat/stream",
             json={"message": "hello"},
-            headers={"X-User-Id": "tester"},
         ) as r:
             parsed = []
             for line in r.iter_lines():
@@ -591,19 +597,20 @@ class TestChatStreamEndpoint:
         import hashlib
         import json as _json
 
-        import main as main_module
         from fastapi.testclient import TestClient
+
+        import main as main_module
 
         async def fake_stream_chat_agent(message, thread_id, user_id=None):
             yield {"event": "done", "data": None}
 
         monkeypatch.setattr(main_module, "stream_chat_agent", fake_stream_chat_agent)
-        user_tag = hashlib.sha256(b"user-a").hexdigest()[:12]
+        monkeypatch.setattr("config.settings.AUTH_DEV_BYPASS", True)
+        user_tag = hashlib.sha256(b"dev@localhost").hexdigest()[:12]
 
         with TestClient(main_module.app) as c, c.stream(
             "POST", "/chat/stream",
             json={"message": "hello"},
-            headers={"X-User-Id": "user-a"},
         ) as r:
             parsed = []
             for line in r.iter_lines():
@@ -619,20 +626,21 @@ class TestChatStreamEndpoint:
         import hashlib
         import json as _json
 
-        import main as main_module
         from fastapi.testclient import TestClient
+
+        import main as main_module
 
         async def fake_stream_chat_agent(message, thread_id, user_id=None):
             yield {"event": "done", "data": None}
 
         monkeypatch.setattr(main_module, "stream_chat_agent", fake_stream_chat_agent)
-        user_tag = hashlib.sha256(b"user-a").hexdigest()[:12]
+        monkeypatch.setattr("config.settings.AUTH_DEV_BYPASS", True)
+        user_tag = hashlib.sha256(b"dev@localhost").hexdigest()[:12]
         resume_id = f"chat:{user_tag}:abc123"
 
         with TestClient(main_module.app) as c, c.stream(
             "POST", "/chat/stream",
             json={"message": "hello", "thread_id": resume_id},
-            headers={"X-User-Id": "user-a"},
         ) as r:
             parsed = []
             for line in r.iter_lines():
@@ -645,19 +653,20 @@ class TestChatStreamEndpoint:
         import hashlib
         import json as _json
 
-        import main as main_module
         from fastapi.testclient import TestClient
+
+        import main as main_module
 
         async def fake_stream_chat_agent(message, thread_id, user_id=None):
             yield {"event": "done", "data": None}
 
         monkeypatch.setattr(main_module, "stream_chat_agent", fake_stream_chat_agent)
-        user_tag = hashlib.sha256(b"user-a").hexdigest()[:12]
+        monkeypatch.setattr("config.settings.AUTH_DEV_BYPASS", True)
+        user_tag = hashlib.sha256(b"dev@localhost").hexdigest()[:12]
 
         with TestClient(main_module.app) as c, c.stream(
             "POST", "/chat/stream",
             json={"message": "hello", "thread_id": "plain-id"},
-            headers={"X-User-Id": "user-a"},
         ) as r:
             parsed = []
             for line in r.iter_lines():
@@ -669,18 +678,19 @@ class TestChatStreamEndpoint:
     def test_agent_exception_yields_error_event(self, monkeypatch):
         import json as _json
 
-        import main as main_module
         from fastapi.testclient import TestClient
+
+        import main as main_module
 
         async def failing_stream_chat_agent(message, thread_id, user_id=None):
             yield {"event": "on_chat_model_stream", "data": {"chunk": "part"}}
             raise RuntimeError("boom")
 
         monkeypatch.setattr(main_module, "stream_chat_agent", failing_stream_chat_agent)
+        monkeypatch.setattr("config.settings.AUTH_DEV_BYPASS", True)
         with TestClient(main_module.app) as c, c.stream(
             "POST", "/chat/stream",
             json={"message": "hello"},
-            headers={"X-User-Id": "tester"},
         ) as r:
             parsed = []
             for line in r.iter_lines():
