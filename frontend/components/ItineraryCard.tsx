@@ -1,9 +1,12 @@
 'use client';
 
-import { Globe, MoreHorizontal, Printer, FileJson, FileText, Share2, Check } from 'lucide-react';
+import { Globe, MoreHorizontal, Printer, FileJson, FileText, Share2, Check, Map as MapIcon, ChevronDown } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
+import dynamic from 'next/dynamic';
 import type { Itinerary } from '@/lib/types';
 import { createShare, exportItinerary } from '@/lib/share-api';
+
+const ItineraryMap = dynamic(() => import('./ItineraryMap'), { ssr: false });
 
 interface ItineraryCardProps {
   itinerary: Itinerary;
@@ -19,6 +22,7 @@ export default function ItineraryCard({ itinerary, threadId, printMode = false }
 
   const [menuOpen, setMenuOpen] = useState(false);
   const [shareStatus, setShareStatus] = useState<'idle' | 'creating' | 'copied' | 'error'>('idle');
+  const [mapExpanded, setMapExpanded] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -176,6 +180,26 @@ export default function ItineraryCard({ itinerary, threadId, printMode = false }
             </div>
           ))}
         </div>
+        {/* Map section — hidden in print mode */}
+        {!printMode && (
+          <div className="print-hidden">
+            <button
+              onClick={() => setMapExpanded(!mapExpanded)}
+              className="w-full flex items-center justify-between px-3 py-2 rounded-lg bg-muted border border-border text-sm text-foreground hover:bg-muted/80 transition-colors cursor-pointer"
+            >
+              <span className="flex items-center gap-2">
+                <MapIcon className="w-4 h-4 text-primary" />
+                Map
+              </span>
+              <ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform ${mapExpanded ? 'rotate-180' : ''}`} />
+            </button>
+            {mapExpanded && (
+              <div className="mt-2">
+                <ItineraryMap days={days} destination={itinerary.destination} />
+              </div>
+            )}
+          </div>
+        )}
         {warnings.length > 0 && (
           <div className="text-xs text-amber-600">
             ⚠ {warnings[0]}
