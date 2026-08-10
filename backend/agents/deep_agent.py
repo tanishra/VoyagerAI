@@ -19,6 +19,7 @@ from agents.llm import get_formatter_model, get_orchestrator_model
 from agents.prompts import CHAT_AGENT_SYSTEM_PROMPT
 from agents.subagents import get_subagents
 from config.settings import settings
+from geocode_service import geocode
 
 logger = logging.getLogger("travel_agent.deep_agent")
 
@@ -305,6 +306,42 @@ def _extract_chat_itinerary(state: dict) -> dict | None:
     return None
 
 
+async def _enrich_itinerary_with_coordinates(itinerary: dict) -> dict:
+    """Attach lat/lng coordinates to each activity in an itinerary dict.
+
+    Geocodes morning/afternoon/evening locations via Nominatim (with Redis
+    caching). Mutates a copy — never the original dict. If geocoding fails
+    for a slot, that slot simply lacks lat/lng (frontend skips the marker).
+
+    Never raises — on any exception returns the itinerary unchanged.
+    """
+    try:
+        import copy
+
+        enriched = copy.deepcopy(itinerary)
+        destination = enriched.get("destination", "")
+        days = enriched.get("days", [])
+
+        for day in days:
+            for slot_key in ("morning", "afternoon", "evening"):
+                slot = day.get(slot_key)
+                if not slot or not isinstance(slot, dict):
+                    continue
+                location = slot.get("location", "")
+                if not location:
+                    continue
+                query = f"{location}, {destination}" if destination else location
+                coords = await geocode(query)
+                if coords is not None:
+                    slot["lat"] = coords["lat"]
+                    slot["lng"] = coords["lng"]
+
+        return enriched
+    except Exception:
+        logger.warning("Itinerary coordinate enrichment failed", exc_info=True)
+        return itinerary
+
+
 def _last_assistant_text(state: dict) -> str:
     messages = state.get("messages", [])
     for msg in reversed(messages):
@@ -454,6 +491,7 @@ async def stream_chat_agent(
         if comparison is not None:
             yield {"event": "comparison", "data": comparison}
         elif itinerary is not None:
+            itinerary = await _enrich_itinerary_with_coordinates(itinerary)
             yield {"event": "itinerary", "data": itinerary}
         yield {"event": "done", "data": None}
     except (ValueError, json.JSONDecodeError) as exc:
