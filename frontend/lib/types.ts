@@ -3,6 +3,8 @@ export interface TimeSlot {
   location: string;
   cost_usd: number;
   duration: string;
+  lat?: number;
+  lng?: number;
 }
 
 export interface DayPlan {
