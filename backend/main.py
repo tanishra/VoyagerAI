@@ -21,6 +21,7 @@ from agents import (
     stream_chat_agent,
 )
 from agents.deep_agent import (
+    _enrich_itinerary_with_coordinates,
     _extract_chat_itinerary,
     _extract_comparison_from_text,
     _extract_itinerary_from_text,
@@ -369,6 +370,7 @@ async def get_thread_history(
                 itinerary = _extract_itinerary_from_text(content)
                 comparison = _extract_comparison_from_text(content)
                 if itinerary:
+                    itinerary = await _enrich_itinerary_with_coordinates(itinerary)
                     entry["itinerary"] = itinerary
                 if comparison:
                     entry["comparison"] = comparison
@@ -550,6 +552,7 @@ async def create_share_link(
     itinerary = await _get_latest_itinerary(thread_id, user_id)
     if itinerary is None:
         raise HTTPException(status_code=404, detail="No itinerary found in this thread")
+    itinerary = await _enrich_itinerary_with_coordinates(itinerary)
     destination = itinerary.get("destination", "Untitled Trip")
     itinerary_json = json.dumps(itinerary)
     token, expires_at = await share_store.create_share(
@@ -649,6 +652,7 @@ async def export_itinerary(
     itinerary = await _get_latest_itinerary(thread_id, user_id)
     if itinerary is None:
         raise HTTPException(status_code=404, detail="No itinerary found in this thread")
+    itinerary = await _enrich_itinerary_with_coordinates(itinerary)
     if fmt == "markdown":
         md = _itinerary_to_markdown(itinerary)
         return PlainTextResponse(
