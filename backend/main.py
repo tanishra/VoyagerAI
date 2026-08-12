@@ -242,10 +242,11 @@ async def chat_stream(
     thread_id = _scoped_chat_thread_id(chat_req.thread_id, user_id)
 
     logger.info(
-        "POST /chat/stream — thread_id=%s, message_len=%d, user=%s",
+        "POST /chat/stream — thread_id=%s, message_len=%d, user=%s, client_msg_id=%s",
         thread_id,
         len(_msg_safe),
         user_id,
+        chat_req.client_message_id,
     )
 
     async def event_generator():
@@ -318,10 +319,13 @@ async def list_threads(
     user_id = user["user_id"]
     threads = await thread_store.list_threads(user_id, limit=limit, offset=offset)
     total = await thread_store.count_threads(user_id)
-    return {
-        "threads": [asdict(t) for t in threads],
-        "has_more": (offset + limit) < total,
-    }
+    return JSONResponse(
+        content={
+            "threads": [asdict(t) for t in threads],
+            "has_more": (offset + limit) < total,
+        },
+        headers={"Cache-Control": "public, max-age=300"},
+    )
 
 
 @app.get(
@@ -376,7 +380,10 @@ async def get_thread_history(
                     entry["comparison"] = comparison
             result.append(entry)
 
-    return result
+    return JSONResponse(
+        content=result,
+        headers={"Cache-Control": "public, max-age=300"},
+    )
 
 
 @app.delete(
