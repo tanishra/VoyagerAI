@@ -43,3 +43,6 @@ class ChatRequest(BaseModel):
     thread_id: str | None = Field(
         None, max_length=200, description="Thread ID for resuming a previous conversation."
     )
+    client_message_id: str | None = Field(
+        None, max_length=100, description="Client-generated UUID for offline message dedup."
+    )
