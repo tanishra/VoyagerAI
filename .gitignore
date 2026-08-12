@@ -17,13 +17,18 @@ frontend/build/
 frontend/.env*
 frontend/next-env.d.ts
 
+# PWA build artifacts
+frontend/public/sw.js
+frontend/public/swe-worker-*.js
+frontend/public/workbox-*.js
+
 # OS
 .DS_Store
 *.pem
 
 # Docs
 bugs.md
-plan.md
+# plan.md
 
 # IDE
 .vscode/
