@@ -1,7 +1,9 @@
 import type { NextConfig } from "next";
+import withPWAInit from "@ducanh2912/next-pwa";
 
 const nextConfig: NextConfig = {
   compress: true,
+  turbopack: {},
   images: {
     formats: ["image/avif", "image/webp"],
     remotePatterns: [
@@ -20,4 +22,10 @@ const nextConfig: NextConfig = {
   ],
 };
 
-export default nextConfig;
+export default withPWAInit({
+  dest: "public",
+  register: true,
+  disable: process.env.NODE_ENV === "development",
+  cacheOnFrontEndNav: true,
+  aggressiveFrontEndNavCaching: false,
+})(nextConfig);
