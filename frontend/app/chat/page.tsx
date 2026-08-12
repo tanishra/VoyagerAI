@@ -2,13 +2,16 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Send, Square, MessageSquare, RotateCcw, Globe, Search, ShieldAlert, ListChecks, Loader2, PanelLeft, ChevronDown } from 'lucide-react';
+import { Send, Square, MessageSquare, RotateCcw, Globe, Search, ShieldAlert, ListChecks, Loader2, PanelLeft, ChevronDown, Clock } from 'lucide-react';
 import { streamChat } from '@/lib/chat-api';
 import { listThreads, getThreadHistory, deleteThread, type ThreadMeta } from '@/lib/threads-api';
 import { getSession } from '@/lib/auth';
+import { useOnlineStatus } from '@/lib/useOnlineStatus';
+import { queueMessage, replayQueuedMessages, type QueuedMessage } from '@/lib/message-queue';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import MarkdownRenderer from '@/components/MarkdownRenderer';
 import ItineraryCard from '@/components/ItineraryCard';
+import OfflineBanner from '@/components/OfflineBanner';
 import ComparisonView from './ComparisonView';
 import ThreadSidebar from './ThreadSidebar';
 import type { ChatMessage, ComparisonData, Itinerary } from '@/lib/types';
@@ -62,6 +65,9 @@ export default function ChatPage() {
   const [elapsed, setElapsed] = useState(0);
   const [isAtBottom, setIsAtBottom] = useState(true);
   const [authChecked, setAuthChecked] = useState(false);
+  const isOnline = useOnlineStatus();
+  const [pendingMessages, setPendingMessages] = useState<QueuedMessage[]>([]);
+  const [replaying, setReplaying] = useState(false);
 
   const abortRef = useRef<AbortController | null>(null);
   const sendingRef = useRef(false);
@@ -201,6 +207,14 @@ export default function ChatPage() {
     const text = input.trim();
     if (!text || loading || sendingRef.current) return;
 
+    // If offline, queue the message instead of sending
+    if (!isOnline) {
+      const queued = await queueMessage(threadId, text);
+      setPendingMessages((prev) => [...prev, queued]);
+      setInput('');
+      return;
+    }
+
     sendingRef.current = true;
     sessionResetRef.current = false;
     setInput('');
@@ -326,7 +340,130 @@ export default function ChatPage() {
         setHasMoreThreads(res.has_more);
       });
     }
-  }, [input, loading, threadId]);
+  }, [input, loading, threadId, isOnline]);
+
+  // Replay queued messages when back online
+  useEffect(() => {
+    if (!isOnline || replaying) return;
+    let cancelled = false;
+
+    (async () => {
+      const { getQueuedMessages } = await import('@/lib/offline-db');
+      const queued = await getQueuedMessages();
+      if (queued.length === 0 || cancelled) return;
+
+      setReplaying(true);
+      const sentCount = await replayQueuedMessages(async (msg) => {
+        // Remove from pending UI
+        setPendingMessages((prev) => prev.filter((p) => p.id !== msg.id));
+
+        // Add user message to UI
+        const userMessage: ChatMessage = {
+          id: `replay-${msg.id}`,
+          role: 'user',
+          content: msg.content,
+        };
+        setMessages((prev) => [...prev, userMessage]);
+
+        const assistantId = `replay-assistant-${msg.id}`;
+        setMessages((prev) => [...prev, { id: assistantId, role: 'assistant', content: '' }]);
+        setLoading(true);
+
+        try {
+          let accumulatedText = '';
+          let accumulatedItinerary: Itinerary | null = null;
+          let accumulatedComparison: ComparisonData | null = null;
+          let streamFailed = false;
+          let errorMessage = '';
+
+          await streamChat(
+            { message: msg.content, thread_id: msg.thread_id ?? undefined },
+            {
+              onToken: (token) => {
+                accumulatedText += token;
+                setStreamingText(accumulatedText);
+              },
+              onItinerary: (itinerary) => {
+                accumulatedItinerary = itinerary;
+                setStreamingItinerary(itinerary);
+              },
+              onComparison: (data) => {
+                accumulatedComparison = data;
+                setStreamingComparison(data);
+              },
+              onThreadId: (tid) => {
+                if (sessionResetRef.current) return;
+                setThreadId(tid);
+                try {
+                  localStorage.setItem(THREAD_STORAGE_KEY, tid);
+                } catch {
+                  // storage unavailable
+                }
+              },
+              onStatus: (status) => {
+                const tool = status.tool;
+                if (!TOOL_LABELS[tool]) return;
+                setActiveWorkers((prev) =>
+                  status.status === 'running'
+                    ? prev.includes(tool) ? prev : [...prev, tool]
+                    : prev.filter((t) => t !== tool),
+                );
+              },
+              onError: (msg) => {
+                streamFailed = true;
+                errorMessage = msg;
+                setError(msg);
+              },
+            },
+          );
+
+          setMessages((prev) => {
+            const updated = [...prev];
+            const idx = updated.findIndex((m) => m.id === assistantId);
+            if (idx !== -1) {
+              if (streamFailed && !accumulatedText) {
+                updated[idx] = {
+                  ...updated[idx],
+                  content: `⚠ Generation failed: ${errorMessage || 'unknown error'}`,
+                };
+              } else {
+                updated[idx] = {
+                  ...updated[idx],
+                  content: accumulatedText,
+                  itinerary: accumulatedItinerary ?? undefined,
+                  comparison: accumulatedComparison ?? undefined,
+                };
+              }
+            }
+            return updated;
+          });
+
+          setStreamingText('');
+          setStreamingItinerary(null);
+          setStreamingComparison(null);
+          setLoading(false);
+          setActiveWorkers([]);
+          return true;
+        } catch {
+          setLoading(false);
+          setActiveWorkers([]);
+          return false;
+        }
+      });
+
+      if (!cancelled) {
+        setReplaying(false);
+        if (sentCount > 0) {
+          listThreads().then((res) => {
+            setThreads(res.threads);
+            setHasMoreThreads(res.has_more);
+          });
+        }
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [isOnline, replaying]);
 
   const handleSelectPlan = useCallback((tier: string) => {
     setInput(`I'll go with the ${tier} plan`);
@@ -350,6 +487,7 @@ export default function ChatPage() {
 
   return (
     <main className="relative min-h-screen overflow-hidden pt-16 flex flex-col">
+      <OfflineBanner replaying={replaying} />
       {/* Background gradients */}
       <div className="pointer-events-none fixed inset-0">
         <div className="absolute top-0 right-1/4 w-[600px] h-[600px] bg-indigo-400/[0.06] rounded-full blur-[120px] animate-aurora" />
@@ -527,6 +665,24 @@ export default function ChatPage() {
                 )}
                 {msg.comparison && <ComparisonView data={msg.comparison} onSelect={handleSelectPlan} />}
                 {msg.itinerary && <ItineraryCard itinerary={msg.itinerary} threadId={threadId ?? undefined} />}
+              </div>
+            </motion.div>
+          ))}
+
+          {/* Pending (offline-queued) messages */}
+          {pendingMessages.map((msg) => (
+            <motion.div
+              key={msg.id}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="flex justify-end"
+            >
+              <div className="max-w-[85%] rounded-2xl px-4 py-3 bg-muted/50 border border-border text-muted-foreground">
+                <div className="flex items-center gap-1.5 mb-1">
+                  <Clock className="w-3 h-3 animate-pulse" />
+                  <span className="text-[10px] font-medium">Pending — will send when online</span>
+                </div>
+                <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
               </div>
             </motion.div>
           ))}
