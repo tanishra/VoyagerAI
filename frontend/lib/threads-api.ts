@@ -1,4 +1,5 @@
 import type { Itinerary, ComparisonData } from '@/lib/types';
+import { putThreads, getAllCachedThreads, putThreadHistory, getCachedThreadHistory, clearOldThreads } from './offline-db';
 
 export interface ThreadMeta {
   thread_id: string;
@@ -35,12 +36,19 @@ export async function listThreads(offset: number = 0): Promise<ThreadListRespons
     if (!res.ok) return { threads: [], has_more: false };
     const data = await res.json();
     // Backward-compatible: if response is an array, wrap it
-    if (Array.isArray(data)) {
-      return { threads: data, has_more: false };
+    const result = Array.isArray(data)
+      ? { threads: data, has_more: false }
+      : data;
+    // Write-through cache: store threads in IndexedDB for offline access
+    if (result.threads.length > 0) {
+      putThreads(result.threads).catch(() => {});
+      clearOldThreads().catch(() => {});
     }
-    return data;
+    return result;
   } catch {
-    return { threads: [], has_more: false };
+    // Network failure — fall back to cached threads
+    const cached = await getAllCachedThreads();
+    return { threads: cached, has_more: false };
   }
 }
 
@@ -54,9 +62,13 @@ export async function getThreadHistory(threadId: string): Promise<ThreadMessage[
       return [];
     }
     if (!res.ok) return [];
-    return res.json();
+    const messages = await res.json();
+    // Write-through cache: store history in IndexedDB for offline access
+    putThreadHistory(threadId, messages).catch(() => {});
+    return messages;
   } catch {
-    return [];
+    // Network failure — fall back to cached history
+    return getCachedThreadHistory(threadId);
   }
 }
 
