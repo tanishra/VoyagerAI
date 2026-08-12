@@ -7,6 +7,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
 import { getSession, logout, getLoginUrl, type SessionUser } from '@/lib/auth';
+import InstallPrompt from './InstallPrompt';
 
 const navLinks = [
   { href: '/', label: 'Home' },
@@ -186,6 +187,7 @@ export default function Navbar() {
               <ArrowRight className="w-3.5 h-3.5" />
             </a>
           ) : null}
+          <InstallPrompt />
         </div>
 
         {/* Mobile Toggle */}
