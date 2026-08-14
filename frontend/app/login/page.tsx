@@ -2,9 +2,12 @@
 
 import { motion } from 'framer-motion';
 import { Sparkles, ArrowRight } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 import { getLoginUrl } from '@/lib/auth';
 
 export default function LoginPage() {
+  const t = useTranslations('auth');
+  const tNav = useTranslations('nav');
   return (
     <main className="relative min-h-screen overflow-hidden pt-16">
       <div className="pointer-events-none fixed inset-0">
@@ -27,23 +30,23 @@ export default function LoginPage() {
             >
               <Sparkles className="w-6 h-6 text-primary" />
             </motion.div>
-            <h1 className="text-3xl font-bold text-foreground">VoyagerAI</h1>
+            <h1 className="text-3xl font-bold text-foreground">{tNav('brand')}</h1>
           </div>
 
           <p className="text-sm text-muted-foreground mb-8 max-w-xs mx-auto">
-            Sign in to start planning your trips with AI-powered itineraries.
+            {t('signInPrompt')}
           </p>
 
           <a
             href={getLoginUrl()}
             className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-all duration-200 hover:shadow-lg hover:shadow-primary/20"
           >
-            Sign in with Google
+            {t('signInWithGoogle')}
             <ArrowRight className="w-4 h-4" />
           </a>
 
           <p className="text-xs text-muted-foreground mt-6">
-            By signing in, you agree to let VoyagerAI access your Google email and profile.
+            {t('privacyNote')}
           </p>
         </motion.div>
       </div>
