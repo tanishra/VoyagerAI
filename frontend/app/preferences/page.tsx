@@ -2,12 +2,14 @@
 
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Sparkles, Save, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
+import { Sparkles, Save, CheckCircle, AlertCircle, Loader2, FileText } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 import { getSession } from '@/lib/auth';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 export default function PreferencesPage() {
+  const t = useTranslations('preferences');
   const [content, setContent] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -27,7 +29,7 @@ export default function PreferencesPage() {
       const text = await res.text();
       setContent(text);
     } catch {
-      setMessage({ type: 'error', text: 'Could not load preferences. Is the backend running?' });
+      setMessage({ type: 'error', text: t('loadError') });
     } finally {
       setLoading(false);
     }
@@ -61,13 +63,13 @@ export default function PreferencesPage() {
         return;
       }
       if (res.ok) {
-        setMessage({ type: 'success', text: 'Preferences saved!' });
+        setMessage({ type: 'success', text: t('saved') });
       } else {
         const errText = await res.text().catch(() => '');
-        setMessage({ type: 'error', text: errText || 'Failed to save preferences.' });
+        setMessage({ type: 'error', text: errText || t('saveFailed') });
       }
     } catch {
-      setMessage({ type: 'error', text: 'Could not save preferences. Is the backend running?' });
+      setMessage({ type: 'error', text: t('saveError') });
     } finally {
       setSaving(false);
     }
@@ -105,11 +107,11 @@ export default function PreferencesPage() {
               <Sparkles className="w-6 h-6 text-primary" />
             </motion.div>
             <h1 className="text-3xl md:text-4xl font-bold text-foreground">
-              Your Preferences
+              {t('title')}
             </h1>
           </div>
           <p className="text-sm md:text-base text-muted-foreground max-w-md mx-auto">
-            The agent reads these preferences at the start of every planning session to personalize your itineraries.
+            {t('subtitle')}
           </p>
         </motion.div>
 
@@ -144,11 +146,12 @@ export default function PreferencesPage() {
           >
             <div className="rounded-xl border border-border bg-card backdrop-blur-xl overflow-hidden shadow-sm">
               <div className="p-4 border-b border-border">
-                <label htmlFor="preferences" className="text-sm font-medium text-foreground/80">
-                  Preferences file
+                <label className="text-sm font-medium text-foreground flex items-center gap-2">
+                  <FileText className="w-4 h-4 text-muted-foreground" />
+                  {t('fileLabel')}
                 </label>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  Edit the YAML content below. The format is defined by the agent.
+                <p className="text-xs text-muted-foreground">
+                  {t('fileHint')}
                 </p>
               </div>
               <textarea
@@ -156,13 +159,11 @@ export default function PreferencesPage() {
                 value={content}
                 onChange={(e) => setContent(e.target.value)}
                 className="w-full min-h-[300px] p-4 bg-transparent text-sm text-foreground/90 font-mono outline-none resize-y border-0 focus:ring-0 placeholder:text-muted-foreground/40"
-                placeholder="No preferences saved yet. The agent will create them on your first planning session."
+                placeholder={t('placeholder')}
                 spellCheck={false}
               />
               <div className="p-4 border-t border-border flex items-center justify-between">
-                <span className="text-xs text-muted-foreground">
-                  {content.length} characters
-                </span>
+                <span className="text-xs text-muted-foreground">{t('characters', { count: content.length })}</span>
                 <button
                   onClick={handleSave}
                   disabled={saving}
@@ -173,7 +174,7 @@ export default function PreferencesPage() {
                   ) : (
                     <Save className="w-4 h-4" />
                   )}
-                  {saving ? 'Saving...' : 'Save Preferences'}
+                  {saving ? t('saving') : t('save')}
                 </button>
               </div>
             </div>
