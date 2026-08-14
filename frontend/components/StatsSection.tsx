@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { Globe, MapPin, Sparkles, Award } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 
 const stats = [
   { value: 5000, label: 'Trips Planned', icon: Globe, suffix: '+' },
@@ -46,6 +47,7 @@ function CountUp({ target, suffix }: { target: number; suffix: string }) {
 }
 
 export default function StatsSection() {
+  const t = useTranslations('home');
   return (
     <section className="py-16 md:py-20 border-t border-border">
       <div className="max-w-4xl mx-auto px-4">
@@ -66,7 +68,7 @@ export default function StatsSection() {
               <div className="text-2xl md:text-3xl font-bold text-foreground tabular-nums mb-1">
                 <CountUp target={stat.value} suffix={stat.suffix} />
               </div>
-              <p className="text-xs text-muted-foreground">{stat.label}</p>
+              <p className="text-xs text-muted-foreground">{t(`stats${['Trips', 'Destinations', 'Accuracy', 'Years'][i]}`)}</p>
             </motion.div>
           ))}
         </div>
