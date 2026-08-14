@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronDown, Search } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 
 interface FaqItem {
   q: string;
@@ -89,7 +90,18 @@ function FaqAccordion({ item, index }: { item: FaqItem; index: number }) {
 }
 
 export default function FaqSection() {
+  const t = useTranslations('faq');
   const [searchQuery, setSearchQuery] = useState('');
+  const faqs = [
+    { q: t('q1'), a: t('a1') },
+    { q: t('q2'), a: t('a2') },
+    { q: t('q3'), a: t('a3') },
+    { q: t('q4'), a: t('a4') },
+    { q: t('q5'), a: t('a5') },
+    { q: t('q6'), a: t('a6') },
+    { q: t('q7'), a: t('a7') },
+    { q: t('q8'), a: t('a8') },
+  ];
   const filtered = searchQuery.trim()
     ? faqs.filter(f => f.q.toLowerCase().includes(searchQuery.toLowerCase()) || f.a.toLowerCase().includes(searchQuery.toLowerCase()))
     : faqs;
@@ -100,11 +112,11 @@ export default function FaqSection() {
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/40" />
         <input
           type="text"
-          placeholder="Search FAQs..."
+          placeholder={t('searchPlaceholder')}
           value={searchQuery}
           onChange={e => setSearchQuery(e.target.value)}
           className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-muted border border-border text-sm text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:border-primary/50 transition-colors"
-          aria-label="Search frequently asked questions"
+          aria-label={t('searchLabel')}
         />
       </div>
       <div>
@@ -113,7 +125,7 @@ export default function FaqSection() {
         ))}
         {filtered.length === 0 && (
           <p className="text-sm text-muted-foreground text-center py-8">
-            No results found for &quot;{searchQuery}&quot;
+            {t('noResults', { query: searchQuery })}
           </p>
         )}
       </div>
