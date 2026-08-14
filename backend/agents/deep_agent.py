@@ -16,7 +16,7 @@ from langgraph.store.redis import RedisConnectionFactory, RedisStore
 from pydantic import BaseModel
 
 from agents.llm import get_formatter_model, get_orchestrator_model
-from agents.prompts import CHAT_AGENT_SYSTEM_PROMPT
+from agents.prompts import build_chat_agent_prompt
 from agents.subagents import get_subagents
 from config.settings import settings
 from geocode_service import geocode
@@ -153,7 +153,7 @@ class _ModelStream:
         return ""
 
 
-async def create_chat_agent(checkpointer=None, store=None, user_id=None):
+async def create_chat_agent(checkpointer=None, store=None, user_id=None, locale=None):
     if checkpointer is None:
         checkpointer = await create_checkpointer()
 
@@ -187,7 +187,7 @@ async def create_chat_agent(checkpointer=None, store=None, user_id=None):
         model=model,
         tools=[],
         subagents=subagents,
-        system_prompt=CHAT_AGENT_SYSTEM_PROMPT,
+        system_prompt=build_chat_agent_prompt(locale),
         checkpointer=checkpointer,
         store=store,
         memory=["/memories/preferences.md"],
@@ -432,8 +432,9 @@ async def stream_chat_agent(
     message: str,
     thread_id: str,
     user_id: str | None = None,
+    locale: str | None = None,
 ):
-    agent = await create_chat_agent(user_id=user_id)
+    agent = await create_chat_agent(user_id=user_id, locale=locale)
     config = {
         "configurable": {
             "thread_id": thread_id,
