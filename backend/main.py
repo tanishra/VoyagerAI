@@ -241,6 +241,19 @@ async def chat_stream(
     user_id = user["user_id"]
     thread_id = _scoped_chat_thread_id(chat_req.thread_id, user_id)
 
+    # Determine locale: explicit request field takes priority, then Accept-Language header
+    locale = chat_req.locale
+    if not locale:
+        accept_lang = request.headers.get("accept-language", "")
+        for part in accept_lang.split(","):
+            lang = part.strip().split(";")[0].strip().lower()
+            for supported in ("en", "es", "fr", "de", "hi", "ja"):
+                if lang == supported or lang.startswith(supported + "-"):
+                    locale = supported
+                    break
+            if locale:
+                break
+
     logger.info(
         "POST /chat/stream — thread_id=%s, message_len=%d, user=%s, client_msg_id=%s",
         thread_id,
@@ -268,6 +281,7 @@ async def chat_stream(
                 message=_msg_safe,
                 thread_id=thread_id,
                 user_id=user_id,
+                locale=locale,
             ):
                 for payload in _parse_chat_event(event, active_tasks):
                     if payload.get("event") == "token":
