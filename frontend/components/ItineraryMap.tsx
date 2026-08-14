@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import * as maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
+import { useTranslations } from 'next-intl';
 import type { DayPlan } from '@/lib/types';
 
 interface ItineraryMapProps {
@@ -10,10 +11,10 @@ interface ItineraryMapProps {
   destination: string;
 }
 
-const SLOT_LABELS: Record<string, string> = {
-  morning: 'Morning',
-  afternoon: 'Afternoon',
-  evening: 'Evening',
+const SLOT_KEYS: Record<string, string> = {
+  morning: 'morning',
+  afternoon: 'afternoon',
+  evening: 'evening',
 };
 
 const SLOT_COLORS: Record<string, string> = {
@@ -52,6 +53,7 @@ function extractMarkers(day: DayPlan): MapMarker[] {
 }
 
 export default function ItineraryMap({ days, destination }: ItineraryMapProps) {
+  const t = useTranslations('itinerary');
   const [selectedDay, setSelectedDay] = useState(0);
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
@@ -154,9 +156,9 @@ export default function ItineraryMap({ days, destination }: ItineraryMapProps) {
       const popup = new maplibregl.Popup({ offset: 25 }).setHTML(`
         <div style="font-family: sans-serif; min-width: 160px;">
           <div style="font-weight: 600; font-size: 13px; margin-bottom: 4px;">${m.activity}</div>
-          <div style="font-size: 11px; color: #666; margin-bottom: 4px;">${SLOT_LABELS[m.slot]} &middot; ${m.location}</div>
+          <div style="font-size: 11px; color: #666; margin-bottom: 4px;">${t(SLOT_KEYS[m.slot] ?? 'morning')} &middot; ${m.location}</div>
           <div style="font-size: 12px; margin-bottom: 6px;">$${m.cost_usd}</div>
-          <a href="https://www.google.com/maps/search/?api=1&query=${m.lat},${m.lng}" target="_blank" rel="noopener noreferrer" style="font-size: 11px; color: #3b82f6; text-decoration: none;">Open in Google Maps &rarr;</a>
+          <a href="https://www.google.com/maps/search/?api=1&query=${m.lat},${m.lng}" target="_blank" rel="noopener noreferrer" style="font-size: 11px; color: #3b82f6; text-decoration: none;">${t('openInMaps')} &rarr;</a>
         </div>
       `);
 
@@ -178,7 +180,7 @@ export default function ItineraryMap({ days, destination }: ItineraryMapProps) {
   if (!hasAnyCoords) {
     return (
       <div className="rounded-lg border border-border bg-muted/30 p-4 text-center text-sm text-muted-foreground">
-        Map unavailable — no coordinates for this itinerary
+        {t('mapUnavailable')}
       </div>
     );
   }
@@ -200,7 +202,7 @@ export default function ItineraryMap({ days, destination }: ItineraryMapProps) {
                 : 'bg-muted text-muted-foreground hover:bg-muted/80'
             }`}
           >
-            Day {d.day}
+            {t('dayN', { n: d.day })}
           </button>
         ))}
       </div>
@@ -209,7 +211,7 @@ export default function ItineraryMap({ days, destination }: ItineraryMapProps) {
       <div
         ref={mapContainerRef}
         className="w-full h-[360px] rounded-lg border border-border overflow-hidden"
-        aria-label={`Map for Day ${currentDay.day} in ${destination}`}
+        aria-label={t('mapForDay', { day: currentDay.day, destination })}
       />
 
       {/* Legend */}
@@ -220,7 +222,7 @@ export default function ItineraryMap({ days, destination }: ItineraryMapProps) {
               className="inline-block w-3 h-3 rounded-full"
               style={{ background: SLOT_COLORS[m.slot] ?? '#6366f1' }}
             />
-            {SLOT_LABELS[m.slot]}: {m.activity}
+            {t(SLOT_KEYS[m.slot] ?? 'morning')}: {m.activity}
           </div>
         ))}
       </div>
