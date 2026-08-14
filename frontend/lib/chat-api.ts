@@ -7,7 +7,7 @@ function parseSSELine(line: string): { event?: string; data?: string } | null {
 }
 
 export async function streamChat(
-  body: { message: string; thread_id?: string },
+  body: { message: string; thread_id?: string; locale?: string },
   callbacks: ChatStreamCallbacks,
 ): Promise<string | undefined> {
   const { onToken, onItinerary, onComparison, onStatus, onThreadId, onDone, onError, onAbort, signal } = callbacks;
@@ -21,6 +21,7 @@ export async function streamChat(
         headers: {
           'Content-Type': 'application/json',
           Accept: 'text/event-stream',
+          ...(body.locale ? { 'Accept-Language': body.locale } : {}),
         },
         body: JSON.stringify(body),
         signal,
