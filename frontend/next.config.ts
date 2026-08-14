@@ -1,5 +1,6 @@
 import type { NextConfig } from "next";
 import withPWAInit from "@ducanh2912/next-pwa";
+import createNextIntlPlugin from "next-intl/plugin";
 
 const nextConfig: NextConfig = {
   compress: true,
@@ -22,10 +23,14 @@ const nextConfig: NextConfig = {
   ],
 };
 
-export default withPWAInit({
-  dest: "public",
-  register: true,
-  disable: process.env.NODE_ENV === "development",
-  cacheOnFrontEndNav: true,
-  aggressiveFrontEndNavCaching: false,
-})(nextConfig);
+const withNextIntl = createNextIntlPlugin("./i18n.ts");
+
+export default withNextIntl(
+  withPWAInit({
+    dest: "public",
+    register: true,
+    disable: process.env.NODE_ENV === "development",
+    cacheOnFrontEndNav: true,
+    aggressiveFrontEndNavCaching: false,
+  })(nextConfig)
+);
