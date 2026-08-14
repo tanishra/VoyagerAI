@@ -112,6 +112,24 @@ Apply in order:
 }
 </output_format>"""
 
+LANGUAGE_INSTRUCTIONS = {
+    "en": "Respond in English. All itinerary content (activities, tips, warnings, themes, accommodation, transport, visa notes, packing essentials) must be written in English.",
+    "es": "Respond in Spanish (español). All itinerary content (activities, tips, warnings, themes, accommodation, transport, visa notes, packing essentials) must be written in Spanish.",
+    "fr": "Respond in French (français). All itinerary content (activities, tips, warnings, themes, accommodation, transport, visa notes, packing essentials) must be written in French.",
+    "de": "Respond in German (Deutsch). All itinerary content (activities, tips, warnings, themes, accommodation, transport, visa notes, packing essentials) must be written in German.",
+    "hi": "Respond in Hindi (हिन्दी). All itinerary content (activities, tips, warnings, themes, accommodation, transport, visa notes, packing essentials) must be written in Hindi.",
+    "ja": "Respond in Japanese (日本語). All itinerary content (activities, tips, warnings, themes, accommodation, transport, visa notes, packing essentials) must be written in Japanese.",
+}
+
+
+def build_chat_agent_prompt(locale: str | None = None) -> str:
+    """Return the chat agent system prompt with an optional language block injected."""
+    if locale and locale in LANGUAGE_INSTRUCTIONS and locale != "en":
+        lang_block = f"\n<language>\n{LANGUAGE_INSTRUCTIONS[locale]}\n</language>\n"
+        return CHAT_AGENT_SYSTEM_PROMPT + lang_block
+    return CHAT_AGENT_SYSTEM_PROMPT
+
+
 CHAT_AGENT_SYSTEM_PROMPT = """<role>
 You are a Travel Planning Assistant powered by AI. Your job is to help users plan trips through natural conversation. You can switch between casual chat and structured itinerary generation when ready.
 </role>
