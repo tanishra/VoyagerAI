@@ -2,6 +2,7 @@
 
 import { Globe, MoreHorizontal, Printer, FileJson, FileText, Share2, Check, Map as MapIcon, ChevronDown } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
+import { useTranslations } from 'next-intl';
 import dynamic from 'next/dynamic';
 import type { Itinerary } from '@/lib/types';
 import { createShare, exportItinerary } from '@/lib/share-api';
@@ -15,6 +16,7 @@ interface ItineraryCardProps {
 }
 
 export default function ItineraryCard({ itinerary, threadId, printMode = false }: ItineraryCardProps) {
+  const t = useTranslations('itinerary');
   const days = itinerary.days ?? [];
   const warnings = itinerary.warnings ?? [];
   const cost: number | string = itinerary.estimated_total_cost_usd ?? 'N/A';
@@ -87,7 +89,7 @@ export default function ItineraryCard({ itinerary, threadId, printMode = false }
             <button
               onClick={() => setMenuOpen(!menuOpen)}
               className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer"
-              aria-label="Export and share options"
+              aria-label={t('exportShare')}
             >
               <MoreHorizontal className="w-4 h-4" />
             </button>
@@ -98,21 +100,21 @@ export default function ItineraryCard({ itinerary, threadId, printMode = false }
                   className="w-full flex items-center gap-2 px-3 py-2 text-sm text-foreground hover:bg-muted transition-colors cursor-pointer"
                 >
                   <Printer className="w-3.5 h-3.5" />
-                  Print / Save as PDF
+                  {t('printPdf')}
                 </button>
                 <button
                   onClick={() => handleExport('json')}
                   className="w-full flex items-center gap-2 px-3 py-2 text-sm text-foreground hover:bg-muted transition-colors cursor-pointer"
                 >
                   <FileJson className="w-3.5 h-3.5" />
-                  Download JSON
+                  {t('downloadJson')}
                 </button>
                 <button
                   onClick={() => handleExport('markdown')}
                   className="w-full flex items-center gap-2 px-3 py-2 text-sm text-foreground hover:bg-muted transition-colors cursor-pointer"
                 >
                   <FileText className="w-3.5 h-3.5" />
-                  Download Markdown
+                  {t('downloadMarkdown')}
                 </button>
                 <div className="border-t border-border my-1" />
                 <button
@@ -123,22 +125,22 @@ export default function ItineraryCard({ itinerary, threadId, printMode = false }
                   {shareStatus === 'copied' ? (
                     <>
                       <Check className="w-3.5 h-3.5 text-green-500" />
-                      Link copied!
+                      {t('linkCopied')}
                     </>
                   ) : shareStatus === 'creating' ? (
                     <>
                       <Share2 className="w-3.5 h-3.5 animate-pulse" />
-                      Creating link...
+                      {t('creatingLink')}
                     </>
                   ) : shareStatus === 'error' ? (
                     <>
                       <Share2 className="w-3.5 h-3.5 text-red-500" />
-                      Failed to share
+                      {t('failedToShare')}
                     </>
                   ) : (
                     <>
                       <Share2 className="w-3.5 h-3.5" />
-                      Share link
+                      {t('shareLink')}
                     </>
                   )}
                 </button>
@@ -150,28 +152,28 @@ export default function ItineraryCard({ itinerary, threadId, printMode = false }
       <div className="p-4 space-y-3 text-sm">
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <span className="text-muted-foreground">Duration</span>
-            <p className="text-foreground font-medium">{totalDays} days</p>
+            <span className="text-muted-foreground">{t('duration')}</span>
+            <p className="text-foreground font-medium">{t('days', { count: totalDays })}</p>
           </div>
           <div>
-            <span className="text-muted-foreground">Budget</span>
-            <p className="text-foreground font-medium">{cost === 'N/A' ? 'N/A' : `$${cost}`}</p>
+            <span className="text-muted-foreground">{t('budget')}</span>
+            <p className="text-foreground font-medium">{cost === 'N/A' ? t('na') : `$${cost}`}</p>
           </div>
         </div>
         <div className="space-y-2">
           {days.map((day) => (
             <div key={day.day} className="p-2 rounded-lg bg-muted border border-border print-break-inside-avoid">
               <p className="font-medium text-foreground">
-                Day {day.day} — {day.theme ?? 'Day ' + day.day}
+                {t('dayN', { n: day.day })} — {day.theme ?? t('dayN', { n: day.day })}
               </p>
               <p className="text-muted-foreground text-xs mt-0.5">
                 {day.morning?.activity ?? '—'} → {day.afternoon?.activity ?? '—'} → {day.evening?.activity ?? '—'}
               </p>
               {!printMode && (
                 <div className="mt-1.5 text-xs text-muted-foreground space-y-0.5">
-                  <p>Transport: {day.transport ?? 'N/A'}</p>
-                  <p>Stay: {day.accommodation ?? 'N/A'}</p>
-                  <p>Daily cost: ${day.daily_cost_usd ?? 'N/A'}</p>
+                  <p>{t('transport')}: {day.transport ?? t('na')}</p>
+                  <p>{t('stay')}: {day.accommodation ?? t('na')}</p>
+                  <p>{t('dailyCost')}: ${day.daily_cost_usd ?? t('na')}</p>
                   {day.tips && day.tips.length > 0 && (
                     <p className="text-amber-600">💡 {day.tips[0]}</p>
                   )}
@@ -189,7 +191,7 @@ export default function ItineraryCard({ itinerary, threadId, printMode = false }
             >
               <span className="flex items-center gap-2">
                 <MapIcon className="w-4 h-4 text-primary" />
-                Map
+                {t('map')}
               </span>
               <ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform ${mapExpanded ? 'rotate-180' : ''}`} />
             </button>
@@ -207,7 +209,7 @@ export default function ItineraryCard({ itinerary, threadId, printMode = false }
         )}
         {printMode && itinerary.packing_essentials && itinerary.packing_essentials.length > 0 && (
           <div className="pt-2 border-t border-border">
-            <p className="text-muted-foreground font-medium mb-1">🎒 Packing Essentials</p>
+            <p className="text-muted-foreground font-medium mb-1">🎒 {t('packingEssentials')}</p>
             <ul className="text-xs text-muted-foreground list-disc list-inside">
               {itinerary.packing_essentials.map((item, i) => (
                 <li key={i}>{item}</li>
