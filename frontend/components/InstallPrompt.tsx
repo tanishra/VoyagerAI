@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { Download, X } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
@@ -11,6 +12,7 @@ interface BeforeInstallPromptEvent extends Event {
 const DISMISS_KEY = 'voyagerai_install_dismissed';
 
 export default function InstallPrompt() {
+  const t = useTranslations('install');
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [visible, setVisible] = useState(false);
 
@@ -53,12 +55,12 @@ export default function InstallPrompt() {
         className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-primary bg-primary/10 hover:bg-primary/20 border border-primary/30 rounded-lg transition-colors cursor-pointer"
       >
         <Download className="w-3.5 h-3.5" />
-        Install App
+        {t('installApp')}
       </button>
       <button
         onClick={handleDismiss}
         className="p-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer"
-        aria-label="Dismiss install prompt"
+        aria-label={t('dismiss')}
       >
         <X className="w-3.5 h-3.5" />
       </button>
