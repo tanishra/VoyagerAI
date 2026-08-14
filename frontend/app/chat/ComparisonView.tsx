@@ -3,16 +3,26 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Globe, ChevronDown, ChevronUp, Wallet, Scale, Sparkles } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 import type { ComparisonData, PlanTier } from '@/lib/types';
 
-const TIER_CONFIG: Record<string, { icon: typeof Wallet; label: string; color: string; border: string; bg: string }> = {
-  budget: { icon: Wallet, label: 'Budget', color: 'text-emerald-600', border: 'border-emerald-500/20', bg: 'bg-emerald-500/5' },
-  balanced: { icon: Scale, label: 'Balanced', color: 'text-indigo-600', border: 'border-indigo-500/20', bg: 'bg-indigo-500/5' },
-  premium: { icon: Sparkles, label: 'Premium', color: 'text-amber-600', border: 'border-amber-500/20', bg: 'bg-amber-500/5' },
+const TIER_KEYS: Record<string, string> = {
+  budget: 'budget',
+  balanced: 'balanced',
+  premium: 'premium',
+};
+
+const TIER_CONFIG: Record<string, { icon: typeof Wallet; color: string; border: string; bg: string }> = {
+  budget: { icon: Wallet, color: 'text-emerald-600', border: 'border-emerald-500/20', bg: 'bg-emerald-500/5' },
+  balanced: { icon: Scale, color: 'text-indigo-600', border: 'border-indigo-500/20', bg: 'bg-indigo-500/5' },
+  premium: { icon: Sparkles, color: 'text-amber-600', border: 'border-amber-500/20', bg: 'bg-amber-500/5' },
 };
 
 function PlanCard({ plan, onSelect }: { plan: PlanTier; onSelect: (tier: string) => void }) {
+  const t = useTranslations('comparison');
+  const tItin = useTranslations('itinerary');
   const [expanded, setExpanded] = useState(false);
+  const tierKey = TIER_KEYS[plan.tier] ?? 'balanced';
   const cfg = TIER_CONFIG[plan.tier] ?? TIER_CONFIG.balanced;
   const Icon = cfg.icon;
   const itinerary = plan.itinerary;
@@ -26,7 +36,7 @@ function PlanCard({ plan, onSelect }: { plan: PlanTier; onSelect: (tier: string)
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Icon className={`w-4 h-4 ${cfg.color}`} />
-            <span className={`font-semibold text-sm capitalize ${cfg.color}`}>{cfg.label}</span>
+            <span className={`font-semibold text-sm capitalize ${cfg.color}`}>{t(tierKey)}</span>
           </div>
           <span className="text-lg font-bold text-foreground">
             ${itinerary.estimated_total_cost_usd ?? breakdown?.total ?? 'N/A'}
@@ -39,19 +49,19 @@ function PlanCard({ plan, onSelect }: { plan: PlanTier; onSelect: (tier: string)
         <div className="px-4 py-2.5 border-b border-border">
           <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
             <div className="flex justify-between">
-              <span className="text-muted-foreground">Stay</span>
+              <span className="text-muted-foreground">{t('stayType')}</span>
               <span className="text-foreground/80">${breakdown.accommodation}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-muted-foreground">Food</span>
+              <span className="text-muted-foreground">{t('foodStyle')}</span>
               <span className="text-foreground/80">${breakdown.food}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-muted-foreground">Activities</span>
+              <span className="text-muted-foreground">{t('activities')}</span>
               <span className="text-foreground/80">${breakdown.activities}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-muted-foreground">Transport</span>
+              <span className="text-muted-foreground">{t('transportMode')}</span>
               <span className="text-foreground/80">${breakdown.transport}</span>
             </div>
           </div>
@@ -78,7 +88,7 @@ function PlanCard({ plan, onSelect }: { plan: PlanTier; onSelect: (tier: string)
           onClick={() => setExpanded(!expanded)}
           className="w-full px-4 py-2 flex items-center justify-between text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
         >
-          <span>{days.length} days · {itinerary.destination}</span>
+          <span>{t('daysDestination', { count: days.length, destination: itinerary.destination })}</span>
           {expanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
         </button>
         <AnimatePresence>
@@ -93,7 +103,7 @@ function PlanCard({ plan, onSelect }: { plan: PlanTier; onSelect: (tier: string)
                 {days.map((day) => (
                   <div key={day.day} className="p-2 rounded-lg bg-muted border border-border">
                     <p className="font-medium text-foreground/90 text-xs">
-                      Day {day.day} — {day.theme ?? 'Day ' + day.day}
+                      {tItin('dayN', { n: day.day })} — {day.theme ?? tItin('dayN', { n: day.day })}
                     </p>
                     <p className="text-muted-foreground text-[10px] mt-0.5">
                       {day.morning?.activity ?? '—'} → {day.afternoon?.activity ?? '—'} → {day.evening?.activity ?? '—'}
@@ -112,7 +122,7 @@ function PlanCard({ plan, onSelect }: { plan: PlanTier; onSelect: (tier: string)
           onClick={() => onSelect(plan.tier)}
           className="w-full py-2 rounded-lg bg-muted hover:bg-accent border border-border text-xs font-medium text-foreground/80 hover:text-foreground transition-all cursor-pointer"
         >
-          Select {cfg.label}
+          {t('select', { tier: t(tierKey) })}
         </button>
       </div>
     </div>
@@ -126,6 +136,7 @@ export default function ComparisonView({
   data: ComparisonData;
   onSelect: (tier: string) => void;
 }) {
+  const t = useTranslations('comparison');
   const matrix = data.comparison_matrix;
   const tiers = ['budget', 'balanced', 'premium'] as const;
 
@@ -135,7 +146,7 @@ export default function ComparisonView({
       <div className="px-4 py-3 border-b border-border">
         <h3 className="font-semibold text-foreground flex items-center gap-2 text-sm">
           <Globe className="w-4 h-4 text-primary" />
-          Compare Plans
+          {t('title')}
         </h3>
       </div>
 
@@ -153,10 +164,10 @@ export default function ComparisonView({
             </thead>
             <tbody>
               {([
-                { label: 'Cost', key: 'total_cost' as const, prefix: '$' },
-                { label: 'Stay', key: 'accommodation_type' as const },
-                { label: 'Food', key: 'food_style' as const },
-                { label: 'Transport', key: 'transport_mode' as const },
+                { label: t('cost'), key: 'total_cost' as const, prefix: '$' },
+                { label: t('stayType'), key: 'accommodation_type' as const },
+                { label: t('foodStyle'), key: 'food_style' as const },
+                { label: t('transportMode'), key: 'transport_mode' as const },
               ]).map((row) => (
                 <tr key={row.key} className="border-t border-border">
                   <td className="py-1.5 pr-3 text-muted-foreground">{row.label}</td>
