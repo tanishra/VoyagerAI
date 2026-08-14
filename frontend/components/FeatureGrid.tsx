@@ -2,6 +2,7 @@
 
 import { motion } from 'framer-motion';
 import { Sparkles, DollarSign, Calendar, Lightbulb, Luggage, RefreshCw } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 import { SpotlightCard } from '@/components/ui/spotlight-card';
 
 const features = [
@@ -56,6 +57,7 @@ const features = [
 ];
 
 export default function FeatureGrid() {
+  const t = useTranslations('home');
   return (
     <section className="py-20 md:py-28 border-t border-border">
       <div className="max-w-5xl mx-auto px-4">
@@ -67,10 +69,10 @@ export default function FeatureGrid() {
           className="text-center mb-14"
         >
           <h2 className="text-3xl md:text-4xl font-bold text-foreground mb-3 tracking-tight">
-            Everything You Need
+            {t('featuresTitle')}
           </h2>
           <p className="text-muted-foreground max-w-lg mx-auto">
-            Powerful features to make trip planning effortless
+            {t('featuresSubtitle')}
           </p>
         </motion.div>
 
@@ -89,8 +91,8 @@ export default function FeatureGrid() {
               <div className={`p-2 w-fit rounded-lg bg-card border ${feature.border} mb-3 group-hover:scale-110 transition-transform duration-200 shadow-sm`}>
                 <feature.icon className={`w-4 h-4 ${feature.textColor}`} />
               </div>
-              <h3 className="text-sm font-semibold text-foreground mb-1.5">{feature.title}</h3>
-              <p className="text-xs text-muted-foreground leading-relaxed">{feature.desc}</p>
+              <h3 className="text-sm font-semibold text-foreground mb-1.5">{t(`f${i + 1}Title`)}</h3>
+              <p className="text-xs text-muted-foreground leading-relaxed">{t(`f${i + 1}Desc`)}</p>
             </motion.div>
           ))}
         </div>
