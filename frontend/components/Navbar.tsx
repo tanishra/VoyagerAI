@@ -6,16 +6,19 @@ import { Menu, X, Sparkles, ArrowRight, LogOut, ChevronDown } from 'lucide-react
 import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
+import { useTranslations } from 'next-intl';
 import { getSession, logout, getLoginUrl, type SessionUser } from '@/lib/auth';
 import InstallPrompt from './InstallPrompt';
+import LanguageSwitcher from './LanguageSwitcher';
 
-const navLinks = [
-  { href: '/', label: 'Home' },
-  { href: '/chat', label: 'Chat' },
-  { href: '/preferences', label: 'Preferences' },
-  { href: '/about', label: 'About' },
-  { href: '/faq', label: 'FAQ' },
-];
+const navLinkKeys = ['home', 'chat', 'preferences', 'about', 'faq'] as const;
+const navHrefs: Record<string, string> = {
+  home: '/',
+  chat: '/chat',
+  preferences: '/preferences',
+  about: '/about',
+  faq: '/faq',
+};
 
 function Avatar({ user, size = 'sm' }: { user: SessionUser; size?: 'sm' | 'md' }) {
   const dims = size === 'md' ? 'w-9 h-9' : 'w-7 h-7';
@@ -45,6 +48,7 @@ function Avatar({ user, size = 'sm' }: { user: SessionUser; size?: 'sm' | 'md' }
 }
 
 export default function Navbar() {
+  const t = useTranslations('nav');
   const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
@@ -107,24 +111,25 @@ export default function Navbar() {
           <div className="p-1.5 rounded-lg bg-gradient-to-br from-indigo-500/10 to-violet-500/10 border border-indigo-500/15">
             <Sparkles className="w-4 h-4 text-primary" />
           </div>
-          VoyagerAI
+          {t('brand')}
         </Link>
 
         {/* Desktop Navigation */}
         <div className="hidden md:flex items-center gap-1">
-          {navLinks.map(link => {
-            const active = pathname === link.href;
+          {navLinkKeys.map(key => {
+            const href = navHrefs[key];
+            const active = pathname === href;
             return (
               <Link
-                key={link.href}
-                href={link.href}
+                key={href}
+                href={href}
                 className={`relative px-4 py-2 text-sm rounded-lg transition-all duration-200 ${
                   active
                     ? 'text-primary'
                     : 'text-muted-foreground hover:text-foreground hover:bg-muted'
                 }`}
               >
-                {link.label}
+                {t(key)}
                 {active && (
                   <motion.div
                     layoutId="nav-active"
@@ -172,7 +177,7 @@ export default function Navbar() {
                       className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-foreground hover:bg-muted transition-colors cursor-pointer"
                     >
                       <LogOut className="w-4 h-4" />
-                      Sign out
+                      {t('signOut')}
                     </button>
                   </motion.div>
                 )}
@@ -183,10 +188,11 @@ export default function Navbar() {
               href={getLoginUrl()}
               className="ml-2 inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-all duration-200 hover:shadow-md hover:shadow-primary/20"
             >
-              Sign in
+              {t('signIn')}
               <ArrowRight className="w-3.5 h-3.5" />
             </a>
           ) : null}
+          <LanguageSwitcher />
           <InstallPrompt />
         </div>
 
@@ -195,7 +201,7 @@ export default function Navbar() {
           <button
             onClick={() => setMenuOpen(!menuOpen)}
             className="p-2 text-muted-foreground hover:text-foreground cursor-pointer"
-            aria-label={menuOpen ? 'Close menu' : 'Open menu'}
+            aria-label={menuOpen ? t('closeMenu') : t('openMenu')}
           >
             {menuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
           </button>
@@ -211,19 +217,20 @@ export default function Navbar() {
             className="md:hidden overflow-hidden border-t border-border bg-white/95 backdrop-blur-xl"
           >
             <div className="px-4 py-3 space-y-1">
-              {navLinks.map(link => {
-                const active = pathname === link.href;
+              {navLinkKeys.map(key => {
+                const href = navHrefs[key];
+                const active = pathname === href;
                 return (
                   <Link
-                    key={link.href}
-                    href={link.href}
+                    key={href}
+                    href={href}
                     className={`block px-4 py-2.5 text-sm rounded-lg transition-all ${
                       active
                         ? 'text-primary bg-primary/8'
                         : 'text-muted-foreground hover:text-foreground hover:bg-muted'
                     }`}
                   >
-                    {link.label}
+                    {t(key)}
                   </Link>
                 );
               })}
@@ -246,7 +253,7 @@ export default function Navbar() {
                     className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-foreground hover:bg-muted rounded-lg transition-colors cursor-pointer"
                   >
                     <LogOut className="w-4 h-4" />
-                    Sign out
+                    {t('signOut')}
                   </button>
                 </div>
               ) : !userLoading ? (
@@ -254,7 +261,7 @@ export default function Navbar() {
                   href={getLoginUrl()}
                   className="block mt-2 px-4 py-2.5 text-sm rounded-lg bg-primary text-primary-foreground font-medium text-center"
                 >
-                  Sign in with Google →
+                  {t('signInWithGoogle')} →
                 </a>
               ) : null}
             </div>
