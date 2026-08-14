@@ -2,9 +2,11 @@
 
 import { motion } from 'framer-motion';
 import { Sparkles } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 import FaqSection from '@/components/FaqSection';
 
 export default function FaqPage() {
+  const t = useTranslations('faq');
   return (
     <main className="relative min-h-screen pt-24 pb-16">
       <div className="pointer-events-none fixed inset-0">
@@ -20,13 +22,13 @@ export default function FaqPage() {
         >
           <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-primary/10 border border-primary/20 text-primary text-xs font-medium mb-6">
             <Sparkles className="w-3.5 h-3.5" />
-            FAQ
+            {t('badge')}
           </div>
           <h1 className="text-3xl md:text-5xl font-bold text-foreground mb-4 tracking-tight">
-            Frequently Asked Questions
+            {t('title')}
           </h1>
           <p className="text-muted-foreground max-w-xl mx-auto">
-            Everything you need to know about AI-powered trip planning
+            {t('subtitle')}
           </p>
         </motion.div>
 
