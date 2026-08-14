@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { Plus, Trash2, MessageSquare, Loader2, ChevronDown, Link2, Copy as CopyIcon, Check, X } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 import type { ThreadMeta } from '@/lib/threads-api';
 import { listShares, revokeShare, type ShareLink } from '@/lib/share-api';
 
@@ -46,6 +47,7 @@ export default function ThreadSidebar({
   onNewChat,
   onLoadMore,
 }: ThreadSidebarProps) {
+  const t = useTranslations('threads');
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [shares, setShares] = useState<ShareLink[]>([]);
   const [sharesExpanded, setSharesExpanded] = useState(false);
@@ -101,7 +103,7 @@ export default function ThreadSidebar({
           className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-primary/10 hover:bg-primary/20 border border-primary/20 text-primary text-sm font-medium transition-colors cursor-pointer"
         >
           <Plus className="w-4 h-4" />
-          New Chat
+          {t('newChat')}
         </button>
       </div>
 
@@ -111,7 +113,7 @@ export default function ThreadSidebar({
           <div className="flex flex-col items-center justify-center h-full text-center px-4">
             <MessageSquare className="w-8 h-8 text-muted-foreground/30 mb-2" />
             <p className="text-sm text-muted-foreground">
-              No conversations yet. Start chatting!
+              {t('noConversations')}
             </p>
           </div>
         ) : (
@@ -143,7 +145,7 @@ export default function ThreadSidebar({
                       <div className="flex items-center gap-1.5">
                         <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${statusColor}`} />
                         <p className={`text-sm truncate ${isActive ? 'text-foreground font-medium' : 'text-foreground/80'}`}>
-                          {thread.summary || 'Untitled conversation'}
+                          {thread.summary || t('untitled')}
                         </p>
                       </div>
                       <p className="text-[10px] text-muted-foreground mt-0.5 ml-3">
@@ -158,11 +160,11 @@ export default function ThreadSidebar({
                           ? 'text-red-600 bg-red-500/10 opacity-100'
                           : 'text-muted-foreground hover:text-red-600 opacity-0 group-hover:opacity-100'
                       }`}
-                      aria-label={isConfirming ? 'Click again to confirm' : 'Delete thread'}
-                      title={isConfirming ? 'Click again to confirm' : 'Delete thread'}
+                      aria-label={isConfirming ? t('confirmDelete') : t('deleteThread')}
+                      title={isConfirming ? t('confirmDelete') : t('deleteThread')}
                     >
                       {isConfirming ? (
-                        <span className="text-[10px] font-medium">Confirm?</span>
+                        <span className="text-[10px] font-medium">{t('confirm')}</span>
                       ) : (
                         <Trash2 className="w-3.5 h-3.5" />
                       )}
@@ -187,7 +189,7 @@ export default function ThreadSidebar({
                 ) : (
                   <ChevronDown className="w-3.5 h-3.5" />
                 )}
-                Load more
+                {t('loadMore')}
               </button>
             )}
           </>
@@ -202,7 +204,7 @@ export default function ThreadSidebar({
         >
           <span className="flex items-center gap-1.5">
             <Link2 className="w-3.5 h-3.5" />
-            Shared Links
+            {t('sharedLinks')}
             {shares.length > 0 && (
               <span className="px-1.5 py-0.5 rounded-full bg-primary/10 text-primary text-[10px] font-medium">
                 {shares.length}
@@ -215,7 +217,7 @@ export default function ThreadSidebar({
           <div className="px-2 pb-2 space-y-1 max-h-48 overflow-y-auto">
             {shares.length === 0 ? (
               <p className="text-[11px] text-muted-foreground px-3 py-2">
-                No shared links yet. Use the share button on an itinerary to create one.
+                {t('noSharedLinks')}
               </p>
             ) : (
               shares.map((share) => (
@@ -231,8 +233,8 @@ export default function ThreadSidebar({
                       <button
                         onClick={(e) => handleCopy(e, share)}
                         className="p-1 rounded text-muted-foreground hover:text-foreground cursor-pointer"
-                        aria-label="Copy share link"
-                        title="Copy link"
+                        aria-label={t('copyShareLink')}
+                        title={t('copyLink')}
                       >
                         {copiedToken === share.token ? (
                           <Check className="w-3 h-3 text-green-500" />
@@ -244,8 +246,8 @@ export default function ThreadSidebar({
                         onClick={(e) => handleRevoke(e, share.token)}
                         disabled={revokingToken === share.token}
                         className="p-1 rounded text-muted-foreground hover:text-red-600 cursor-pointer disabled:opacity-50"
-                        aria-label="Revoke share link"
-                        title="Revoke"
+                        aria-label={t('revokeShareLink')}
+                        title={t('revoke')}
                       >
                         {revokingToken === share.token ? (
                           <Loader2 className="w-3 h-3 animate-spin" />
@@ -256,7 +258,7 @@ export default function ThreadSidebar({
                     </div>
                   </div>
                   <p className="text-[10px] text-muted-foreground mt-0.5">
-                    Expires {formatRelativeTime(share.expires_at)}
+                    {t('expires', { time: formatRelativeTime(share.expires_at) })}
                   </p>
                 </div>
               ))
