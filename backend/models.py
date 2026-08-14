@@ -46,3 +46,6 @@ class ChatRequest(BaseModel):
     client_message_id: str | None = Field(
         None, max_length=100, description="Client-generated UUID for offline message dedup."
     )
+    locale: str | None = Field(
+        None, max_length=10, description="User's preferred locale (e.g. 'en', 'es', 'fr')."
+    )
