@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { WifiOff, Wifi, CloudUpload } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 import { useOnlineStatus } from '@/lib/useOnlineStatus';
 
 interface OfflineBannerProps {
@@ -10,6 +11,7 @@ interface OfflineBannerProps {
 }
 
 export default function OfflineBanner({ replaying = false }: OfflineBannerProps) {
+  const t = useTranslations('offline');
   const isOnline = useOnlineStatus();
   const [showBackOnline, setShowBackOnline] = useState(false);
   const prevOnlineRef = useRef(true);
@@ -51,19 +53,19 @@ export default function OfflineBanner({ replaying = false }: OfflineBannerProps)
             {showOffline && (
               <>
                 <WifiOff className="w-4 h-4" />
-                You&apos;re offline — messages will be sent when you reconnect
+                {t('offline')}
               </>
             )}
             {showReplaying && (
               <>
                 <CloudUpload className="w-4 h-4 animate-pulse" />
-                Back online — sending queued messages...
+                {t('replaying')}
               </>
             )}
             {showOnline && (
               <>
                 <Wifi className="w-4 h-4" />
-                Back online
+                {t('backOnline')}
               </>
             )}
           </div>
