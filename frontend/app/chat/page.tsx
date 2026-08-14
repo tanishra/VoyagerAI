@@ -3,6 +3,8 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Send, Square, MessageSquare, RotateCcw, Globe, Search, ShieldAlert, ListChecks, Loader2, PanelLeft, ChevronDown, Clock } from 'lucide-react';
+import { useTranslations } from 'next-intl';
+import { useLocale } from '@/lib/useLocale';
 import { streamChat } from '@/lib/chat-api';
 import { listThreads, getThreadHistory, deleteThread, type ThreadMeta } from '@/lib/threads-api';
 import { getSession } from '@/lib/auth';
@@ -18,15 +20,15 @@ import type { ChatMessage, ComparisonData, Itinerary } from '@/lib/types';
 
 const THREAD_STORAGE_KEY = 'voyagerai_chat_thread_id';
 
-const TOOL_LABELS: Record<string, string> = {
-  researcher: 'Researching',
-  risk_detector: 'Checking risks',
-  constraint_analyzer: 'Checking constraints',
-  validator: 'Validating',
-  enricher: 'Adding local tips',
-  cost_optimizer: 'Optimizing budget',
-  multi_plan_generator: 'Generating plans',
-  quality_scorer: 'Scoring quality',
+const TOOL_LABEL_KEYS: Record<string, string> = {
+  researcher: 'researching',
+  risk_detector: 'checkingRisks',
+  constraint_analyzer: 'checkingConstraints',
+  validator: 'validating',
+  enricher: 'addingTips',
+  cost_optimizer: 'optimizingBudget',
+  multi_plan_generator: 'generatingPlans',
+  quality_scorer: 'scoringQuality',
 };
 
 const TOOL_ICONS: Record<string, React.ReactNode> = {
@@ -38,11 +40,18 @@ const TOOL_ICONS: Record<string, React.ReactNode> = {
 };
 
 export default function ChatPage() {
+  const t = useTranslations('chat');
+  const tStatus = useTranslations('status');
+  const locale = useLocale();
   const [messages, setMessages] = useState<ChatMessage[]>([{
     id: 'welcome',
     role: 'assistant',
-    content: "Hi! I'm your AI travel planner. Tell me about the trip you're dreaming of — where would you like to go, for how long, and what's your budget?",
+    content: '',
   }]);
+
+  useEffect(() => {
+    setMessages(prev => prev.map(m => m.id === 'welcome' ? { ...m, content: t('welcome') } : m));
+  }, [t]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -142,7 +151,7 @@ export default function ChatPage() {
     setMessages([{
       id: 'welcome',
       role: 'assistant',
-      content: "Hi! I'm your AI travel planner. Tell me about the trip you're dreaming of — where would you like to go, for how long, and what's your budget?",
+      content: t('welcome'),
     }]);
     setThreadId(null);
     localStorage.removeItem(THREAD_STORAGE_KEY);
@@ -179,7 +188,7 @@ export default function ChatPage() {
       setMessages([{
         id: 'welcome',
         role: 'assistant',
-        content: "Hi! I'm your AI travel planner. Tell me about the trip you're dreaming of — where would you like to go, for how long, and what's your budget?",
+        content: t('welcome'),
       }]);
     } else {
       setMessages(historyMessages);
@@ -249,7 +258,7 @@ export default function ChatPage() {
 
     try {
       const newThreadId = await streamChat(
-        { message: text, thread_id: threadId ?? undefined },
+        { message: text, thread_id: threadId ?? undefined, locale },
         {
           signal: controller.signal,
           onToken: (token) => {
@@ -275,7 +284,7 @@ export default function ChatPage() {
           },
           onStatus: (status) => {
             const tool = status.tool;
-            if (!TOOL_LABELS[tool]) return;
+            if (!TOOL_LABEL_KEYS[tool]) return;
             setActiveWorkers((prev) =>
               status.status === 'running'
                 ? prev.includes(tool) ? prev : [...prev, tool]
@@ -302,10 +311,10 @@ export default function ChatPage() {
           if (streamFailed && !accumulatedText) {
             updated[idx] = {
               ...updated[idx],
-              content: `⚠ Generation failed: ${errorMessage || 'unknown error'}`,
+              content: t('generationFailed', { error: errorMessage || 'unknown error' }),
             };
           } else if (aborted && !accumulatedText) {
-            updated[idx] = { ...updated[idx], content: '⏹ Generation stopped.' };
+            updated[idx] = { ...updated[idx], content: t('generationStopped') };
           } else {
             updated[idx] = {
               ...updated[idx],
@@ -377,7 +386,7 @@ export default function ChatPage() {
           let errorMessage = '';
 
           await streamChat(
-            { message: msg.content, thread_id: msg.thread_id ?? undefined },
+            { message: msg.content, thread_id: msg.thread_id ?? undefined, locale },
             {
               onToken: (token) => {
                 accumulatedText += token;
@@ -402,7 +411,7 @@ export default function ChatPage() {
               },
               onStatus: (status) => {
                 const tool = status.tool;
-                if (!TOOL_LABELS[tool]) return;
+                if (!TOOL_LABEL_KEYS[tool]) return;
                 setActiveWorkers((prev) =>
                   status.status === 'running'
                     ? prev.includes(tool) ? prev : [...prev, tool]
@@ -424,7 +433,7 @@ export default function ChatPage() {
               if (streamFailed && !accumulatedText) {
                 updated[idx] = {
                   ...updated[idx],
-                  content: `⚠ Generation failed: ${errorMessage || 'unknown error'}`,
+                  content: t('generationFailed', { error: errorMessage || 'unknown error' }),
                 };
               } else {
                 updated[idx] = {
@@ -466,9 +475,9 @@ export default function ChatPage() {
   }, [isOnline, replaying]);
 
   const handleSelectPlan = useCallback((tier: string) => {
-    setInput(`I'll go with the ${tier} plan`);
+    setInput(t('selectPlan', { tier }));
     inputRef.current?.focus();
-  }, []);
+  }, [t]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
@@ -546,7 +555,7 @@ export default function ChatPage() {
               className="fixed inset-0 z-50 md:hidden"
               role="dialog"
               aria-modal="true"
-              aria-label="Conversation history"
+              aria-label={t('conversationHistory')}
             >
               <div className="absolute inset-0 bg-black/40" onClick={() => setSidebarOpen(false)} />
               <motion.div
@@ -591,21 +600,21 @@ export default function ChatPage() {
                 }
               }}
               className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-              aria-label="Toggle sidebar"
+              aria-label={t('toggleSidebar')}
             >
               <PanelLeft className="w-4 h-4" />
             </button>
             <div className="p-1.5 rounded-lg bg-gradient-to-br from-indigo-500/10 to-violet-500/10 border border-indigo-500/15">
               <MessageSquare className="w-4 h-4 text-primary" />
             </div>
-            <h1 className="text-lg font-semibold text-foreground hidden sm:block">Chat Planner</h1>
+            <h1 className="text-lg font-semibold text-foreground hidden sm:block">{t('title')}</h1>
           </div>
           <button
             onClick={handleNewChat}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground bg-muted hover:bg-accent border border-border rounded-lg transition-colors cursor-pointer"
           >
             <RotateCcw className="w-3.5 h-3.5" />
-            New Chat
+            {t('newChat')}
           </button>
         </header>
 
@@ -630,13 +639,13 @@ export default function ChatPage() {
           onScroll={handleScroll}
           role="log"
           aria-live="polite"
-          aria-label="Chat messages"
+          aria-label={t('chatMessages')}
           className="flex-1 overflow-y-auto py-4 space-y-4 relative md:px-4"
         >
           <ErrorBoundary
             fallback={
               <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-600 text-sm">
-                Something went wrong rendering this conversation. Start a New Chat to continue.
+                {t('errorRendering')}
               </div>
             }
           >
@@ -648,7 +657,7 @@ export default function ChatPage() {
               transition={{ duration: 0.3 }}
               className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
               role="article"
-              aria-label={msg.role === 'user' ? 'User message' : 'Assistant message'}
+              aria-label={msg.role === 'user' ? t('userMessage') : t('assistantMessage')}
             >
               <div
                 className={`max-w-[85%] rounded-2xl px-4 py-3 ${
@@ -680,7 +689,7 @@ export default function ChatPage() {
               <div className="max-w-[85%] rounded-2xl px-4 py-3 bg-muted/50 border border-border text-muted-foreground">
                 <div className="flex items-center gap-1.5 mb-1">
                   <Clock className="w-3 h-3 animate-pulse" />
-                  <span className="text-[10px] font-medium">Pending — will send when online</span>
+                  <span className="text-[10px] font-medium">{t('pending')}</span>
                 </div>
                 <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
               </div>
@@ -704,7 +713,7 @@ export default function ChatPage() {
                       >
                         <Loader2 className="w-3 h-3 animate-spin" />
                         {TOOL_ICONS[tool]}
-                        {TOOL_LABELS[tool]}
+                        {tStatus(TOOL_LABEL_KEYS[tool])}
                       </span>
                     ))}
                   </div>
@@ -722,7 +731,7 @@ export default function ChatPage() {
                       <span className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
                     </div>
                     <span className="text-xs text-muted-foreground">
-                      {elapsed < 5 ? 'Thinking...' : elapsed < 15 ? `Thinking... ${elapsed}s` : `Still thinking... ${elapsed}s`}
+                      {elapsed < 5 ? t('thinking') : elapsed < 15 ? t('thinkingSeconds', { seconds: elapsed }) : t('stillThinkingSeconds', { seconds: elapsed })}
                     </span>
                   </div>
                 )}
@@ -744,7 +753,7 @@ export default function ChatPage() {
                 exit={{ opacity: 0, scale: 0.8 }}
                 onClick={scrollToBottom}
                 className="absolute bottom-4 left-1/2 -translate-x-1/2 p-2 rounded-full bg-card border border-border shadow-lg hover:bg-accent transition-colors cursor-pointer z-10"
-                aria-label="Scroll to latest message"
+                aria-label={t('scrollToLatest')}
               >
                 <ChevronDown className="w-4 h-4 text-foreground" />
               </motion.button>
@@ -760,17 +769,17 @@ export default function ChatPage() {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="Describe your dream trip..."
+              placeholder={t('placeholder')}
               rows={1}
               disabled={loading}
-              aria-label="Message input"
+              aria-label={t('messageInput')}
               className="flex-1 bg-muted border border-border rounded-xl px-3 sm:px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground/50 resize-none outline-none focus:border-primary/40 focus:bg-card transition-colors disabled:opacity-50"
             />
             <button
               onClick={handleSend}
               disabled={!input.trim() || loading}
               className="p-3 bg-primary/10 hover:bg-primary/20 border border-primary/30 rounded-xl text-primary transition-all disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
-              aria-label="Send message"
+              aria-label={t('send')}
             >
               <Send className="w-4 h-4" />
             </button>
@@ -778,14 +787,14 @@ export default function ChatPage() {
               <button
                 onClick={() => abortRef.current?.abort()}
                 className="p-3 bg-red-500/10 hover:bg-red-500/20 border border-red-500/25 rounded-xl text-red-600 transition-all cursor-pointer"
-                aria-label="Stop generating"
+                aria-label={t('stop')}
               >
                 <Square className="w-4 h-4" />
               </button>
             )}
           </div>
           <p className="text-[10px] text-muted-foreground/40 mt-1.5 text-center">
-            Press Enter to send · Shift+Enter for new line
+            {t('enterToSend')}
           </p>
         </div>
         </div>
