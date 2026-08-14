@@ -2,6 +2,7 @@
 
 import { motion } from 'framer-motion';
 import { Sparkles, Globe, Cpu, Zap } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 
 const highlights = [
   {
@@ -31,6 +32,7 @@ const highlights = [
 ];
 
 export default function AboutPage() {
+  const t = useTranslations('about');
   return (
     <main className="relative min-h-screen pt-24 pb-16">
       <div className="pointer-events-none fixed inset-0">
@@ -46,15 +48,13 @@ export default function AboutPage() {
         >
           <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-primary/10 border border-primary/20 text-primary text-xs font-medium mb-6">
             <Sparkles className="w-3.5 h-3.5" />
-            About
+            {t('badge')}
           </div>
           <h1 className="text-3xl md:text-5xl font-bold text-foreground mb-4 tracking-tight">
-            AI-Powered Travel Planning
+            {t('title')}
           </h1>
           <p className="text-muted-foreground max-w-2xl mx-auto leading-relaxed">
-            VoyagerAI combines the power of AI with a beautiful, intuitive
-            interface to create personalized travel itineraries in seconds. No more hours of
-            research — just tell us where you want to go and we&apos;ll handle the rest.
+            {t('subtitle')}
           </p>
         </motion.div>
 
@@ -70,8 +70,8 @@ export default function AboutPage() {
               <div className={`p-2.5 w-fit rounded-xl bg-card border ${item.border} mb-4 shadow-sm`}>
                 <item.icon className={`w-5 h-5 ${item.color}`} />
               </div>
-              <h3 className="text-lg font-semibold text-foreground mb-2">{item.title}</h3>
-              <p className="text-sm text-muted-foreground leading-relaxed">{item.desc}</p>
+              <h3 className="text-lg font-semibold text-foreground mb-2">{t(`highlight${i + 1}Title`)}</h3>
+              <p className="text-sm text-muted-foreground leading-relaxed">{t(`highlight${i + 1}Desc`)}</p>
             </motion.div>
           ))}
         </div>
@@ -90,13 +90,12 @@ export default function AboutPage() {
               <div className="p-2 rounded-lg bg-gradient-to-br from-indigo-500/10 to-blue-500/10 border border-indigo-500/15">
                 <Cpu className="w-5 h-5 text-indigo-600" />
               </div>
-              <h2 className="text-xl font-bold text-foreground">How It Works — Behind the Scenes</h2>
+              <h2 className="text-xl font-bold text-foreground">{t('howItWorksTitle')}</h2>
             </div>
 
             <div className="p-4 rounded-xl bg-muted border border-border mb-8">
               <p className="text-sm text-muted-foreground leading-relaxed">
-                When you submit your trip preferences, our backend uses AI through
-                a structured agent workflow. The agent:
+                {t('howItWorksIntro')}
               </p>
             </div>
 
@@ -105,11 +104,11 @@ export default function AboutPage() {
 
               <div className="space-y-5">
                 {([
-                  { text: <>Generates a complete itinerary using the <code className="text-indigo-600">generate_itinerary</code> tool</>, border: 'border-indigo-500/20', bg: 'bg-indigo-500/10', textColor: 'text-indigo-600' },
-                  { text: <>Validates it against your budget using <code className="text-amber-600">validate_constraints</code></>, border: 'border-amber-500/20', bg: 'bg-amber-500/10', textColor: 'text-amber-600' },
-                  { text: <>If validation fails, regenerates with tighter budget guidance</>, border: 'border-red-500/20', bg: 'bg-red-500/10', textColor: 'text-red-600' },
-                  { text: <>Once valid, enriches each day with local tips via <code className="text-emerald-600">enrich_day</code></>, border: 'border-emerald-500/20', bg: 'bg-emerald-500/10', textColor: 'text-emerald-600' },
-                  { text: <>Returns a fully structured JSON itinerary</>, border: 'border-violet-500/20', bg: 'bg-violet-500/10', textColor: 'text-violet-600' },
+                  { text: t('step1'), border: 'border-indigo-500/20', bg: 'bg-indigo-500/10', textColor: 'text-indigo-600' },
+                  { text: t('step2'), border: 'border-amber-500/20', bg: 'bg-amber-500/10', textColor: 'text-amber-600' },
+                  { text: t('step3'), border: 'border-red-500/20', bg: 'bg-red-500/10', textColor: 'text-red-600' },
+                  { text: t('step4'), border: 'border-emerald-500/20', bg: 'bg-emerald-500/10', textColor: 'text-emerald-600' },
+                  { text: t('step5'), border: 'border-violet-500/20', bg: 'bg-violet-500/10', textColor: 'text-violet-600' },
                 ] as const).map((step, i) => (
                   <motion.div
                     key={i}
@@ -131,9 +130,7 @@ export default function AboutPage() {
 
             <div className="mt-8 p-4 rounded-xl bg-gradient-to-r from-indigo-500/5 to-violet-500/5 border border-border">
               <p className="text-sm text-muted-foreground leading-relaxed">
-                The frontend then renders this data as a beautiful, interactive timeline with
-                budget tracking, warnings, and packing essentials — all styled with a premium
-                light theme.
+                {t('outro')}
               </p>
             </div>
           </div>
