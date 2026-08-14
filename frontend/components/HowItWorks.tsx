@@ -2,6 +2,7 @@
 
 import { motion } from 'framer-motion';
 import { Compass, Sparkles, Map } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 
 const steps = [
   {
@@ -34,6 +35,7 @@ const steps = [
 ];
 
 export default function HowItWorks() {
+  const t = useTranslations('home');
   return (
     <section className="relative py-20 md:py-28 overflow-hidden">
       <div className="absolute inset-0 pointer-events-none">
@@ -57,13 +59,13 @@ export default function HowItWorks() {
             className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-muted border border-border text-xs font-medium text-muted-foreground mb-5 tracking-wider uppercase"
           >
             <Sparkles className="w-3 h-3" />
-            How it works
+            {t('howBadge')}
           </motion.div>
           <h2 className="text-3xl md:text-4xl lg:text-5xl font-bold text-foreground mb-4 leading-tight tracking-tight">
-            Three Steps to Your Perfect Trip
+            {t('howTitle')}
           </h2>
           <p className="text-muted-foreground max-w-xl mx-auto text-sm md:text-base">
-            From your preferences to a complete itinerary in minutes
+            {t('howSubtitle')}
           </p>
         </motion.div>
 
@@ -90,8 +92,8 @@ export default function HowItWorks() {
                   </span>
                 </div>
 
-                <h3 className="text-lg font-semibold text-foreground mb-2 leading-snug">{step.title}</h3>
-                <p className="text-sm text-muted-foreground leading-relaxed">{step.desc}</p>
+                <h3 className="text-lg font-semibold text-foreground mb-2 leading-snug">{t(`step${step.number}Title`)}</h3>
+                <p className="text-sm text-muted-foreground leading-relaxed">{t(`step${step.number}Desc`)}</p>
               </div>
             </motion.div>
           ))}
