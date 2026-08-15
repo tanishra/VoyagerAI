@@ -6,6 +6,8 @@ import { useTranslations } from 'next-intl';
 import dynamic from 'next/dynamic';
 import type { Itinerary } from '@/lib/types';
 import { createShare, exportItinerary } from '@/lib/share-api';
+import { useLocale } from '@/lib/useLocale';
+import { formatCurrency } from '@/lib/format';
 
 const ItineraryMap = dynamic(() => import('./ItineraryMap'), { ssr: false });
 
@@ -17,9 +19,10 @@ interface ItineraryCardProps {
 
 export default function ItineraryCard({ itinerary, threadId, printMode = false }: ItineraryCardProps) {
   const t = useTranslations('itinerary');
+  const locale = useLocale();
   const days = itinerary.days ?? [];
   const warnings = itinerary.warnings ?? [];
-  const cost: number | string = itinerary.estimated_total_cost_usd ?? 'N/A';
+  const cost: number | null = itinerary.estimated_total_cost_usd ?? null;
   const totalDays = itinerary.total_days ?? days.length;
 
   const [menuOpen, setMenuOpen] = useState(false);
@@ -157,7 +160,7 @@ export default function ItineraryCard({ itinerary, threadId, printMode = false }
           </div>
           <div>
             <span className="text-muted-foreground">{t('budget')}</span>
-            <p className="text-foreground font-medium">{cost === 'N/A' ? t('na') : `$${cost}`}</p>
+            <p className="text-foreground font-medium">{cost === null ? t('na') : formatCurrency(cost, locale)}</p>
           </div>
         </div>
         <div className="space-y-2">
@@ -173,7 +176,7 @@ export default function ItineraryCard({ itinerary, threadId, printMode = false }
                 <div className="mt-1.5 text-xs text-muted-foreground space-y-0.5">
                   <p>{t('transport')}: {day.transport ?? t('na')}</p>
                   <p>{t('stay')}: {day.accommodation ?? t('na')}</p>
-                  <p>{t('dailyCost')}: ${day.daily_cost_usd ?? t('na')}</p>
+                  <p>{t('dailyCost')}: {day.daily_cost_usd != null ? formatCurrency(day.daily_cost_usd, locale) : t('na')}</p>
                   {day.tips && day.tips.length > 0 && (
                     <p className="text-amber-600">💡 {day.tips[0]}</p>
                   )}
