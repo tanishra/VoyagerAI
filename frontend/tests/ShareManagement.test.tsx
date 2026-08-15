@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import ThreadSidebar from '@/app/chat/ThreadSidebar';
+import ThreadSidebar from '@/app/[locale]/chat/ThreadSidebar';
 import type { ThreadMeta } from '@/lib/threads-api';
 import type { ShareLink } from '@/lib/share-api';
 
