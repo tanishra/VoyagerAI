@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
-import ComparisonView from '@/app/chat/ComparisonView';
+import ComparisonView from '@/app/[locale]/chat/ComparisonView';
 import type { ComparisonData } from '@/lib/types';
 
 const mockData: ComparisonData = {
@@ -111,8 +111,8 @@ describe('ComparisonView', () => {
     render(<ComparisonView data={mockData} onSelect={() => {}} />);
     // Costs appear in both the matrix table and plan card headers
     expect(screen.getAllByText('$720').length).toBeGreaterThanOrEqual(1);
-    expect(screen.getAllByText('$1200').length).toBeGreaterThanOrEqual(1);
-    expect(screen.getAllByText('$1800').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText('$1,200').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText('$1,800').length).toBeGreaterThanOrEqual(1);
   });
 
   it('renders comparison matrix values', () => {
