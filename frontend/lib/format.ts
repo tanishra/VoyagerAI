@@ -18,6 +18,7 @@ export function formatCurrency(
   return new Intl.NumberFormat(locale, {
     style: 'currency',
     currency,
+    minimumFractionDigits: currency === 'JPY' ? 0 : 0,
     maximumFractionDigits: currency === 'JPY' ? 0 : 2,
     ...options,
   }).format(amount);
