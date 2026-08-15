@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import { Sparkles } from 'lucide-react';
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
+import { useLocale } from '@/lib/useLocale';
 
 const footerLinks = [
   { href: '/chat', key: 'chat' },
@@ -14,6 +15,7 @@ const footerLinks = [
 export default function Footer() {
   const t = useTranslations('footer');
   const tNav = useTranslations('nav');
+  const locale = useLocale();
   return (
     <footer className="border-t border-border bg-muted/50 backdrop-blur-sm">
       <div className="max-w-6xl mx-auto px-4 py-8 md:py-10">
@@ -24,7 +26,7 @@ export default function Footer() {
           transition={{ duration: 0.5 }}
           className="flex flex-col md:flex-row items-center justify-between gap-6"
         >
-          <Link href="/" className="flex items-center gap-2 text-foreground font-bold hover:text-primary transition-colors">
+          <Link href={`/${locale}`} className="flex items-center gap-2 text-foreground font-bold hover:text-primary transition-colors">
             <div className="p-1 rounded-lg bg-gradient-to-br from-indigo-500/10 to-violet-500/10 border border-indigo-500/15">
               <Sparkles className="w-3.5 h-3.5 text-primary" />
             </div>
@@ -35,7 +37,7 @@ export default function Footer() {
             {footerLinks.map(link => (
               <Link
                 key={link.href}
-                href={link.href}
+                href={`/${locale}${link.href}`}
                 className="text-xs text-muted-foreground hover:text-foreground hover:translate-y-[-1px] transition-all duration-200"
               >
                 {t(link.key)}
