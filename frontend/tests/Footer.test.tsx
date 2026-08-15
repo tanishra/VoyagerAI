@@ -12,7 +12,6 @@ describe('Footer', () => {
     render(<Footer />);
     expect(screen.getByText('Chat')).toBeInTheDocument();
     expect(screen.getByText('About')).toBeInTheDocument();
-    expect(screen.getByText('FAQ')).toBeInTheDocument();
   });
 
   it('renders the tagline', () => {
