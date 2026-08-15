@@ -28,5 +28,11 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  return children;
+  return (
+    <html lang="en" className={`${GeistSans.variable} ${GeistMono.variable} h-full antialiased`}>
+      <body className={`${GeistSans.className} min-h-full flex flex-col bg-background text-foreground`}>
+        {children}
+      </body>
+    </html>
+  );
 }
