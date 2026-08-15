@@ -24,17 +24,26 @@ function parseAcceptLanguage(header: string | null): Locale | null {
   return null;
 }
 
-export default getRequestConfig(async () => {
-  const headerList = await headers();
-  const cookieHeader = headerList.get('cookie') ?? '';
-  const cookieLocale = cookieHeader
-    .split(';')
-    .map((c) => c.trim())
-    .find((c) => c.startsWith('NEXT_LOCALE='))
-    ?.split('=')[1] as Locale | undefined;
+export default getRequestConfig(async ({ requestLocale }) => {
+  const requested = await requestLocale;
+  let locale = requested as Locale | undefined;
 
-  const acceptLang = headerList.get('accept-language');
-  const locale = cookieLocale ?? parseAcceptLanguage(acceptLang) ?? defaultLocale;
+  if (!locale || !locales.includes(locale)) {
+    const headerList = await headers();
+    const cookieHeader = headerList.get('cookie') ?? '';
+    const cookieLocale = cookieHeader
+      .split(';')
+      .map((c) => c.trim())
+      .find((c) => c.startsWith('NEXT_LOCALE='))
+      ?.split('=')[1] as Locale | undefined;
+
+    if (cookieLocale && locales.includes(cookieLocale)) {
+      locale = cookieLocale;
+    } else {
+      const acceptLang = headerList.get('accept-language');
+      locale = parseAcceptLanguage(acceptLang) ?? defaultLocale;
+    }
+  }
 
   return {
     locale,
