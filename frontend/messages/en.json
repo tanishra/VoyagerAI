@@ -4,7 +4,6 @@
     "chat": "Chat",
     "preferences": "Preferences",
     "about": "About",
-    "faq": "FAQ",
     "signIn": "Sign in",
     "signOut": "Sign out",
     "signInWithGoogle": "Sign in with Google",
@@ -167,30 +166,6 @@
     "flowParallelBatch": "Parallel dispatch batch",
     "outro": "Built on the deepagents framework with LangGraph for state management, LiteLLM for multi-provider LLM access, and Tavily for real-time internet search — all wrapped in a premium, responsive UI."
   },
-  "faq": {
-    "badge": "FAQ",
-    "title": "Frequently Asked Questions",
-    "subtitle": "Everything you need to know about AI-powered trip planning",
-    "searchPlaceholder": "Search FAQs...",
-    "searchLabel": "Search frequently asked questions",
-    "noResults": "No results found for \"{query}\"",
-    "q1": "How does AI generate my itinerary?",
-    "a1": "Tell us your destination, budget, travel style, and group size. AI creates a complete day-by-day plan with activities, transport, accommodation, and costs — all optimized for your preferences.",
-    "q2": "Is it really free?",
-    "a2": "Yes! The travel planner is completely free to use. There are no hidden costs, subscriptions, or premium tiers.",
-    "q3": "Can I customize the itinerary after it's generated?",
-    "a3": "Absolutely. If a specific day doesn't match your expectations, you can use the \"Replan This Day\" feature to ask for changes. AI will regenerate that day while keeping the rest of your trip intact.",
-    "q4": "How accurate is the budget tracking?",
-    "a4": "AI estimates costs based on typical prices for each destination and activity type. The budget gauge shows you at a glance if you're within, over, or under your budget.",
-    "q5": "What destinations are supported?",
-    "a5": "Any destination worldwide! From Tokyo to Timbuktu, AI has knowledge of destinations globally and can generate relevant itineraries.",
-    "q6": "How long does it take to generate a plan?",
-    "a6": "Most itineraries are generated in 10-20 seconds. Complex requests with many days may take slightly longer.",
-    "q7": "Can I save or share my itinerary?",
-    "a7": "Your itinerary is displayed on screen and can be copied or screenshotted. Save functionality coming soon.",
-    "q8": "What about dietary restrictions and accessibility?",
-    "a8": "You can specify dietary preferences and accessibility constraints in the form. AI takes these into account when planning activities and meal suggestions."
-  },
   "home": {
     "badge": "AI-Powered Travel Planning",
     "heroLine1": "Your Perfect Trip,",
@@ -235,7 +210,6 @@
   "footer": {
     "chat": "Chat",
     "about": "About",
-    "faq": "FAQ",
     "tagline": "Built with AI · Powered by LiteLLM"
   },
   "offline": {
