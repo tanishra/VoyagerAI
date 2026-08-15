@@ -4,7 +4,7 @@ import { useState, useRef, useEffect } from 'react';
 import { Globe, Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useLocale, setLocale, locales, type Locale } from '@/lib/useLocale';
-import { localeNames, localeFlags } from '@/i18n';
+import { localeNames, localeFlags } from '@/lib/i18n-config';
 
 export default function LanguageSwitcher() {
   const [open, setOpen] = useState(false);
