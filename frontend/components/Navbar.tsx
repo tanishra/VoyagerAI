@@ -12,13 +12,12 @@ import { useLocale } from '@/lib/useLocale';
 import InstallPrompt from './InstallPrompt';
 import LanguageSwitcher from './LanguageSwitcher';
 
-const navLinkKeys = ['home', 'chat', 'preferences', 'about', 'faq'] as const;
+const navLinkKeys = ['home', 'chat', 'preferences', 'about'] as const;
 const navHrefs: Record<string, string> = {
   home: '',
   chat: '/chat',
   preferences: '/preferences',
   about: '/about',
-  faq: '/faq',
 };
 
 function Avatar({ user, size = 'sm' }: { user: SessionUser; size?: 'sm' | 'md' }) {
