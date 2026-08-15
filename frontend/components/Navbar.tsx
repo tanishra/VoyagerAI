@@ -8,12 +8,13 @@ import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { getSession, logout, getLoginUrl, type SessionUser } from '@/lib/auth';
+import { useLocale } from '@/lib/useLocale';
 import InstallPrompt from './InstallPrompt';
 import LanguageSwitcher from './LanguageSwitcher';
 
 const navLinkKeys = ['home', 'chat', 'preferences', 'about', 'faq'] as const;
 const navHrefs: Record<string, string> = {
-  home: '/',
+  home: '',
   chat: '/chat',
   preferences: '/preferences',
   about: '/about',
@@ -49,6 +50,7 @@ function Avatar({ user, size = 'sm' }: { user: SessionUser; size?: 'sm' | 'md' }
 
 export default function Navbar() {
   const t = useTranslations('nav');
+  const locale = useLocale();
   const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
@@ -90,7 +92,7 @@ export default function Navbar() {
     await logout();
     setUser(null);
     setUserMenuOpen(false);
-    router.push('/login');
+    router.push(`/${locale}/login`);
   }
 
   const isDevUser = user?.user_id === 'dev@localhost';
@@ -105,7 +107,7 @@ export default function Navbar() {
     >
       <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
         <Link
-          href="/"
+          href={`/${locale}`}
           className="flex items-center gap-2 font-bold text-lg text-foreground hover:text-primary transition-colors"
         >
           <div className="p-1.5 rounded-lg bg-gradient-to-br from-indigo-500/10 to-violet-500/10 border border-indigo-500/15">
@@ -117,7 +119,7 @@ export default function Navbar() {
         {/* Desktop Navigation */}
         <div className="hidden md:flex items-center gap-1">
           {navLinkKeys.map(key => {
-            const href = navHrefs[key];
+            const href = key === 'home' ? `/${locale}` : `/${locale}${navHrefs[key]}`;
             const active = pathname === href;
             return (
               <Link
@@ -218,7 +220,7 @@ export default function Navbar() {
           >
             <div className="px-4 py-3 space-y-1">
               {navLinkKeys.map(key => {
-                const href = navHrefs[key];
+                const href = key === 'home' ? `/${locale}` : `/${locale}${navHrefs[key]}`;
                 const active = pathname === href;
                 return (
                   <Link
