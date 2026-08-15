@@ -5,6 +5,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Globe, ChevronDown, ChevronUp, Wallet, Scale, Sparkles } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import type { ComparisonData, PlanTier } from '@/lib/types';
+import { useLocale } from '@/lib/useLocale';
+import { formatCurrency } from '@/lib/format';
 
 const TIER_KEYS: Record<string, string> = {
   budget: 'budget',
@@ -21,6 +23,7 @@ const TIER_CONFIG: Record<string, { icon: typeof Wallet; color: string; border: 
 function PlanCard({ plan, onSelect }: { plan: PlanTier; onSelect: (tier: string) => void }) {
   const t = useTranslations('comparison');
   const tItin = useTranslations('itinerary');
+  const locale = useLocale();
   const [expanded, setExpanded] = useState(false);
   const tierKey = TIER_KEYS[plan.tier] ?? 'balanced';
   const cfg = TIER_CONFIG[plan.tier] ?? TIER_CONFIG.balanced;
@@ -39,7 +42,11 @@ function PlanCard({ plan, onSelect }: { plan: PlanTier; onSelect: (tier: string)
             <span className={`font-semibold text-sm capitalize ${cfg.color}`}>{t(tierKey)}</span>
           </div>
           <span className="text-lg font-bold text-foreground">
-            ${itinerary.estimated_total_cost_usd ?? breakdown?.total ?? 'N/A'}
+            {itinerary.estimated_total_cost_usd != null
+              ? formatCurrency(itinerary.estimated_total_cost_usd, locale)
+              : breakdown?.total != null
+                ? formatCurrency(breakdown.total, locale)
+                : tItin('na')}
           </span>
         </div>
       </div>
@@ -50,19 +57,19 @@ function PlanCard({ plan, onSelect }: { plan: PlanTier; onSelect: (tier: string)
           <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
             <div className="flex justify-between">
               <span className="text-muted-foreground">{t('stayType')}</span>
-              <span className="text-foreground/80">${breakdown.accommodation}</span>
+              <span className="text-foreground/80">{formatCurrency(breakdown.accommodation, locale)}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">{t('foodStyle')}</span>
-              <span className="text-foreground/80">${breakdown.food}</span>
+              <span className="text-foreground/80">{formatCurrency(breakdown.food, locale)}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">{t('activities')}</span>
-              <span className="text-foreground/80">${breakdown.activities}</span>
+              <span className="text-foreground/80">{formatCurrency(breakdown.activities, locale)}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">{t('transportMode')}</span>
-              <span className="text-foreground/80">${breakdown.transport}</span>
+              <span className="text-foreground/80">{formatCurrency(breakdown.transport, locale)}</span>
             </div>
           </div>
         </div>
@@ -137,6 +144,7 @@ export default function ComparisonView({
   onSelect: (tier: string) => void;
 }) {
   const t = useTranslations('comparison');
+  const locale = useLocale();
   const matrix = data.comparison_matrix;
   const tiers = ['budget', 'balanced', 'premium'] as const;
 
@@ -164,16 +172,18 @@ export default function ComparisonView({
             </thead>
             <tbody>
               {([
-                { label: t('cost'), key: 'total_cost' as const, prefix: '$' },
-                { label: t('stayType'), key: 'accommodation_type' as const },
-                { label: t('foodStyle'), key: 'food_style' as const },
-                { label: t('transportMode'), key: 'transport_mode' as const },
+                { label: t('cost'), key: 'total_cost' as const, isCurrency: true },
+                { label: t('stayType'), key: 'accommodation_type' as const, isCurrency: false },
+                { label: t('foodStyle'), key: 'food_style' as const, isCurrency: false },
+                { label: t('transportMode'), key: 'transport_mode' as const, isCurrency: false },
               ]).map((row) => (
                 <tr key={row.key} className="border-t border-border">
                   <td className="py-1.5 pr-3 text-muted-foreground">{row.label}</td>
                   {tiers.map((t) => (
                     <td key={t} className="py-1.5 px-2 text-foreground/80">
-                      {row.prefix}{matrix[row.key]?.[t] ?? '—'}
+                      {row.isCurrency && matrix[row.key]?.[t] != null
+                        ? formatCurrency(Number(matrix[row.key]?.[t]), locale)
+                        : (matrix[row.key]?.[t] ?? '—')}
                     </td>
                   ))}
                 </tr>
