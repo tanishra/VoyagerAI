@@ -1,27 +1,11 @@
 import { getRequestConfig } from 'next-intl/server';
 import { headers } from 'next/headers';
 
-export const locales = ['en', 'es', 'fr', 'de', 'hi', 'ja'] as const;
-export type Locale = (typeof locales)[number];
-export const defaultLocale: Locale = 'en';
+export { locales, defaultLocale, localeNames, localeFlags } from './lib/i18n-config';
+export type { Locale } from './lib/i18n-config';
 
-export const localeNames: Record<Locale, string> = {
-  en: 'English',
-  es: 'Spanish',
-  fr: 'French',
-  de: 'German',
-  hi: 'Hindi',
-  ja: 'Japanese',
-};
-
-export const localeFlags: Record<Locale, string> = {
-  en: '🇺🇸',
-  es: '🇪🇸',
-  fr: '🇫🇷',
-  de: '🇩🇪',
-  hi: '🇮🇳',
-  ja: '🇯🇵',
-};
+import { locales, defaultLocale } from './lib/i18n-config';
+import type { Locale } from './lib/i18n-config';
 
 function parseAcceptLanguage(header: string | null): Locale | null {
   if (!header) return null;
