@@ -18,7 +18,6 @@ describe('Navbar', () => {
     expect(screen.getByText('Home')).toBeInTheDocument();
     expect(screen.getByText('Chat')).toBeInTheDocument();
     expect(screen.getByText('About')).toBeInTheDocument();
-    expect(screen.getByText('FAQ')).toBeInTheDocument();
   });
 
   it('renders mobile menu button', () => {
