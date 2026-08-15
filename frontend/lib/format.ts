@@ -1,4 +1,4 @@
-import { defaultLocale, type Locale } from '@/i18n';
+import { defaultLocale, type Locale } from '@/lib/i18n-config';
 
 const CURRENCY_MAP: Record<Locale, string> = {
   en: 'USD',
