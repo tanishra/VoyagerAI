@@ -4,7 +4,6 @@
     "chat": "Chat",
     "preferences": "Einstellungen",
     "about": "Über uns",
-    "faq": "FAQ",
     "signIn": "Anmelden",
     "signOut": "Abmelden",
     "signInWithGoogle": "Mit Google anmelden",
@@ -167,30 +166,6 @@
     "flowParallelBatch": "Parallele Verteilungs-Charge",
     "outro": "Basierend auf dem deepagents-Framework mit LangGraph für Zustandsverwaltung, LiteLLM für Multi-Provider-LLM-Zugriff und Tavily für Echtzeit-Internetsuche — alles in einer premium, responsiven Oberfläche."
   },
-  "faq": {
-    "badge": "FAQ",
-    "title": "Häufig gestellte Fragen",
-    "subtitle": "Alles, was Sie über KI-gestützte Reiseplanung wissen müssen",
-    "searchPlaceholder": "FAQ durchsuchen...",
-    "searchLabel": "Häufig gestellte Fragen durchsuchen",
-    "noResults": "Keine Ergebnisse für \"{query}\" gefunden",
-    "q1": "Wie generiert die KI meine Reiseroute?",
-    "a1": "Sagen Sie uns Ihr Ziel, Budget, Reisestil und Gruppengröße. Die KI erstellt einen vollständigen Tag-für-Tag-Plan mit Aktivitäten, Transport, Unterkunft und Kosten — alles optimiert für Ihre Vorlieben.",
-    "q2": "Ist es wirklich kostenlos?",
-    "a2": "Ja! Der Reiseplaner ist komplett kostenlos. Keine versteckten Kosten, Abonnements oder Premium-Stufen.",
-    "q3": "Kann ich die Reiseroute nach der Generierung anpassen?",
-    "a3": "Absolut. Wenn ein bestimmter Tag nicht Ihren Erwartungen entspricht, können Sie die Funktion \"Diesen Tag neu planen\" verwenden, um Änderungen anzufordern. Die KI regeneriert diesen Tag, während der Rest Ihrer Reise intakt bleibt.",
-    "q4": "Wie genau ist die Budgetverfolgung?",
-    "a4": "Die KI schätzt Kosten basierend auf typischen Preisen für jedes Ziel und jeden Aktivitätstyp. Die Budgetanzeige zeigt Ihnen auf einen Blick, ob Sie innerhalb, über oder unter Ihrem Budget sind.",
-    "q5": "Welche Ziele werden unterstützt?",
-    "a5": "Jedes Ziel weltweit! Von Tokio bis Timbuktu, die KI kennt Ziele global und kann relevante Reiserouten generieren.",
-    "q6": "Wie lange dauert die Generierung eines Plans?",
-    "a6": "Die meisten Reiserouten werden in 10-20 Sekunden generiert. Komplexe Anfragen mit vielen Tagen können etwas länger dauern.",
-    "q7": "Kann ich meine Reiseroute speichern oder teilen?",
-    "a7": "Ihre Reiseroute wird auf dem Bildschirm angezeigt und kann kopiert oder als Screenshot gespeichert werden. Speicherfunktion kommt bald.",
-    "q8": "Was ist mit Ernährungseinschränkungen und Barrierefreiheit?",
-    "a8": "Sie können Ernährungsvorlieben und Zugänglichkeitsbedingungen im Formular angeben. Die KI berücksichtigt diese bei der Planung von Aktivitäten und Essensvorschlägen."
-  },
   "home": {
     "badge": "KI-gestützte Reiseplanung",
     "heroLine1": "Ihre perfekte Reise,",
@@ -235,7 +210,6 @@
   "footer": {
     "chat": "Chat",
     "about": "Über uns",
-    "faq": "FAQ",
     "tagline": "Gebaut mit KI · Angetrieben von LiteLLM"
   },
   "offline": {
