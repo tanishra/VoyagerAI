@@ -4,7 +4,6 @@
     "chat": "Chat",
     "preferences": "Preferencias",
     "about": "Acerca de",
-    "faq": "Preguntas",
     "signIn": "Iniciar sesión",
     "signOut": "Cerrar sesión",
     "signInWithGoogle": "Iniciar sesión con Google",
@@ -167,30 +166,6 @@
     "flowParallelBatch": "Lote de despacho paralelo",
     "outro": "Construido sobre el framework deepagents con LangGraph para gestión de estado, LiteLLM para acceso multi-proveedor LLM y Tavily para búsqueda en internet en tiempo real — todo en una interfaz premium y responsiva."
   },
-  "faq": {
-    "badge": "Preguntas",
-    "title": "Preguntas Frecuentes",
-    "subtitle": "Todo lo que necesitas saber sobre planificación de viajes con IA",
-    "searchPlaceholder": "Buscar preguntas...",
-    "searchLabel": "Buscar preguntas frecuentes",
-    "noResults": "No se encontraron resultados para \"{query}\"",
-    "q1": "¿Cómo genera la IA mi itinerario?",
-    "a1": "Dinos tu destino, presupuesto, estilo de viaje y tamaño del grupo. La IA crea un plan completo día a día con actividades, transporte, alojamiento y costos — todo optimizado para tus preferencias.",
-    "q2": "¿Es realmente gratis?",
-    "a2": "¡Sí! El planificador de viajes es completamente gratis. No hay costos ocultos, suscripciones ni niveles premium.",
-    "q3": "¿Puedo personalizar el itinerario después de generar?",
-    "a3": "Por supuesto. Si un día específico no coincide con tus expectativas, puedes usar la función \"Replanear Este Día\" para pedir cambios. La IA regenerará ese día manteniendo el resto de tu viaje intacto.",
-    "q4": "¿Qué tan preciso es el seguimiento del presupuesto?",
-    "a4": "La IA estima los costos basándose en precios típicos de cada destino y tipo de actividad. El indicador de presupuesto te muestra de un vistazo si estás dentro, sobre o bajo tu presupuesto.",
-    "q5": "¿Qué destinos son compatibles?",
-    "a5": "¡Cualquier destino del mundo! Desde Tokio hasta Tombuctú, la IA tiene conocimiento de destinos globalmente y puede generar itinerarios relevantes.",
-    "q6": "¿Cuánto tarda en generar un plan?",
-    "a6": "La mayoría de los itinerarios se generan en 10-20 segundos. Las solicitudes complejas con muchos días pueden tardar un poco más.",
-    "q7": "¿Puedo guardar o compartir mi itinerario?",
-    "a7": "Tu itinerario se muestra en pantalla y puede copiarse o capturarse. Funcionalidad de guardado próximamente.",
-    "q8": "¿Qué pasa con restricciones dietéticas y accesibilidad?",
-    "a8": "Puedes especificar preferencias dietéticas y restricciones de accesibilidad en el formulario. La IA las tiene en cuenta al planificar actividades y sugerencias de comidas."
-  },
   "home": {
     "badge": "Planificación de Viajes con IA",
     "heroLine1": "Tu Viaje Perfecto,",
@@ -235,7 +210,6 @@
   "footer": {
     "chat": "Chat",
     "about": "Acerca de",
-    "faq": "Preguntas",
     "tagline": "Construido con IA · Impulsado por LiteLLM"
   },
   "offline": {
