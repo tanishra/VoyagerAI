@@ -9,7 +9,6 @@ import { useLocale } from '@/lib/useLocale';
 const footerLinks = [
   { href: '/chat', key: 'chat' },
   { href: '/about', key: 'about' },
-  { href: '/faq', key: 'faq' },
 ];
 
 export default function Footer() {
