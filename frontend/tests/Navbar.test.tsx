@@ -29,6 +29,6 @@ describe('Navbar', () => {
   it('has correct href for logo link', () => {
     render(<Navbar />);
     const logo = screen.getByText('VoyagerAI');
-    expect(logo.closest('a')).toHaveAttribute('href', '/');
+    expect(logo.closest('a')).toHaveAttribute('href', '/en');
   });
 });
