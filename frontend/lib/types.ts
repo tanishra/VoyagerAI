@@ -59,12 +59,42 @@ export interface ComparisonData {
   comparison_matrix: ComparisonMatrix;
 }
 
+export interface ThinkingBlock {
+  text: string;
+}
+
+export interface ToolCallEntry {
+  run_id: string;
+  name: string;
+  input?: string;
+  output?: string;
+  status: 'running' | 'done' | 'error';
+  error?: string;
+  started_at?: number;
+  ended_at?: number;
+}
+
+export interface UsageEntry {
+  input_tokens: number;
+  output_tokens: number;
+  model: string;
+}
+
+export interface ActivityData {
+  thinking: ThinkingBlock[];
+  tool_calls: ToolCallEntry[];
+  usage: UsageEntry[];
+  total_input_tokens: number;
+  total_output_tokens: number;
+}
+
 export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
   content: string;
   itinerary?: Itinerary;
   comparison?: ComparisonData;
+  activity?: ActivityData;
 }
 
 export interface ChatStreamCallbacks {
@@ -76,6 +106,11 @@ export interface ChatStreamCallbacks {
   onDone?: () => void;
   onError?: (error: string) => void;
   onAbort?: () => void;
+  onThinking?: (text: string) => void;
+  onToolStart?: (tool: { name: string; input?: string; run_id: string }) => void;
+  onToolEnd?: (tool: { name: string; output?: string; run_id: string }) => void;
+  onToolError?: (tool: { name: string; error?: string; run_id: string }) => void;
+  onUsage?: (usage: UsageEntry) => void;
   signal?: AbortSignal;
   errorMessages?: {
     serverResponse?: (status: number, detail: string) => string;

@@ -1,4 +1,4 @@
-import type { ChatStreamCallbacks, ComparisonData, Itinerary } from './types';
+import type { ChatStreamCallbacks, ComparisonData, Itinerary, ToolCallEntry, UsageEntry } from './types';
 
 function parseSSELine(line: string): { event?: string; data?: string } | null {
   if (line.startsWith('event: ')) return { event: line.slice(7).trim() };
@@ -10,7 +10,7 @@ export async function streamChat(
   body: { message: string; thread_id?: string; locale?: string },
   callbacks: ChatStreamCallbacks,
 ): Promise<string | undefined> {
-  const { onToken, onItinerary, onComparison, onStatus, onThreadId, onDone, onError, onAbort, signal, errorMessages } = callbacks;
+  const { onToken, onItinerary, onComparison, onStatus, onThreadId, onDone, onError, onAbort, signal, errorMessages, onThinking, onToolStart, onToolEnd, onToolError, onUsage } = callbacks;
   let resolvedThreadId: string | undefined;
 
   try {
@@ -74,6 +74,11 @@ export async function streamChat(
                 sawDone = true;
                 onDone?.();
               },
+              onThinking,
+              onToolStart,
+              onToolEnd,
+              onToolError,
+              onUsage,
             },
           );
         } catch {
@@ -136,9 +141,14 @@ function handleChatEvent(
     onThreadId?: (threadId: string) => void;
     onError?: (error: string) => void;
     onDone?: () => void;
+    onThinking?: (text: string) => void;
+    onToolStart?: (tool: { name: string; input?: string; run_id: string }) => void;
+    onToolEnd?: (tool: { name: string; output?: string; run_id: string }) => void;
+    onToolError?: (tool: { name: string; error?: string; run_id: string }) => void;
+    onUsage?: (usage: UsageEntry) => void;
   },
 ) {
-  const { onToken, onItinerary, onComparison, onStatus, onThreadId, onError, onDone } = callbacks;
+  const { onToken, onItinerary, onComparison, onStatus, onThreadId, onError, onDone, onThinking, onToolStart, onToolEnd, onToolError, onUsage } = callbacks;
 
   switch (event) {
     case 'token': {
@@ -172,6 +182,31 @@ function handleChatEvent(
     }
     case 'done': {
       onDone?.();
+      break;
+    }
+    case 'thinking': {
+      const data = parsed.data as string;
+      onThinking?.(data);
+      break;
+    }
+    case 'tool_start': {
+      const data = parsed.data as { name: string; input?: string; run_id: string };
+      onToolStart?.(data);
+      break;
+    }
+    case 'tool_end': {
+      const data = parsed.data as { name: string; output?: string; run_id: string };
+      onToolEnd?.(data);
+      break;
+    }
+    case 'tool_error': {
+      const data = parsed.data as { name: string; error?: string; run_id: string };
+      onToolError?.(data);
+      break;
+    }
+    case 'usage': {
+      const data = parsed.data as UsageEntry;
+      onUsage?.(data);
       break;
     }
   }

@@ -16,7 +16,7 @@ import ItineraryCard from '@/components/ItineraryCard';
 import OfflineBanner from '@/components/OfflineBanner';
 import ComparisonView from './ComparisonView';
 import ThreadSidebar from './ThreadSidebar';
-import type { ChatMessage, ComparisonData, Itinerary } from '@/lib/types';
+import type { ChatMessage, ComparisonData, Itinerary, ActivityData } from '@/lib/types';
 
 const THREAD_STORAGE_KEY = 'voyagerai_chat_thread_id';
 
@@ -59,6 +59,7 @@ export default function ChatPage() {
   const [streamingText, setStreamingText] = useState('');
   const [streamingItinerary, setStreamingItinerary] = useState<Itinerary | null>(null);
   const [streamingComparison, setStreamingComparison] = useState<ComparisonData | null>(null);
+  const [streamingActivity, setStreamingActivity] = useState<ActivityData | null>(null);
   const [activeWorkers, setActiveWorkers] = useState<string[]>([]);
   const [threadId, setThreadId] = useState<string | null>(() => {
     if (typeof window !== 'undefined') {
@@ -85,6 +86,7 @@ export default function ChatPage() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const streamingActivityRef = useRef<ActivityData | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -192,6 +194,7 @@ export default function ChatPage() {
       content: msg.content,
       itinerary: msg.itinerary,
       comparison: msg.comparison,
+      activity: msg.activity,
     }));
 
     if (historyMessages.length === 0) {
@@ -266,6 +269,14 @@ export default function ChatPage() {
     let errorMessage = '';
     let aborted = false;
 
+    const updateActivity = (updater: (prev: ActivityData | null) => ActivityData) => {
+      setStreamingActivity((prev) => {
+        const next = updater(prev);
+        streamingActivityRef.current = next;
+        return next;
+      });
+    };
+
     try {
       const newThreadId = await streamChat(
         { message: text, thread_id: threadId ?? undefined, locale },
@@ -300,6 +311,65 @@ export default function ChatPage() {
                 ? prev.includes(tool) ? prev : [...prev, tool]
                 : prev.filter((t) => t !== tool),
             );
+          },
+          onThinking: (text) => {
+            updateActivity((prev) => ({
+              thinking: [...(prev?.thinking ?? []), { text }],
+              tool_calls: prev?.tool_calls ?? [],
+              usage: prev?.usage ?? [],
+              total_input_tokens: prev?.total_input_tokens ?? 0,
+              total_output_tokens: prev?.total_output_tokens ?? 0,
+            }));
+          },
+          onToolStart: (tool) => {
+            updateActivity((prev) => ({
+              thinking: prev?.thinking ?? [],
+              tool_calls: [...(prev?.tool_calls ?? []), {
+                run_id: tool.run_id,
+                name: tool.name,
+                input: tool.input,
+                status: 'running' as const,
+                started_at: Date.now(),
+              }],
+              usage: prev?.usage ?? [],
+              total_input_tokens: prev?.total_input_tokens ?? 0,
+              total_output_tokens: prev?.total_output_tokens ?? 0,
+            }));
+          },
+          onToolEnd: (tool) => {
+            updateActivity((prev) => ({
+              thinking: prev?.thinking ?? [],
+              tool_calls: (prev?.tool_calls ?? []).map((tc) =>
+                tc.run_id === tool.run_id
+                  ? { ...tc, output: tool.output, status: 'done' as const, ended_at: Date.now() }
+                  : tc
+              ),
+              usage: prev?.usage ?? [],
+              total_input_tokens: prev?.total_input_tokens ?? 0,
+              total_output_tokens: prev?.total_output_tokens ?? 0,
+            }));
+          },
+          onToolError: (tool) => {
+            updateActivity((prev) => ({
+              thinking: prev?.thinking ?? [],
+              tool_calls: (prev?.tool_calls ?? []).map((tc) =>
+                tc.run_id === tool.run_id
+                  ? { ...tc, error: tool.error, status: 'error' as const, ended_at: Date.now() }
+                  : tc
+              ),
+              usage: prev?.usage ?? [],
+              total_input_tokens: prev?.total_input_tokens ?? 0,
+              total_output_tokens: prev?.total_output_tokens ?? 0,
+            }));
+          },
+          onUsage: (usage) => {
+            updateActivity((prev) => ({
+              thinking: prev?.thinking ?? [],
+              tool_calls: prev?.tool_calls ?? [],
+              usage: [...(prev?.usage ?? []), usage],
+              total_input_tokens: (prev?.total_input_tokens ?? 0) + usage.input_tokens,
+              total_output_tokens: (prev?.total_output_tokens ?? 0) + usage.output_tokens,
+            }));
           },
           onError: (msg) => {
             streamFailed = true;
@@ -337,6 +407,7 @@ export default function ChatPage() {
               content: accumulatedText,
               itinerary: accumulatedItinerary ?? undefined,
               comparison: accumulatedComparison ?? undefined,
+              activity: streamingActivityRef.current ?? undefined,
             };
           }
         }
@@ -346,6 +417,8 @@ export default function ChatPage() {
       setStreamingText('');
       setStreamingItinerary(null);
       setStreamingComparison(null);
+      setStreamingActivity(null);
+      streamingActivityRef.current = null;
 
       if (newThreadId && !sessionResetRef.current) {
         setThreadId(newThreadId);
@@ -434,6 +507,41 @@ export default function ChatPage() {
                     : prev.filter((t) => t !== tool),
                 );
               },
+              onThinking: (text) => {
+                setStreamingActivity((prev) => {
+                  const next = { thinking: [...(prev?.thinking ?? []), { text }], tool_calls: prev?.tool_calls ?? [], usage: prev?.usage ?? [], total_input_tokens: prev?.total_input_tokens ?? 0, total_output_tokens: prev?.total_output_tokens ?? 0 };
+                  streamingActivityRef.current = next;
+                  return next;
+                });
+              },
+              onToolStart: (tool) => {
+                setStreamingActivity((prev) => {
+                  const next = { thinking: prev?.thinking ?? [], tool_calls: [...(prev?.tool_calls ?? []), { run_id: tool.run_id, name: tool.name, input: tool.input, status: 'running' as const, started_at: Date.now() }], usage: prev?.usage ?? [], total_input_tokens: prev?.total_input_tokens ?? 0, total_output_tokens: prev?.total_output_tokens ?? 0 };
+                  streamingActivityRef.current = next;
+                  return next;
+                });
+              },
+              onToolEnd: (tool) => {
+                setStreamingActivity((prev) => {
+                  const next = { thinking: prev?.thinking ?? [], tool_calls: (prev?.tool_calls ?? []).map((tc) => tc.run_id === tool.run_id ? { ...tc, output: tool.output, status: 'done' as const, ended_at: Date.now() } : tc), usage: prev?.usage ?? [], total_input_tokens: prev?.total_input_tokens ?? 0, total_output_tokens: prev?.total_output_tokens ?? 0 };
+                  streamingActivityRef.current = next;
+                  return next;
+                });
+              },
+              onToolError: (tool) => {
+                setStreamingActivity((prev) => {
+                  const next = { thinking: prev?.thinking ?? [], tool_calls: (prev?.tool_calls ?? []).map((tc) => tc.run_id === tool.run_id ? { ...tc, error: tool.error, status: 'error' as const, ended_at: Date.now() } : tc), usage: prev?.usage ?? [], total_input_tokens: prev?.total_input_tokens ?? 0, total_output_tokens: prev?.total_output_tokens ?? 0 };
+                  streamingActivityRef.current = next;
+                  return next;
+                });
+              },
+              onUsage: (usage) => {
+                setStreamingActivity((prev) => {
+                  const next = { thinking: prev?.thinking ?? [], tool_calls: prev?.tool_calls ?? [], usage: [...(prev?.usage ?? []), usage], total_input_tokens: (prev?.total_input_tokens ?? 0) + usage.input_tokens, total_output_tokens: (prev?.total_output_tokens ?? 0) + usage.output_tokens };
+                  streamingActivityRef.current = next;
+                  return next;
+                });
+              },
               onError: (msg) => {
                 streamFailed = true;
                 errorMessage = msg;
@@ -463,6 +571,7 @@ export default function ChatPage() {
                   content: accumulatedText,
                   itinerary: accumulatedItinerary ?? undefined,
                   comparison: accumulatedComparison ?? undefined,
+                  activity: streamingActivityRef.current ?? undefined,
                 };
               }
             }
@@ -472,6 +581,8 @@ export default function ChatPage() {
           setStreamingText('');
           setStreamingItinerary(null);
           setStreamingComparison(null);
+          setStreamingActivity(null);
+          streamingActivityRef.current = null;
           setLoading(false);
           setActiveWorkers([]);
           return true;

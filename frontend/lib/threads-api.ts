@@ -1,4 +1,4 @@
-import type { Itinerary, ComparisonData } from '@/lib/types';
+import type { Itinerary, ComparisonData, ActivityData } from '@/lib/types';
 import { putThreads, getAllCachedThreads, putThreadHistory, getCachedThreadHistory, clearOldThreads } from './offline-db';
 
 export interface ThreadMeta {
@@ -20,6 +20,7 @@ export interface ThreadMessage {
   content: string;
   itinerary?: Itinerary;
   comparison?: ComparisonData;
+  activity?: ActivityData;
 }
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
