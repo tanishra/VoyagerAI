@@ -190,7 +190,6 @@ async def create_chat_agent(checkpointer=None, store=None, user_id=None, locale=
         system_prompt=build_chat_agent_prompt(locale),
         checkpointer=checkpointer,
         store=store,
-        memory=["/memories/preferences.md"],
         permissions=[
             FilesystemPermission(
                 operations=["read", "write"],
@@ -444,12 +443,20 @@ async def stream_chat_agent(
     }
 
     stream = _ModelStream(agent, config)
+    event_count = 0
     async for event in stream.events(
         {"messages": [{"role": "user", "content": message}]}
     ):
+        event_count += 1
+        if event.get("event") == "on_chat_model_stream":
+            chunk = event.get("data", {}).get("chunk")
+            if chunk is not None:
+                content = getattr(chunk, "content", None)
+                logger.debug("stream event #%d: on_chat_model_stream content_type=%s content=%r", event_count, type(content).__name__, content[:100] if isinstance(content, str) else content)
         yield event
 
     stream_text = stream.last_text()
+    logger.info("stream finished: %d events, last_text len=%d, has_tags=%s", event_count, len(stream_text), bool(stream_text and (_ITINERARY_TAG_RE.search(stream_text) or _COMPARISON_TAG_RE.search(stream_text))))
 
     # Only attempt structured extraction if the agent's response contains
     # itinerary or comparison tags — conversational responses (clarifying
