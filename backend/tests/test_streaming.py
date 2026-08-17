@@ -538,7 +538,7 @@ class TestChatStreamEndpoint:
 
         import main as main_module
 
-        async def fake_stream_chat_agent(message, thread_id, user_id=None):
+        async def fake_stream_chat_agent(message, thread_id, user_id=None, locale=None):
             yield {"event": "on_chat_model_stream", "data": {"chunk": _Chunk([{"type": "text-delta", "text": "Hi"}])}}
             yield {"event": "on_tool_start", "name": "task", "run_id": "r1", "data": {"input": {"subagent_type": "researcher"}}}
             yield {"event": "on_tool_end", "name": "task", "run_id": "r1", "data": {"output": "ok"}}
@@ -573,7 +573,7 @@ class TestChatStreamEndpoint:
 
         import main as main_module
 
-        async def fake_stream_chat_agent(message, thread_id, user_id=None):
+        async def fake_stream_chat_agent(message, thread_id, user_id=None, locale=None):
             yield {"event": "on_tool_start", "name": "task", "run_id": "r9", "data": {"input": {"subagent_type": "risk_detector"}}}
             yield {"event": "on_tool_error", "name": "task", "run_id": "r9", "data": {"error": "boom"}}
             yield {"event": "done", "data": None}
@@ -601,7 +601,7 @@ class TestChatStreamEndpoint:
 
         import main as main_module
 
-        async def fake_stream_chat_agent(message, thread_id, user_id=None):
+        async def fake_stream_chat_agent(message, thread_id, user_id=None, locale=None):
             yield {"event": "done", "data": None}
 
         monkeypatch.setattr(main_module, "stream_chat_agent", fake_stream_chat_agent)
@@ -630,7 +630,7 @@ class TestChatStreamEndpoint:
 
         import main as main_module
 
-        async def fake_stream_chat_agent(message, thread_id, user_id=None):
+        async def fake_stream_chat_agent(message, thread_id, user_id=None, locale=None):
             yield {"event": "done", "data": None}
 
         monkeypatch.setattr(main_module, "stream_chat_agent", fake_stream_chat_agent)
@@ -657,7 +657,7 @@ class TestChatStreamEndpoint:
 
         import main as main_module
 
-        async def fake_stream_chat_agent(message, thread_id, user_id=None):
+        async def fake_stream_chat_agent(message, thread_id, user_id=None, locale=None):
             yield {"event": "done", "data": None}
 
         monkeypatch.setattr(main_module, "stream_chat_agent", fake_stream_chat_agent)
@@ -682,7 +682,7 @@ class TestChatStreamEndpoint:
 
         import main as main_module
 
-        async def failing_stream_chat_agent(message, thread_id, user_id=None):
+        async def failing_stream_chat_agent(message, thread_id, user_id=None, locale=None):
             yield {"event": "on_chat_model_stream", "data": {"chunk": "part"}}
             raise RuntimeError("boom")
 
