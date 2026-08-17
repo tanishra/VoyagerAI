@@ -40,7 +40,7 @@ from oauth import (
     get_current_user,
     oauth,
 )
-from locale_utils import extract_locale
+from locale_utils import extract_locale, get_error_message
 from sanitize import sanitize_prompt_input
 from share_store import share_store
 from threads import generate_summary, thread_store
@@ -291,7 +291,7 @@ async def chat_stream(
                 exc_info=True,
             )
             stream_failed = True
-            yield _sse("error", f"Streaming failed: {exc}")
+            yield _sse("error", get_error_message("streaming_failed", locale, error=str(exc)))
         finally:
             # Save/update thread metadata with AI summary and status — never blocks stream
             try:

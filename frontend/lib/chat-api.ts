@@ -10,7 +10,7 @@ export async function streamChat(
   body: { message: string; thread_id?: string; locale?: string },
   callbacks: ChatStreamCallbacks,
 ): Promise<string | undefined> {
-  const { onToken, onItinerary, onComparison, onStatus, onThreadId, onDone, onError, onAbort, signal } = callbacks;
+  const { onToken, onItinerary, onComparison, onStatus, onThreadId, onDone, onError, onAbort, signal, errorMessages } = callbacks;
   let resolvedThreadId: string | undefined;
 
   try {
@@ -36,13 +36,13 @@ export async function streamChat(
 
     if (!response.ok) {
       const text = await response.text().catch(() => '');
-      onError?.(`Server responded with ${response.status}: ${text}`);
+      onError?.(errorMessages?.serverResponse?.(response.status, text) ?? `Server responded with ${response.status}: ${text}`);
       return undefined;
     }
 
     const reader = response.body?.getReader();
     if (!reader) {
-      onError?.('Response body is not readable');
+      onError?.(errorMessages?.responseBody ?? 'Response body is not readable');
       return undefined;
     }
 
@@ -77,7 +77,7 @@ export async function streamChat(
             },
           );
         } catch {
-          onError?.('Failed to parse event data');
+          onError?.(errorMessages?.parseFailed ?? 'Failed to parse event data');
         }
       }
       currentEvent = '';
@@ -111,7 +111,7 @@ export async function streamChat(
     dispatchIfReady();
 
     if (!sawDone) {
-      onError?.('Stream ended before the agent finished');
+      onError?.(errorMessages?.streamEnded ?? 'Stream ended before the agent finished');
       return resolvedThreadId;
     }
     return resolvedThreadId;

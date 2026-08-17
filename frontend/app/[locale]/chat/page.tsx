@@ -300,6 +300,12 @@ export default function ChatPage() {
           onAbort: () => {
             aborted = true;
           },
+          errorMessages: {
+            serverResponse: (status, detail) => t('errorServerResponse', { status, detail }),
+            responseBody: t('errorResponseBody'),
+            parseFailed: t('errorParseFailed'),
+            streamEnded: t('errorStreamEnded'),
+          },
         },
       );
 
@@ -423,6 +429,12 @@ export default function ChatPage() {
                 streamFailed = true;
                 errorMessage = msg;
                 setError(msg);
+              },
+              errorMessages: {
+                serverResponse: (status, detail) => t('errorServerResponse', { status, detail }),
+                responseBody: t('errorResponseBody'),
+                parseFailed: t('errorParseFailed'),
+                streamEnded: t('errorStreamEnded'),
               },
             },
           );

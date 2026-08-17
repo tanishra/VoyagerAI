@@ -77,4 +77,10 @@ export interface ChatStreamCallbacks {
   onError?: (error: string) => void;
   onAbort?: () => void;
   signal?: AbortSignal;
+  errorMessages?: {
+    serverResponse?: (status: number, detail: string) => string;
+    responseBody?: string;
+    parseFailed?: string;
+    streamEnded?: string;
+  };
 }

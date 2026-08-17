@@ -35,7 +35,11 @@
     "messageInput": "メッセージ入力",
     "enterToSend": "Enterで送信 · Shift+Enterで改行",
     "errorRendering": "この会話の表示中にエラーが発生しました。続行するには新しいチャットを開始してください。",
-    "selectPlan": "{tier}プランを選びます"
+    "selectPlan": "{tier}プランを選びます",
+    "errorServerResponse": "サーバーが {status} で応答しました: {detail}",
+    "errorResponseBody": "レスポンス本文を読み取れません",
+    "errorParseFailed": "イベントデータの解析に失敗しました",
+    "errorStreamEnded": "エージェントが完了する前にストリームが終了しました"
   },
   "status": {
     "researching": "調査中",

@@ -74,7 +74,7 @@ Without Redis, the app falls back to in-memory storage (no persistence across re
 ```bash
 # macOS
 brew install redis-stack-server
-redis-stack-server --daemonize yes
+brew services start redis-stack-server
 ```
 
 ---

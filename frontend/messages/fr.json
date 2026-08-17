@@ -35,7 +35,11 @@
     "messageInput": "Saisie du message",
     "enterToSend": "Appuyez sur Entrée pour envoyer · Maj+Entrée pour une nouvelle ligne",
     "errorRendering": "Une erreur s'est produite lors de l'affichage de cette conversation. Commencez un nouveau chat pour continuer.",
-    "selectPlan": "Je choisis le plan {tier}"
+    "selectPlan": "Je choisis le plan {tier}",
+    "errorServerResponse": "Le serveur a répondu avec {status}: {detail}",
+    "errorResponseBody": "Le corps de la réponse n'est pas lisible",
+    "errorParseFailed": "Échec de l'analyse des données de l'événement",
+    "errorStreamEnded": "Le flux s'est terminé avant la fin de l'agent"
   },
   "status": {
     "researching": "Recherche",

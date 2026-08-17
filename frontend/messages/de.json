@@ -35,7 +35,11 @@
     "messageInput": "Nachrichteneingabe",
     "enterToSend": "Enter zum Senden · Shift+Enter für neue Zeile",
     "errorRendering": "Beim Anzeigen dieser Konversation ist ein Fehler aufgetreten. Starten Sie einen neuen Chat, um fortzufahren.",
-    "selectPlan": "Ich wähle den {tier}-Plan"
+    "selectPlan": "Ich wähle den {tier}-Plan",
+    "errorServerResponse": "Server antwortete mit {status}: {detail}",
+    "errorResponseBody": "Antworttext ist nicht lesbar",
+    "errorParseFailed": "Fehler beim Parsen der Ereignisdaten",
+    "errorStreamEnded": "Der Stream endete bevor der Agent fertig war"
   },
   "status": {
     "researching": "Recherchieren",

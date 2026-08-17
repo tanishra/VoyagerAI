@@ -35,7 +35,11 @@
     "messageInput": "Entrada de mensaje",
     "enterToSend": "Presiona Enter para enviar · Shift+Enter para nueva línea",
     "errorRendering": "Algo salió mal al renderizar esta conversación. Inicia un Nuevo Chat para continuar.",
-    "selectPlan": "Elegiré el plan {tier}"
+    "selectPlan": "Elegiré el plan {tier}",
+    "errorServerResponse": "El servidor respondió con {status}: {detail}",
+    "errorResponseBody": "El cuerpo de la respuesta no es legible",
+    "errorParseFailed": "Error al analizar los datos del evento",
+    "errorStreamEnded": "El stream terminó antes de que el agente finalizara"
   },
   "status": {
     "researching": "Investigando",

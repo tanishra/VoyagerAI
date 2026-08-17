@@ -35,7 +35,11 @@
     "messageInput": "संदेश इनपुट",
     "enterToSend": "भेजने के लिए Enter दबाएं · नई पंक्ति के लिए Shift+Enter",
     "errorRendering": "इस वार्तालाप को प्रदर्शित करते समय कुछ गलत हुआ। जारी रखने के लिए नई चैट शुरू करें।",
-    "selectPlan": "मैं {tier} योजना चुनूंगा"
+    "selectPlan": "मैं {tier} योजना चुनूंगा",
+    "errorServerResponse": "सर्वर ने {status} के साथ प्रतिक्रिया दी: {detail}",
+    "errorResponseBody": "प्रतिक्रिया निकाय पढ़ने योग्य नहीं है",
+    "errorParseFailed": "इवेंट डेटा पार्स करने में विफल",
+    "errorStreamEnded": "एजेंट के समाप्त होने से पहले स्ट्रीम समाप्त हो गई"
   },
   "status": {
     "researching": "शोध कर रहे हैं",

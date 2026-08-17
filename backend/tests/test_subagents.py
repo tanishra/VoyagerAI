@@ -10,7 +10,7 @@ from agents.prompts import (
     RESEARCHER_SYSTEM_PROMPT,
     RISK_DETECTOR_SYSTEM_PROMPT,
 )
-from agents.subagents import get_subagents
+from agents.subagents import get_subagents, _ResilientModel, wrap_subagent_for_resilience
 
 
 class TestSubagentRegistry:
@@ -41,7 +41,25 @@ class TestSubagentRegistry:
 
         by_name = {s["name"]: s for s in get_subagents()}
         for name in ("risk_detector", "constraint_analyzer"):
-            assert getattr(by_name[name]["model"], "model", None) == settings.LLM_SUBAGENT_MODEL
+            model = by_name[name]["model"]
+            inner = getattr(model, "inner", model)
+            assert getattr(inner, "model", None) == settings.LLM_SUBAGENT_MODEL
+
+    def test_all_subagents_wrapped_with_resilient_model(self):
+        for spec in get_subagents():
+            assert isinstance(spec["model"], _ResilientModel)
+
+    def test_resilient_model_preserves_name_and_description(self):
+        from agents.subagents import build_risk_detector
+        from agents.llm import get_subagent_model
+
+        raw = build_risk_detector(get_subagent_model())
+        wrapped = wrap_subagent_for_resilience(raw)
+        assert wrapped["name"] == raw["name"]
+        assert wrapped["description"] == raw["description"]
+        assert wrapped["system_prompt"] == raw["system_prompt"]
+        assert isinstance(wrapped["model"], _ResilientModel)
+        assert wrapped["model"].subagent_name == raw["name"]
 
     def test_subagent_descriptions_mention_purpose(self):
         by_name = {s["name"]: s for s in get_subagents()}
@@ -171,3 +189,71 @@ class TestChatPromptSelfCritique:
 
     def test_self_critique_mentions_max_iterations(self):
         assert "2 fix iterations" in CHAT_AGENT_SYSTEM_PROMPT
+
+
+class TestResilientModel:
+    def test_agenerate_returns_fallback_on_exception(self):
+        import asyncio
+        from langchain_core.language_models import BaseChatModel
+        from langchain_core.messages import HumanMessage
+
+        class _FailingModel(BaseChatModel):
+            @property
+            def _llm_type(self):
+                return "failing"
+
+            def _generate(self, messages, stop=None, run_manager=None, **kwargs):
+                raise RuntimeError("model crashed")
+
+            async def _agenerate(self, messages, stop=None, run_manager=None, **kwargs):
+                raise RuntimeError("model crashed")
+
+        wrapper = _ResilientModel(_FailingModel(), "test_agent")
+        result = asyncio.new_event_loop().run_until_complete(
+            wrapper._agenerate([HumanMessage(content="hi")])
+        )
+        assert len(result.generations) == 1
+        msg = result.generations[0].message
+        assert "[SUBAGENT FAILED]" in msg.content
+        assert "test_agent" in msg.content
+        assert "model crashed" in msg.content
+
+    def test_agenerate_passes_through_on_success(self):
+        import asyncio
+        from langchain_core.language_models import BaseChatModel
+        from langchain_core.messages import AIMessage, HumanMessage
+        from langchain_core.outputs import ChatGeneration, ChatResult
+
+        class _OkModel(BaseChatModel):
+            @property
+            def _llm_type(self):
+                return "ok"
+
+            def _generate(self, messages, stop=None, run_manager=None, **kwargs):
+                return ChatResult(generations=[ChatGeneration(message=AIMessage(content="ok"))])
+
+            async def _agenerate(self, messages, stop=None, run_manager=None, **kwargs):
+                return ChatResult(generations=[ChatGeneration(message=AIMessage(content="ok"))])
+
+        wrapper = _ResilientModel(_OkModel(), "test_agent")
+        result = asyncio.new_event_loop().run_until_complete(
+            wrapper._agenerate([HumanMessage(content="hi")])
+        )
+        assert result.generations[0].message.content == "ok"
+
+    def test_llm_type_includes_inner(self):
+        from langchain_core.language_models import BaseChatModel
+
+        class _InnerModel(BaseChatModel):
+            @property
+            def _llm_type(self):
+                return "gemini"
+
+            def _generate(self, messages, stop=None, run_manager=None, **kwargs):
+                pass
+
+            async def _agenerate(self, messages, stop=None, run_manager=None, **kwargs):
+                pass
+
+        wrapper = _ResilientModel(_InnerModel(), "test")
+        assert "gemini" in wrapper._llm_type

@@ -702,3 +702,31 @@ class TestChatStreamEndpoint:
         assert events[1] == ("status", {"tool": "agent", "status": "thinking"})
         assert events[-1][0] == "error"
         assert "boom" in events[-1][1]
+
+    def test_agent_exception_yields_localized_error_event(self, monkeypatch):
+        import json as _json
+
+        from fastapi.testclient import TestClient
+
+        import main as main_module
+
+        async def failing_stream_chat_agent(message, thread_id, user_id=None, locale=None):
+            yield {"event": "on_chat_model_stream", "data": {"chunk": "part"}}
+            raise RuntimeError("boom")
+
+        monkeypatch.setattr(main_module, "stream_chat_agent", failing_stream_chat_agent)
+        monkeypatch.setattr("config.settings.AUTH_DEV_BYPASS", True)
+        with TestClient(main_module.app) as c, c.stream(
+            "POST", "/chat/stream",
+            json={"message": "hello"},
+            headers={"Accept-Language": "fr"},
+        ) as r:
+            parsed = []
+            for line in r.iter_lines():
+                if line.startswith("data: "):
+                    parsed.append(_json.loads(line[6:]))
+
+        events = [(p["event"], p["data"]) for p in parsed]
+        assert events[-1][0] == "error"
+        assert "Échec du streaming" in events[-1][1]
+        assert "boom" in events[-1][1]
