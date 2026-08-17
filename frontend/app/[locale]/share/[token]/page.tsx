@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
+import { useTranslations } from 'next-intl';
 import { getShare, type ShareData } from '@/lib/share-api';
 import ItineraryCard from '@/components/ItineraryCard';
 import { Loader2, AlertCircle, Sparkles } from 'lucide-react';
@@ -9,6 +10,7 @@ import { Loader2, AlertCircle, Sparkles } from 'lucide-react';
 export default function SharePage() {
   const params = useParams();
   const token = params.token as string;
+  const t = useTranslations('share');
   const [data, setData] = useState<ShareData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -38,9 +40,9 @@ export default function SharePage() {
       <main className="min-h-screen flex items-center justify-center px-4 bg-background">
         <div className="text-center max-w-sm">
           <AlertCircle className="w-10 h-10 text-red-500 mx-auto mb-4" />
-          <h1 className="text-xl font-semibold text-foreground mb-2">Link expired</h1>
+          <h1 className="text-xl font-semibold text-foreground mb-2">{t('linkExpired')}</h1>
           <p className="text-sm text-muted-foreground">
-            This share link is no longer valid or has expired.
+            {t('linkExpiredDesc')}
           </p>
         </div>
       </main>
@@ -53,13 +55,13 @@ export default function SharePage() {
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-foreground">{data.destination}</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Shared itinerary
+            {t('sharedItinerary')}
           </p>
         </div>
         <ItineraryCard itinerary={data.itinerary} printMode />
         <div className="mt-8 pt-6 border-t border-border flex items-center justify-center gap-2 text-sm text-muted-foreground">
           <Sparkles className="w-4 h-4 text-primary" />
-          Powered by VoyagerAI
+          {t('poweredBy')}
         </div>
       </div>
     </main>

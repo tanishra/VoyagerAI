@@ -76,7 +76,7 @@ export default function ItineraryCard({ itinerary, threadId, printMode = false }
 
   function handlePrint() {
     if (!threadId) return;
-    window.open(`/export/${threadId}`, '_blank');
+    window.open(`/${locale}/export/${threadId}`, '_blank');
     setMenuOpen(false);
   }
 

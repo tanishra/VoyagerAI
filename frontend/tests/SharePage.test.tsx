@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
-import SharePage from '@/app/share/[token]/page';
+import { NextIntlClientProvider } from 'next-intl';
+import SharePage from '@/app/[locale]/share/[token]/page';
+import en from '../messages/en.json';
 
 vi.mock('next/navigation', () => ({
   useParams: () => ({ token: 'test-token-123' }),
@@ -46,7 +48,11 @@ describe('SharePage', () => {
       expires_at: 1700604800,
     });
 
-    render(<SharePage />);
+    render(
+      <NextIntlClientProvider locale="en" messages={en}>
+        <SharePage />
+      </NextIntlClientProvider>
+    );
 
     await waitFor(() => {
       expect(screen.getAllByText('Paris, France').length).toBeGreaterThan(0);
@@ -57,7 +63,11 @@ describe('SharePage', () => {
   it('renders expired message when share is invalid', async () => {
     mockGetShare.mockResolvedValueOnce(null);
 
-    render(<SharePage />);
+    render(
+      <NextIntlClientProvider locale="en" messages={en}>
+        <SharePage />
+      </NextIntlClientProvider>
+    );
 
     await waitFor(() => {
       expect(screen.getByText('Link expired')).toBeInTheDocument();
