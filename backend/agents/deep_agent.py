@@ -15,6 +15,7 @@ from langgraph.store.memory import InMemoryStore
 from langgraph.store.redis import RedisConnectionFactory, RedisStore
 from pydantic import BaseModel
 
+from agents.activity_store import load_activity, save_activity
 from agents.llm import get_formatter_model, get_orchestrator_model
 from agents.prompts import build_chat_agent_prompt
 from agents.subagents import get_subagents
@@ -107,6 +108,17 @@ def get_redis_file_store() -> InMemoryStore | RedisStore:
     return _file_store
 
 
+def _truncate_for_activity(data, max_chars: int = 1000) -> str:
+    """Truncate tool input/output for activity storage."""
+    if data is None:
+        return None
+    if isinstance(data, (dict, list)):
+        s = json.dumps(data, default=str)
+    else:
+        s = str(data)
+    return s[:max_chars] + ("..." if len(s) > max_chars else "")
+
+
 class _ModelStream:
     """Accumulate streamed model text per run from `astream_events` chunks.
 
@@ -121,13 +133,25 @@ class _ModelStream:
         self._texts: dict[str, str] = {}
         self._reasoning_texts: dict[str, str] = {}
         self._order: list[str] = []
+        self.activity: dict = {
+            "thinking": [],
+            "tool_calls": [],
+            "usage": [],
+            "total_input_tokens": 0,
+            "total_output_tokens": 0,
+        }
+        self._tool_call_index: dict[str, int] = {}
 
     async def events(self, inputs):
         async for event in self._agent.astream_events(
             inputs, self._config, version="v2"
         ):
-            if event["event"] == "on_chat_model_stream":
-                chunk = event["data"].get("chunk")
+            etype = event.get("event", "")
+            run_id = event.get("run_id", "")
+            edata = event.get("data", {})
+
+            if etype == "on_chat_model_stream":
+                chunk = edata.get("chunk")
                 if chunk is not None:
                     c = chunk.content
                     if isinstance(c, str):
@@ -149,7 +173,6 @@ class _ModelStream:
                     else:
                         text = ""
                         reasoning_text = ""
-                    run_id = event.get("run_id")
                     if run_id is not None:
                         if run_id not in self._texts:
                             self._order.append(run_id)
@@ -158,6 +181,54 @@ class _ModelStream:
                             self._reasoning_texts[run_id] = (
                                 self._reasoning_texts.get(run_id, "") + reasoning_text
                             )
+                            self.activity["thinking"].append({"text": reasoning_text[:2000]})
+
+            elif etype == "on_tool_start":
+                name = event.get("name", "")
+                tool_input = edata.get("input") if isinstance(edata, dict) else None
+                display_name = name
+                if name == "task" and isinstance(tool_input, dict):
+                    display_name = tool_input.get("subagent_type", name)
+                idx = len(self.activity["tool_calls"])
+                self._tool_call_index[run_id] = idx
+                self.activity["tool_calls"].append({
+                    "run_id": run_id,
+                    "name": display_name,
+                    "input": _truncate_for_activity(tool_input),
+                    "status": "running",
+                })
+
+            elif etype == "on_tool_end":
+                output = edata.get("output") if isinstance(edata, dict) else edata
+                idx = self._tool_call_index.get(run_id)
+                if idx is not None and idx < len(self.activity["tool_calls"]):
+                    self.activity["tool_calls"][idx]["status"] = "done"
+                    self.activity["tool_calls"][idx]["output"] = _truncate_for_activity(output)
+
+            elif etype == "on_tool_error":
+                error_msg = edata.get("error") if isinstance(edata, dict) else str(edata)
+                idx = self._tool_call_index.get(run_id)
+                if idx is not None and idx < len(self.activity["tool_calls"]):
+                    self.activity["tool_calls"][idx]["status"] = "error"
+                    self.activity["tool_calls"][idx]["error"] = str(error_msg)[:500]
+
+            elif etype == "on_chat_model_end":
+                output = edata.get("output") if isinstance(edata, dict) else None
+                if output is not None:
+                    usage = getattr(output, "usage_metadata", None)
+                    resp_meta = getattr(output, "response_metadata", None) or {}
+                    model_name = resp_meta.get("model_name", "") or resp_meta.get("model", "")
+                    if usage and isinstance(usage, dict):
+                        inp = usage.get("input_tokens", 0)
+                        outp = usage.get("output_tokens", 0)
+                        self.activity["usage"].append({
+                            "input_tokens": inp,
+                            "output_tokens": outp,
+                            "model": model_name,
+                        })
+                        self.activity["total_input_tokens"] += inp
+                        self.activity["total_output_tokens"] += outp
+
             yield event
 
     def last_text(self) -> str:
@@ -468,6 +539,11 @@ async def stream_chat_agent(
     ):
         yield event
 
+    # Persist activity metadata for this thread
+    if stream.activity["thinking"] or stream.activity["tool_calls"] or stream.activity["usage"]:
+        store = create_redis_store() if settings.STORE_BACKEND == "redis" else InMemoryStore()
+        await save_activity(store, thread_id, stream.activity)
+
     stream_text = stream.last_text()
     logger.info("stream finished: last_text len=%d, has_tags=%s", len(stream_text), bool(stream_text and (_ITINERARY_TAG_RE.search(stream_text) or _COMPARISON_TAG_RE.search(stream_text))))
 
@@ -507,6 +583,11 @@ async def stream_chat_agent(
             ):
                 yield event
             retry_text = retry.last_text()
+            stream.activity["thinking"].extend(retry.activity["thinking"])
+            stream.activity["tool_calls"].extend(retry.activity["tool_calls"])
+            stream.activity["usage"].extend(retry.activity["usage"])
+            stream.activity["total_input_tokens"] += retry.activity["total_input_tokens"]
+            stream.activity["total_output_tokens"] += retry.activity["total_output_tokens"]
             itinerary = _extract_itinerary_from_text(retry_text) if retry_text else None
             if itinerary is None:
                 state = await agent.aget_state(config)
@@ -529,3 +610,8 @@ async def stream_chat_agent(
         yield {"event": "done", "data": None}
     except (ValueError, json.JSONDecodeError) as exc:
         yield {"event": "error", "data": str(exc)}
+
+    # Re-save activity if retry added more data
+    if stream.activity["thinking"] or stream.activity["tool_calls"] or stream.activity["usage"]:
+        store = create_redis_store() if settings.STORE_BACKEND == "redis" else InMemoryStore()
+        await save_activity(store, thread_id, stream.activity)

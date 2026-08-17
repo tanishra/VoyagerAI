@@ -104,7 +104,7 @@ class TestTokenStreaming:
         assert _parse_chat_event(event, {}) == []
 
 class TestSubagentStatus:
-    def test_task_start_emits_running_status(self):
+    def test_task_start_emits_running_status_and_tool_start(self):
         event = _ev(
             "on_tool_start",
             name="task",
@@ -113,23 +113,46 @@ class TestSubagentStatus:
         )
         active = {}
         payloads = _parse_chat_event(event, active)
+        # Should emit both status (for backward compat) and tool_start (new)
+        assert len(payloads) == 2
+        assert payloads[0]["event"] == "status"
         assert json_data(payloads[0]) == {"tool": "researcher", "status": "running"}
+        assert payloads[1]["event"] == "tool_start"
+        tool_start_data = json_data(payloads[1])
+        assert tool_start_data["name"] == "researcher"
+        assert tool_start_data["run_id"] == "run-1"
         assert active == {"run-1": "researcher"}
 
-    def test_task_end_emits_done_status(self):
+    def test_task_end_emits_done_status_and_tool_end(self):
         active = {"run-1": "risk_detector"}
         event = _ev("on_tool_end", name="task", run_id="run-1", data={"output": "..."})
         payloads = _parse_chat_event(event, active)
+        assert len(payloads) == 2
+        assert payloads[0]["event"] == "status"
         assert json_data(payloads[0]) == {"tool": "risk_detector", "status": "done"}
+        assert payloads[1]["event"] == "tool_end"
+        tool_end_data = json_data(payloads[1])
+        assert tool_end_data["name"] == "risk_detector"
+        assert tool_end_data["run_id"] == "run-1"
         assert active == {}
 
-    def test_untracked_task_end_emits_nothing(self):
-        event = _ev("on_tool_end", name="task", run_id="unknown", data={"output": "..."})
-        assert _parse_chat_event(event, {}) == []
+    def test_untracked_tool_end_emits_tool_end(self):
+        """Non-task tools that aren't in active_tasks still emit tool_end."""
+        event = _ev("on_tool_end", name="read_file", run_id="unknown", data={"output": "file contents"})
+        payloads = _parse_chat_event(event, {})
+        assert len(payloads) == 1
+        assert payloads[0]["event"] == "tool_end"
+        assert json_data(payloads[0])["name"] == "read_file"
 
-    def test_non_task_tool_start_emits_nothing(self):
-        event = _ev("on_tool_start", name="write_todos", data={"input": {}})
-        assert _parse_chat_event(event, {}) == []
+    def test_non_task_tool_start_emits_tool_start(self):
+        """Non-task tools emit tool_start events (no status, just tool_start)."""
+        event = _ev("on_tool_start", name="write_todos", run_id="r2", data={"input": {"todos": []}})
+        payloads = _parse_chat_event(event, {})
+        assert len(payloads) == 1
+        assert payloads[0]["event"] == "tool_start"
+        tool_start_data = json_data(payloads[0])
+        assert tool_start_data["name"] == "write_todos"
+        assert tool_start_data["run_id"] == "r2"
 
 
 class TestRawEventsDropped:
@@ -141,9 +164,24 @@ class TestRawEventsDropped:
         event = _ev("on_chain_end", name="TravelAgent", data={"output": {}})
         assert _parse_chat_event(event, {}) == []
 
-    def test_on_chat_model_end_dropped(self):
+    def test_on_chat_model_end_without_usage_dropped(self):
         event = _ev("on_chat_model_end", data={"output": {"content": "x"}})
         assert _parse_chat_event(event, {}) == []
+
+    def test_on_chat_model_end_with_usage_emits_usage_event(self):
+        """on_chat_model_end with usage_metadata should emit a usage SSE event."""
+        class _OutputWithUsage:
+            usage_metadata = {"input_tokens": 100, "output_tokens": 50}
+            response_metadata = {"model_name": "gemini-3.7-flash"}
+
+        event = _ev("on_chat_model_end", data={"output": _OutputWithUsage()})
+        payloads = _parse_chat_event(event, {})
+        assert len(payloads) == 1
+        assert payloads[0]["event"] == "usage"
+        usage_data = json_data(payloads[0])
+        assert usage_data["input_tokens"] == 100
+        assert usage_data["output_tokens"] == 50
+        assert usage_data["model"] == "gemini-3.7-flash"
 
 
 class TestSyntheticEvents:
@@ -179,12 +217,22 @@ class TestToolError:
         active = {"run-7": "risk_detector"}
         event = _ev("on_tool_error", name="task", run_id="run-7", data={"error": "boom"})
         payloads = _parse_chat_event(event, active)
+        assert len(payloads) == 2
+        assert payloads[0]["event"] == "status"
         assert json_data(payloads[0]) == {"tool": "risk_detector", "status": "error"}
+        assert payloads[1]["event"] == "tool_error"
+        assert json_data(payloads[1])["name"] == "risk_detector"
         assert active == {}
 
-    def test_untracked_tool_error_emits_nothing(self):
+    def test_untracked_tool_error_emits_tool_error(self):
+        """Untracked tool errors emit tool_error event (no status, just tool_error)."""
         event = _ev("on_tool_error", name="task", run_id="unknown", data={"error": "boom"})
-        assert _parse_chat_event(event, {}) == []
+        payloads = _parse_chat_event(event, {})
+        assert len(payloads) == 1
+        assert payloads[0]["event"] == "tool_error"
+        err_data = json_data(payloads[0])
+        assert err_data["name"] == "task"
+        assert err_data["error"] == "boom"
 
 
 def _fake_state(messages):
@@ -620,10 +668,16 @@ class TestChatStreamEndpoint:
         assert events[0][0] == "thread_id"
         assert events[1] == ("status", {"tool": "agent", "status": "thinking"})
         assert events[2] == ("token", "Hi")
+        # status + tool_start emitted for on_tool_start
         assert events[3] == ("status", {"tool": "researcher", "status": "running"})
-        assert events[4] == ("status", {"tool": "researcher", "status": "done"})
-        assert events[5] == ("itinerary", {"destination": "Paris"})
-        assert events[6] == ("done", None)
+        assert events[4][0] == "tool_start"
+        assert events[4][1]["name"] == "researcher"
+        # status + tool_end emitted for on_tool_end
+        assert events[5] == ("status", {"tool": "researcher", "status": "done"})
+        assert events[6][0] == "tool_end"
+        assert events[6][1]["name"] == "researcher"
+        assert events[7] == ("itinerary", {"destination": "Paris"})
+        assert events[8] == ("done", None)
 
     def test_tool_error_event_sequence(self, monkeypatch):
         import json as _json

@@ -104,6 +104,18 @@ def _sse(event: str, data: object) -> dict:
     return {"event": event, "data": json.dumps({"event": event, "data": data})}
 
 
+def _truncate_tool_data(data, max_chars: int = 1000) -> str:
+    """Truncate tool input/output to keep SSE payloads and stored data small."""
+    if data is None:
+        return None
+    if isinstance(data, (dict, list)):
+        import json as _json
+        s = _json.dumps(data, default=str)
+    else:
+        s = str(data)
+    return s[:max_chars] + ("..." if len(s) > max_chars else "")
+
+
 def _parse_chat_event(event: dict, active_tasks: dict[str, str]) -> list[dict]:
     """Map a stream event to SSE payloads.
 
@@ -151,27 +163,81 @@ def _parse_chat_event(event: dict, active_tasks: dict[str, str]) -> list[dict]:
     if event_type == "on_tool_start":
         name = event.get("name", "")
         tool_input = event_data.get("input") if isinstance(event_data, dict) else None
+        run_id = event.get("run_id", "")
+        payloads: list[dict] = []
         if name == "task" and isinstance(tool_input, dict):
             subagent_type = tool_input.get("subagent_type")
             if subagent_type:
-                run_id = event.get("run_id", "")
                 if run_id:
                     active_tasks[run_id] = subagent_type
-                return [_sse("status", {"tool": subagent_type, "status": "running"})]
-        return []
+                payloads.append(_sse("status", {"tool": subagent_type, "status": "running"}))
+                payloads.append(_sse("tool_start", {
+                    "name": subagent_type,
+                    "input": _truncate_tool_data(tool_input),
+                    "run_id": run_id,
+                }))
+        else:
+            payloads.append(_sse("tool_start", {
+                "name": name,
+                "input": _truncate_tool_data(tool_input) if tool_input else None,
+                "run_id": run_id,
+            }))
+        return payloads
 
     if event_type == "on_tool_end":
         run_id = event.get("run_id", "")
+        name = event.get("name", "")
+        output = event_data.get("output") if isinstance(event_data, dict) else event_data
+        payloads: list[dict] = []
         if run_id in active_tasks:
             subagent_type = active_tasks.pop(run_id)
-            return [_sse("status", {"tool": subagent_type, "status": "done"})]
-        return []
+            payloads.append(_sse("status", {"tool": subagent_type, "status": "done"}))
+            payloads.append(_sse("tool_end", {
+                "name": subagent_type,
+                "output": _truncate_tool_data(output),
+                "run_id": run_id,
+            }))
+        else:
+            payloads.append(_sse("tool_end", {
+                "name": name,
+                "output": _truncate_tool_data(output),
+                "run_id": run_id,
+            }))
+        return payloads
 
     if event_type == "on_tool_error":
         run_id = event.get("run_id", "")
+        name = event.get("name", "")
+        error_msg = event_data.get("error") if isinstance(event_data, dict) else str(event_data)
+        payloads: list[dict] = []
         if run_id in active_tasks:
             subagent_type = active_tasks.pop(run_id)
-            return [_sse("status", {"tool": subagent_type, "status": "error"})]
+            payloads.append(_sse("status", {"tool": subagent_type, "status": "error"}))
+            payloads.append(_sse("tool_error", {
+                "name": subagent_type,
+                "error": str(error_msg)[:500],
+                "run_id": run_id,
+            }))
+        else:
+            payloads.append(_sse("tool_error", {
+                "name": name,
+                "error": str(error_msg)[:500],
+                "run_id": run_id,
+            }))
+        return payloads
+
+    if event_type == "on_chat_model_end":
+        output = event_data.get("output") if isinstance(event_data, dict) else None
+        if output is not None:
+            usage = getattr(output, "usage_metadata", None)
+            resp_meta = getattr(output, "response_metadata", None) or {}
+            model_name = resp_meta.get("model_name", "") or resp_meta.get("model", "")
+            if usage and isinstance(usage, dict):
+                return [_sse("usage", {
+                    "input_tokens": usage.get("input_tokens", 0),
+                    "output_tokens": usage.get("output_tokens", 0),
+                    "model": model_name,
+                })]
         return []
 
     return []
@@ -380,6 +446,18 @@ async def get_thread_history(
 
     messages = state.values.get("messages", [])
     result: list[dict] = []
+
+    # Load persisted activity metadata for this thread
+    activity_data = None
+    try:
+        from agents.activity_store import load_activity as _load_activity
+        from agents.deep_agent import create_redis_store as _create_store
+        from langgraph.store.memory import InMemoryStore as _InMemStore
+        _store = _create_store() if settings.STORE_BACKEND == "redis" else _InMemStore()
+        activity_data = await _load_activity(_store, thread_id)
+    except Exception:
+        pass
+
     for msg in messages:
         role = "user" if getattr(msg, "type", "") == "human" else "assistant"
         content = getattr(msg, "content", "")
@@ -396,6 +474,13 @@ async def get_thread_history(
                 if comparison:
                     entry["comparison"] = comparison
             result.append(entry)
+
+    # Attach activity metadata to the last assistant message
+    if activity_data and result:
+        for entry in reversed(result):
+            if entry.get("role") == "assistant":
+                entry["activity"] = activity_data
+                break
 
     return JSONResponse(
         content=result,
