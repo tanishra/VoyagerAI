@@ -286,24 +286,40 @@ class ThreadStore:
 thread_store = ThreadStore()
 
 
-async def generate_summary(user_message: str, assistant_text: str) -> str:
+_LANGUAGE_NAMES = {
+    "en": "English",
+    "es": "Spanish",
+    "fr": "French",
+    "de": "German",
+    "hi": "Hindi",
+    "ja": "Japanese",
+}
+
+
+async def generate_summary(
+    user_message: str, assistant_text: str, *, locale: str | None = None,
+) -> str:
     """Generate a one-line AI summary of the conversation turn.
 
     Uses the cheap subagent model. Falls back to first 100 chars of user
-    message if the LLM call fails.
+    message if the LLM call fails. When *locale* is provided and not "en",
+    the summary is generated in that language.
     """
     try:
         from agents.llm import get_subagent_model
 
         model = get_subagent_model()
+        system_content = (
+            "Summarize this travel conversation in ONE short sentence "
+            "(max 80 chars). Focus on destination, duration, and budget. "
+            "No preamble, no quotes."
+        )
+        if locale and locale in _LANGUAGE_NAMES and locale != "en":
+            system_content += f" Respond in {_LANGUAGE_NAMES[locale]}."
         response = await model.ainvoke([
             {
                 "role": "system",
-                "content": (
-                    "Summarize this travel conversation in ONE short sentence "
-                    "(max 80 chars). Focus on destination, duration, and budget. "
-                    "No preamble, no quotes."
-                ),
+                "content": system_content,
             },
             {
                 "role": "user",
