@@ -39,7 +39,15 @@
     "errorServerResponse": "सर्वर ने {status} के साथ प्रतिक्रिया दी: {detail}",
     "errorResponseBody": "प्रतिक्रिया निकाय पढ़ने योग्य नहीं है",
     "errorParseFailed": "इवेंट डेटा पार्स करने में विफल",
-    "errorStreamEnded": "एजेंट के समाप्त होने से पहले स्ट्रीम समाप्त हो गई"
+    "errorStreamEnded": "एजेंट के समाप्त होने से पहले स्ट्रीम समाप्त हो गई",
+    "thinkingLabel": "सोचना",
+    "thinkingStreaming": "सोचना…",
+    "toolRunning": "चल रहा है…",
+    "toolFailed": "विफल",
+    "toolInput": "इनपुट",
+    "toolOutput": "आउटपुट",
+    "toolError": "त्रुटि",
+    "tokensLabel": "टोकन"
   },
   "status": {
     "researching": "शोध कर रहे हैं",

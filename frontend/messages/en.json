@@ -39,7 +39,15 @@
     "errorServerResponse": "Server responded with {status}: {detail}",
     "errorResponseBody": "Response body is not readable",
     "errorParseFailed": "Failed to parse event data",
-    "errorStreamEnded": "Stream ended before the agent finished"
+    "errorStreamEnded": "Stream ended before the agent finished",
+    "thinkingLabel": "Thinking",
+    "thinkingStreaming": "Thinking…",
+    "toolRunning": "running…",
+    "toolFailed": "failed",
+    "toolInput": "Input",
+    "toolOutput": "Output",
+    "toolError": "Error",
+    "tokensLabel": "tokens"
   },
   "status": {
     "researching": "Researching",

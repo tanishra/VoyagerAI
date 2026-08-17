@@ -39,7 +39,15 @@
     "errorServerResponse": "Server antwortete mit {status}: {detail}",
     "errorResponseBody": "Antworttext ist nicht lesbar",
     "errorParseFailed": "Fehler beim Parsen der Ereignisdaten",
-    "errorStreamEnded": "Der Stream endete bevor der Agent fertig war"
+    "errorStreamEnded": "Der Stream endete bevor der Agent fertig war",
+    "thinkingLabel": "Denken",
+    "thinkingStreaming": "Denken…",
+    "toolRunning": "läuft…",
+    "toolFailed": "fehlgeschlagen",
+    "toolInput": "Eingabe",
+    "toolOutput": "Ausgabe",
+    "toolError": "Fehler",
+    "tokensLabel": "Token"
   },
   "status": {
     "researching": "Recherchieren",

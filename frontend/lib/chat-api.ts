@@ -1,4 +1,4 @@
-import type { ChatStreamCallbacks, ComparisonData, Itinerary, ToolCallEntry, UsageEntry } from './types';
+import type { ChatStreamCallbacks, ComparisonData, Itinerary, UsageEntry } from './types';
 
 function parseSSELine(line: string): { event?: string; data?: string } | null {
   if (line.startsWith('event: ')) return { event: line.slice(7).trim() };

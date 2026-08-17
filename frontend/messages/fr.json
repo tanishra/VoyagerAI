@@ -39,7 +39,15 @@
     "errorServerResponse": "Le serveur a répondu avec {status}: {detail}",
     "errorResponseBody": "Le corps de la réponse n'est pas lisible",
     "errorParseFailed": "Échec de l'analyse des données de l'événement",
-    "errorStreamEnded": "Le flux s'est terminé avant la fin de l'agent"
+    "errorStreamEnded": "Le flux s'est terminé avant la fin de l'agent",
+    "thinkingLabel": "Réflexion",
+    "thinkingStreaming": "Réflexion…",
+    "toolRunning": "en cours…",
+    "toolFailed": "échoué",
+    "toolInput": "Entrée",
+    "toolOutput": "Sortie",
+    "toolError": "Erreur",
+    "tokensLabel": "jetons"
   },
   "status": {
     "researching": "Recherche",

@@ -39,7 +39,15 @@
     "errorServerResponse": "El servidor respondió con {status}: {detail}",
     "errorResponseBody": "El cuerpo de la respuesta no es legible",
     "errorParseFailed": "Error al analizar los datos del evento",
-    "errorStreamEnded": "El stream terminó antes de que el agente finalizara"
+    "errorStreamEnded": "El stream terminó antes de que el agente finalizara",
+    "thinkingLabel": "Pensando",
+    "thinkingStreaming": "Pensando…",
+    "toolRunning": "ejecutando…",
+    "toolFailed": "falló",
+    "toolInput": "Entrada",
+    "toolOutput": "Salida",
+    "toolError": "Error",
+    "tokensLabel": "tokens"
   },
   "status": {
     "researching": "Investigando",
