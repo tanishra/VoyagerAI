@@ -42,6 +42,7 @@ const TOOL_ICONS: Record<string, React.ReactNode> = {
 export default function ChatPage() {
   const t = useTranslations('chat');
   const tStatus = useTranslations('status');
+  const tCommon = useTranslations('common');
   const locale = useLocale();
   const [messages, setMessages] = useState<ChatMessage[]>([{
     id: 'welcome',
@@ -643,6 +644,9 @@ export default function ChatPage() {
           className="flex-1 overflow-y-auto py-4 space-y-4 relative md:px-4"
         >
           <ErrorBoundary
+            errorTitle={tCommon('errorTitle')}
+            errorDescription={tCommon('errorDescription')}
+            tryAgain={tCommon('tryAgain')}
             fallback={
               <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-600 text-sm">
                 {t('errorRendering')}

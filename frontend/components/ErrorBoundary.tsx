@@ -7,6 +7,9 @@ import { Button } from '@/components/ui/button';
 interface ErrorBoundaryProps {
   children: ReactNode;
   fallback?: ReactNode;
+  errorTitle?: string;
+  errorDescription?: string;
+  tryAgain?: string;
 }
 
 interface ErrorBoundaryState {
@@ -41,9 +44,9 @@ export default class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBo
             <AlertTriangle className="w-8 h-8 text-red-400" />
           </div>
           <div>
-            <h2 className="text-lg font-semibold text-red-300 mb-1">Something went wrong</h2>
+            <h2 className="text-lg font-semibold text-red-300 mb-1">{this.props.errorTitle ?? 'Something went wrong'}</h2>
             <p className="text-sm text-red-300/70 max-w-md">
-              {this.state.error?.message || 'An unexpected error occurred in this section.'}
+              {this.state.error?.message || this.props.errorDescription || 'An unexpected error occurred in this section.'}
             </p>
           </div>
           <Button
@@ -52,7 +55,7 @@ export default class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBo
             className="border-red-500/30 text-red-300 hover:bg-red-500/10 cursor-pointer"
           >
             <RefreshCw className="w-4 h-4 mr-2" />
-            Try Again
+            {this.props.tryAgain ?? 'Try Again'}
           </Button>
         </div>
       );
