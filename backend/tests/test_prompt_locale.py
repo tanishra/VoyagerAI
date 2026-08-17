@@ -37,6 +37,14 @@ class TestBuildChatAgentPrompt:
         prompt = build_chat_agent_prompt("fr")
         assert "<language>" in prompt
         assert "French" in prompt
+        assert prompt.startswith(CHAT_AGENT_SYSTEM_PROMPT)
+
+    def test_french_prose_assertion(self):
+        """French locale prompt contains actionable French language instruction."""
+        prompt = build_chat_agent_prompt("fr")
+        lang_block = prompt.split("<language>")[1].split("</language>")[0]
+        assert "French" in lang_block
+        assert len(lang_block.strip()) > 10
 
     def test_german_injects_language_block(self):
         prompt = build_chat_agent_prompt("de")

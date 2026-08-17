@@ -152,3 +152,110 @@ class TestLocaleIntegration:
             _consume(r)
 
         assert captured == [None]
+
+
+class TestLocaleOnOtherEndpoints:
+    """Tests that locale is extracted on /preferences and /threads endpoints."""
+
+    def test_preferences_get_with_locale(self, client):
+        """GET /preferences accepts Accept-Language header without error."""
+        with client.stream(
+            "GET",
+            "/preferences",
+            headers={"Accept-Language": "fr-FR"},
+        ) as r:
+            # 200 (empty prefs) or 503 (store unavailable) — both are fine,
+            # we just verify the endpoint doesn't reject the locale header
+            assert r.status_code in (200, 503)
+
+    def test_threads_list_with_locale(self, client):
+        """GET /threads accepts Accept-Language header without error."""
+        r = client.get(
+            "/threads",
+            headers={"Accept-Language": "ja-JP"},
+        )
+        assert r.status_code == 200
+
+    def test_thread_history_with_locale(self, client):
+        """GET /threads/{id}/history accepts Accept-Language header."""
+        # Use a scoped thread id that won't exist — expect 403/404/503, not 500
+        r = client.get(
+            "/threads/chat:abcdef123456:nonexistent/history",
+            headers={"Accept-Language": "de-DE"},
+        )
+        assert r.status_code in (403, 404, 503)
+
+
+class TestGenerateSummaryLocale:
+    """Tests for locale-aware summary generation."""
+
+    @pytest.mark.asyncio
+    async def test_summary_with_locale(self, monkeypatch):
+        """generate_summary passes locale instruction to the model."""
+        from threads import generate_summary
+
+        captured_content: list[str] = []
+
+        class _FakeResponse:
+            content = "Viaje a Paris"
+
+        class _FakeModel:
+            async def ainvoke(self, messages):
+                captured_content.append(messages[0]["content"])
+                return _FakeResponse()
+
+        monkeypatch.setattr(
+            "agents.llm.get_subagent_model", lambda: _FakeModel()
+        )
+
+        result = await generate_summary(
+            "Plan a trip to Paris", "Here is your itinerary...", locale="es",
+        )
+        assert result == "Viaje a Paris"
+        assert "Respond in Spanish" in captured_content[0]
+
+    @pytest.mark.asyncio
+    async def test_summary_without_locale(self, monkeypatch):
+        """generate_summary without locale does not add language instruction."""
+        from threads import generate_summary
+
+        captured_content: list[str] = []
+
+        class _FakeResponse:
+            content = "Trip to Paris"
+
+        class _FakeModel:
+            async def ainvoke(self, messages):
+                captured_content.append(messages[0]["content"])
+                return _FakeResponse()
+
+        monkeypatch.setattr(
+            "agents.llm.get_subagent_model", lambda: _FakeModel()
+        )
+
+        result = await generate_summary("Plan a trip to Paris", "Itinerary...")
+        assert result == "Trip to Paris"
+        assert "Respond in" not in captured_content[0]
+
+    @pytest.mark.asyncio
+    async def test_summary_with_english_locale_no_instruction(self, monkeypatch):
+        """generate_summary with locale='en' does not add language instruction."""
+        from threads import generate_summary
+
+        captured_content: list[str] = []
+
+        class _FakeResponse:
+            content = "Trip to Paris"
+
+        class _FakeModel:
+            async def ainvoke(self, messages):
+                captured_content.append(messages[0]["content"])
+                return _FakeResponse()
+
+        monkeypatch.setattr(
+            "agents.llm.get_subagent_model", lambda: _FakeModel()
+        )
+
+        result = await generate_summary("Plan a trip", "Itinerary...", locale="en")
+        assert result == "Trip to Paris"
+        assert "Respond in" not in captured_content[0]

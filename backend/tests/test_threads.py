@@ -44,7 +44,7 @@ def client(fresh_store, monkeypatch):
         yield c
 
 
-async def _fake_stream(message, thread_id, user_id=None):
+async def _fake_stream(message, thread_id, user_id=None, locale=None):
     yield {"event": "done", "data": None}
 
 
@@ -358,7 +358,7 @@ class TestThreadAutoSave:
         import json as _json
 
         # Mock generate_summary to avoid LLM call in tests
-        async def _fake_summary(msg, text):
+        async def _fake_summary(msg, text, *, locale=None):
             return msg[:100]
 
         import main as main_module
