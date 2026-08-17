@@ -40,6 +40,7 @@ from oauth import (
     get_current_user,
     oauth,
 )
+from locale_utils import extract_locale
 from sanitize import sanitize_prompt_input
 from share_store import share_store
 from threads import generate_summary, thread_store
@@ -191,6 +192,8 @@ async def health() -> dict[str, str]:
 @limiter.limit("30/minute")
 async def get_preferences(request: Request, user: dict = Depends(get_current_user)) -> PlainTextResponse:
     user_id = user["user_id"]
+    locale = extract_locale(request)
+    logger.info("GET /preferences user=%s locale=%s", user_id, locale)
     try:
         store = get_redis_file_store()
         item = store.get((user_id,), "/preferences.md")
@@ -212,6 +215,8 @@ async def get_preferences(request: Request, user: dict = Depends(get_current_use
 @limiter.limit("30/minute")
 async def put_preferences(request: Request, user: dict = Depends(get_current_user)) -> dict[str, str]:
     user_id = user["user_id"]
+    locale = extract_locale(request)
+    logger.info("PUT /preferences user=%s locale=%s", user_id, locale)
     body = await request.body()
     content = body.decode("utf-8") if body else ""
     try:
@@ -242,17 +247,7 @@ async def chat_stream(
     thread_id = _scoped_chat_thread_id(chat_req.thread_id, user_id)
 
     # Determine locale: explicit request field takes priority, then Accept-Language header
-    locale = chat_req.locale
-    if not locale:
-        accept_lang = request.headers.get("accept-language", "")
-        for part in accept_lang.split(","):
-            lang = part.strip().split(";")[0].strip().lower()
-            for supported in ("en", "es", "fr", "de", "hi", "ja"):
-                if lang == supported or lang.startswith(supported + "-"):
-                    locale = supported
-                    break
-            if locale:
-                break
+    locale = extract_locale(request, chat_req.locale)
 
     logger.info(
         "POST /chat/stream — thread_id=%s, message_len=%d, user=%s, client_msg_id=%s",
@@ -301,7 +296,7 @@ async def chat_stream(
             # Save/update thread metadata with AI summary and status — never blocks stream
             try:
                 final_status = "error" if stream_failed else "idle"
-                summary = await generate_summary(_msg_safe, stream_text)
+                summary = await generate_summary(_msg_safe, stream_text, locale=locale)
                 await thread_store.upsert_thread(
                     user_id, thread_id, summary, status=final_status,
                 )
@@ -331,6 +326,8 @@ async def list_threads(
     user: dict = Depends(get_current_user),
 ) -> dict:
     user_id = user["user_id"]
+    locale = extract_locale(request)
+    logger.info("GET /threads user=%s locale=%s offset=%d", user_id, locale, offset)
     threads = await thread_store.list_threads(user_id, limit=limit, offset=offset)
     total = await thread_store.count_threads(user_id)
     return JSONResponse(
@@ -355,6 +352,8 @@ async def get_thread_history(
     user: dict = Depends(get_current_user),
 ) -> list[dict]:
     user_id = user["user_id"]
+    locale = extract_locale(request)
+    logger.info("GET /threads/%s/history user=%s locale=%s", thread_id, user_id, locale)
 
     # Security: verify the thread belongs to this user
     user_tag = hashlib.sha256(user_id.encode()).hexdigest()[:12]
@@ -579,7 +578,8 @@ async def create_share_link(
     token, expires_at = await share_store.create_share(
         user_id, thread_id, itinerary_json, destination,
     )
-    share_url = f"http://localhost:3000/share/{token}"
+    locale = extract_locale(request) or "en"
+    share_url = f"http://localhost:3000/{locale}/share/{token}"
     logger.info("Created share link for user=%s thread=%s token=%s", user_id, thread_id, token[:8])
     return {"share_url": share_url, "expires_at": expires_at, "destination": destination}
 
