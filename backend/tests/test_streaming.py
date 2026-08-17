@@ -161,12 +161,15 @@ class TestStreamChatAgentRetry:
 
             async def astream_events(self, *args, **kwargs):
                 self.stream_calls += 1
-                yield {"event": "on_chat_model_stream", "data": {"chunk": None}}
+                if self.stream_calls == 1:
+                    yield {"event": "on_chat_model_stream", "run_id": "r1", "data": {"chunk": _Chunk('<itinerary>Just some prose, no JSON here.</itinerary>')}}
+                else:
+                    yield {"event": "on_chat_model_stream", "run_id": "r2", "data": {"chunk": _Chunk('<itinerary>{"destination": "Paris", "days": []}</itinerary>')}}
 
             async def aget_state(self, config):
                 self.get_state_calls += 1
                 if self.get_state_calls == 1:
-                    return _fake_state([_Msg("Just some prose, no JSON here.")])
+                    return _fake_state([_Msg('<itinerary>Just some prose, no JSON here.</itinerary>')])
                 return _fake_state([_Msg('<itinerary>{"destination": "Paris", "days": []}</itinerary>')])
 
             async def ainvoke(self, *args, **kwargs):
@@ -187,7 +190,7 @@ class TestStreamChatAgentRetry:
         )
 
         assert fake.stream_calls == 2
-        assert fake.get_state_calls == 2
+        assert fake.get_state_calls == 1  # only first pass; retry text extracts directly
         assert events[-2] == ("itinerary", {"destination": "Paris", "days": []})
         assert events[-1] == ("done", None)
 
@@ -206,10 +209,10 @@ class TestStreamChatAgentRetry:
 
             async def astream_events(self, *args, **kwargs):
                 self.stream_calls += 1
-                yield {"event": "on_chat_model_stream", "data": {"chunk": None}}
+                yield {"event": "on_chat_model_stream", "run_id": "r1", "data": {"chunk": _Chunk('<itinerary>{"destination": "Paris", "days": []}</itinerary>')}}
 
             async def aget_state(self, config):
-                return _fake_state([_Msg('{"destination": "Paris", "days": []}')])
+                return _fake_state([_Msg('<itinerary>{"destination": "Paris", "days": []}</itinerary>')])
 
             async def ainvoke(self, *args, **kwargs):
                 raise AssertionError("should not retry")
@@ -241,7 +244,7 @@ class TestStreamChatAgentRetry:
             def __init__(self, content):
                 self.content = content
 
-        prose = "Here is a lovely trip plan for Paris with great food. " * 50
+        prose = "<itinerary>Here is a lovely trip plan for Paris with great food. " * 50 + "</itinerary>"
 
         class _FakeAgent:
             def __init__(self):
@@ -249,7 +252,7 @@ class TestStreamChatAgentRetry:
 
             async def astream_events(self, inputs, *args, **kwargs):
                 self.inputs.append(inputs)
-                yield {"event": "on_chat_model_stream", "data": {"chunk": None}}
+                yield {"event": "on_chat_model_stream", "run_id": "r1", "data": {"chunk": _Chunk(prose)}}
 
             async def aget_state(self, config):
                 return _fake_state([_Msg(prose)])
@@ -386,7 +389,7 @@ class TestStreamTextExtraction:
             def __init__(self, content):
                 self.content = content
 
-        full_prose = "Here is the complete revised plan. " * 60
+        full_prose = "<itinerary>Here is the complete revised plan. " * 60 + "</itinerary>"
 
         class _FakeAgent:
             def __init__(self):
@@ -730,3 +733,59 @@ class TestChatStreamEndpoint:
         assert events[-1][0] == "error"
         assert "Échec du streaming" in events[-1][1]
         assert "boom" in events[-1][1]
+
+
+class TestConversationModeGate:
+    """Tests that conversational responses (no itinerary/comparison tags) are not
+    forced through itinerary extraction."""
+
+    def test_conversational_response_no_tags_yields_only_done(self, monkeypatch):
+        """When the agent responds conversationally (no tags), stream_chat_agent
+        should yield done without attempting itinerary extraction."""
+        import json as _json
+
+        from fastapi.testclient import TestClient
+
+        import main as main_module
+
+        async def conversational_stream(message, thread_id, user_id=None, locale=None):
+            yield {"event": "on_chat_model_stream", "data": {"chunk": _Chunk([{"type": "text-delta", "text": "Where would you like to go?"}])}}
+            yield {"event": "done", "data": None}
+
+        monkeypatch.setattr(main_module, "stream_chat_agent", conversational_stream)
+        monkeypatch.setattr("config.settings.AUTH_DEV_BYPASS", True)
+        with TestClient(main_module.app) as c, c.stream(
+            "POST", "/chat/stream",
+            json={"message": "I want to go on a trip"},
+        ) as r:
+            parsed = []
+            for line in r.iter_lines():
+                if line.startswith("data: "):
+                    parsed.append(_json.loads(line[6:]))
+
+        events = [(p["event"], p["data"]) for p in parsed]
+        # Should have thread_id, status, token, done — NO itinerary or comparison
+        event_types = [e[0] for e in events]
+        assert "done" in event_types
+        assert "itinerary" not in event_types
+        assert "comparison" not in event_types
+
+    def test_tag_detection_regex(self):
+        """Verify that the tag detection regexes match itinerary/comparison tags
+        but not conversational text."""
+        from agents.deep_agent import _ITINERARY_TAG_RE, _COMPARISON_TAG_RE
+
+        # Conversational text — no tags
+        conv = "Where would you like to go? Please tell me your destination and budget."
+        assert not _ITINERARY_TAG_RE.search(conv)
+        assert not _COMPARISON_TAG_RE.search(conv)
+
+        # Itinerary tag present
+        itin = "Here is your plan:\n<itinerary>{\"destination\": \"Paris\"}</itinerary>"
+        assert _ITINERARY_TAG_RE.search(itin)
+        assert not _COMPARISON_TAG_RE.search(itin)
+
+        # Comparison tag present
+        comp = "<comparison>{\"plans\": [...]}</comparison>"
+        assert not _ITINERARY_TAG_RE.search(comp)
+        assert _COMPARISON_TAG_RE.search(comp)

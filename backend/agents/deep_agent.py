@@ -451,6 +451,18 @@ async def stream_chat_agent(
 
     stream_text = stream.last_text()
 
+    # Only attempt structured extraction if the agent's response contains
+    # itinerary or comparison tags — conversational responses (clarifying
+    # questions, suggestions, etc.) should pass through without extraction.
+    has_tags = bool(stream_text and (
+        _ITINERARY_TAG_RE.search(stream_text) or _COMPARISON_TAG_RE.search(stream_text)
+    ))
+
+    if not has_tags:
+        # Conversational response — no extraction needed
+        yield {"event": "done", "data": None}
+        return
+
     # Check for comparison (3-plan) output first
     comparison = _extract_comparison_from_text(stream_text) if stream_text else None
 

@@ -84,6 +84,22 @@ class TestParallelDispatchPrompts:
     def test_dispatch_handles_subagent_failure(self):
         assert "continue with the remaining results" in CHAT_AGENT_SYSTEM_PROMPT
 
+    def test_prompt_has_required_fields_gate(self):
+        assert "<required_fields>" in CHAT_AGENT_SYSTEM_PROMPT
+        assert "destination" in CHAT_AGENT_SYSTEM_PROMPT
+        assert "duration" in CHAT_AGENT_SYSTEM_PROMPT
+        assert "budget" in CHAT_AGENT_SYSTEM_PROMPT
+        assert "travel_style" in CHAT_AGENT_SYSTEM_PROMPT
+        assert "group_type" in CHAT_AGENT_SYSTEM_PROMPT
+
+    def test_prompt_prohibits_tags_in_conversation_mode(self):
+        conv_section = CHAT_AGENT_SYSTEM_PROMPT.split('<mode type="conversation">')[1].split("</mode>")[0]
+        assert "NEVER output <itinerary> or <comparison> tags" in conv_section
+
+    def test_prompt_requires_all_fields_before_structured_mode(self):
+        struct_section = CHAT_AGENT_SYSTEM_PROMPT.split('<mode type="structured">')[1].split("</mode>")[0]
+        assert "ALL required fields" in struct_section
+
     def test_researcher_prompt_parallel_searches(self):
         assert "MULTIPLE internet_search" in RESEARCHER_SYSTEM_PROMPT
 
