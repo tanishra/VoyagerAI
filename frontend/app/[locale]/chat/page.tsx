@@ -14,6 +14,10 @@ import ErrorBoundary from '@/components/ErrorBoundary';
 import MarkdownRenderer from '@/components/MarkdownRenderer';
 import ItineraryCard from '@/components/ItineraryCard';
 import OfflineBanner from '@/components/OfflineBanner';
+import ThinkingBlock from '@/components/ThinkingBlock';
+import ToolCallCard from '@/components/ToolCallCard';
+import SubagentTimeline from '@/components/SubagentTimeline';
+import TokenCounter from '@/components/TokenCounter';
 import ComparisonView from './ComparisonView';
 import ThreadSidebar from './ThreadSidebar';
 import type { ChatMessage, ComparisonData, Itinerary, ActivityData } from '@/lib/types';
@@ -171,6 +175,8 @@ export default function ChatPage() {
     setStreamingText('');
     setStreamingItinerary(null);
     setStreamingComparison(null);
+    setStreamingActivity(null);
+    streamingActivityRef.current = null;
     setActiveWorkers([]);
   };
 
@@ -211,6 +217,8 @@ export default function ChatPage() {
     setStreamingText('');
     setStreamingItinerary(null);
     setStreamingComparison(null);
+    setStreamingActivity(null);
+    streamingActivityRef.current = null;
     setActiveWorkers([]);
     setLoadingHistory(false);
   };
@@ -244,6 +252,8 @@ export default function ChatPage() {
     setStreamingText('');
     setStreamingItinerary(null);
     setStreamingComparison(null);
+    setStreamingActivity(null);
+    streamingActivityRef.current = null;
     setActiveWorkers([]);
 
     const userMessage: ChatMessage = {
@@ -803,6 +813,16 @@ export default function ChatPage() {
                 }`}
                 tabIndex={0}
               >
+                {msg.role === 'assistant' && msg.activity?.thinking && msg.activity.thinking.length > 0 && (
+                  <ThinkingBlock blocks={msg.activity.thinking} />
+                )}
+                {msg.role === 'assistant' && msg.activity?.tool_calls && msg.activity.tool_calls.length > 0 && (
+                  <div className="space-y-0">
+                    {msg.activity.tool_calls.map((tc, i) => (
+                      <ToolCallCard key={`${tc.run_id}-${i}`} tool={tc} />
+                    ))}
+                  </div>
+                )}
                 {msg.role === 'assistant' ? (
                   <MarkdownRenderer content={msg.content} />
                 ) : (
@@ -810,6 +830,15 @@ export default function ChatPage() {
                 )}
                 {msg.comparison && <ComparisonView data={msg.comparison} onSelect={handleSelectPlan} />}
                 {msg.itinerary && <ItineraryCard itinerary={msg.itinerary} threadId={threadId ?? undefined} />}
+                {msg.role === 'assistant' && msg.activity && (msg.activity.total_input_tokens > 0 || msg.activity.total_output_tokens > 0) && (
+                  <div className="mt-2">
+                    <TokenCounter
+                      usage={msg.activity.usage}
+                      totalInputTokens={msg.activity.total_input_tokens}
+                      totalOutputTokens={msg.activity.total_output_tokens}
+                    />
+                  </div>
+                )}
               </div>
             </motion.div>
           ))}
@@ -840,6 +869,12 @@ export default function ChatPage() {
               className="flex justify-start"
             >
               <div className="max-w-[85%] rounded-2xl px-4 py-3 bg-card border border-border text-foreground/90 shadow-sm">
+                {streamingActivity?.thinking && streamingActivity.thinking.length > 0 && (
+                  <ThinkingBlock blocks={streamingActivity.thinking} isStreaming />
+                )}
+                {streamingActivity?.tool_calls && streamingActivity.tool_calls.length > 0 && (
+                  <SubagentTimeline toolCalls={streamingActivity.tool_calls} />
+                )}
                 {activeWorkers.length > 0 && (
                   <div className="flex flex-wrap gap-1.5 mb-2">
                     {activeWorkers.map((tool) => (
@@ -873,6 +908,16 @@ export default function ChatPage() {
                 )}
                 {streamingComparison && <ComparisonView data={streamingComparison} onSelect={handleSelectPlan} />}
                 {streamingItinerary && <ItineraryCard itinerary={streamingItinerary} threadId={threadId ?? undefined} />}
+                {streamingActivity && (streamingActivity.total_input_tokens > 0 || streamingActivity.total_output_tokens > 0) && (
+                  <div className="mt-2">
+                    <TokenCounter
+                      usage={streamingActivity.usage}
+                      totalInputTokens={streamingActivity.total_input_tokens}
+                      totalOutputTokens={streamingActivity.total_output_tokens}
+                      isStreaming
+                    />
+                  </div>
+                )}
               </div>
             </motion.div>
           )}
