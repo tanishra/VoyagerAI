@@ -65,3 +65,24 @@ describe('CURRENCY_MAP', () => {
     expect(CURRENCY_MAP.ja).toBe('JPY');
   });
 });
+
+describe('formatCurrency snapshots per locale', () => {
+  it('matches snapshot for en', () => {
+    expect(formatCurrency(1500, 'en')).toMatchSnapshot();
+  });
+  it('matches snapshot for es', () => {
+    expect(formatCurrency(1500, 'es')).toMatchSnapshot();
+  });
+  it('matches snapshot for fr', () => {
+    expect(formatCurrency(1500, 'fr')).toMatchSnapshot();
+  });
+  it('matches snapshot for de', () => {
+    expect(formatCurrency(1500, 'de')).toMatchSnapshot();
+  });
+  it('matches snapshot for hi', () => {
+    expect(formatCurrency(1500, 'hi')).toMatchSnapshot();
+  });
+  it('matches snapshot for ja', () => {
+    expect(formatCurrency(1500, 'ja')).toMatchSnapshot();
+  });
+});

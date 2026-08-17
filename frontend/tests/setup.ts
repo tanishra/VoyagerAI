@@ -19,8 +19,8 @@ vi.mock('next/navigation', () => ({
 }));
 
 vi.mock('next-intl', async () => {
+  const React = (await import('react')).default;
   const en = (await import('../messages/en.json')).default;
-  const { vi } = await import('vitest');
 
   function getNestedValue(obj: Record<string, unknown>, path: string): unknown {
     const parts = path.split('.');
@@ -42,10 +42,16 @@ vi.mock('next-intl', async () => {
     );
   }
 
+  const I18nContext = React.createContext<{
+    locale: string;
+    messages: Record<string, unknown>;
+  }>({ locale: 'en', messages: en as Record<string, unknown> });
+
   const useTranslations = (namespace?: string) => {
+    const { messages } = React.useContext(I18nContext);
     return (key: string, values?: Record<string, unknown>) => {
       const fullKey = namespace ? `${namespace}.${key}` : key;
-      const val = getNestedValue(en, fullKey);
+      const val = getNestedValue(messages, fullKey);
       if (typeof val === 'string') {
         return interpolate(val, values);
       }
@@ -53,13 +59,27 @@ vi.mock('next-intl', async () => {
     };
   };
 
-  const useLocale = () => 'en';
+  const useLocale = () => React.useContext(I18nContext).locale;
+
+  const NextIntlClientProvider = ({
+    children,
+    locale,
+    messages,
+  }: {
+    children: React.ReactNode;
+    locale: string;
+    messages: Record<string, unknown>;
+  }) =>
+    React.createElement(
+      I18nContext.Provider,
+      { value: { locale, messages } },
+      children,
+    );
 
   return {
     useTranslations,
     useLocale,
-    NextIntlClientProvider: ({ children }: { children: React.ReactNode }) =>
-      React.createElement(React.Fragment, null, children),
+    NextIntlClientProvider,
   };
 });
 
