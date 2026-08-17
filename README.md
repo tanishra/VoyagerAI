@@ -111,32 +111,32 @@ See [`backend/.env.example`](backend/.env.example) for all options. Key settings
 
 ## Architecture
 
-```
-User Chat Input
-    |
-    v
-FastAPI /chat/stream (SSE)
-    |
-    v
-Orchestrator Agent (deepagents)
-    |--- researcher x3 (parallel: hotels, weather, transport)
-    |--- constraint_analyzer (budget, dietary, mobility)
-    |--- risk_detector (safety, seasonal, transit)
-    |--- multi_plan_generator (3 budget tiers)
-    |--- quality_scorer (10-criteria self-critique)
-    +--- cost_optimizer (per-day allocation)
-    |
-    v
-Structured Itinerary JSON
-    |
-    v
-Next.js Frontend
-    |--- Chat UI (streaming tokens + worker status chips)
-    |--- ItineraryCard (day-by-day with costs, tips, warnings)
-    |--- ComparisonView (side-by-side plan variants)
-    |--- ItineraryMap (MapLibre GL markers + routes)
-    |--- ThreadSidebar (history, resume, delete)
-    +--- Export/Share (PDF, JSON, Markdown, shareable links)
+```mermaid
+graph TD
+    User([User Chat Input]) -->|POST /chat/stream SSE| API[FastAPI Backend]
+    API --> Orchestrator[Orchestrator Agent - deepagents]
+
+    Orchestrator -->|parallel dispatch| R1[researcher x3<br/>hotels, weather, transport]
+    Orchestrator -->|parallel dispatch| R2[constraint_analyzer<br/>budget, dietary, mobility]
+    Orchestrator -->|parallel dispatch| R3[risk_detector<br/>safety, seasonal, transit]
+    Orchestrator -->|parallel dispatch| R4[multi_plan_generator<br/>3 budget tiers]
+    Orchestrator -->|parallel dispatch| R5[quality_scorer<br/>10-criteria self-critique]
+    Orchestrator -->|parallel dispatch| R6[cost_optimizer<br/>per-day allocation]
+
+    R1 --> Itinerary[Structured Itinerary JSON]
+    R2 --> Itinerary
+    R3 --> Itinerary
+    R4 --> Itinerary
+    R5 --> Itinerary
+    R6 --> Itinerary
+
+    Itinerary -->|SSE events| Frontend[Next.js Frontend]
+    Frontend --> F1[Chat UI<br/>streaming tokens + status chips]
+    Frontend --> F2[ItineraryCard<br/>day-by-day with costs]
+    Frontend --> F3[ComparisonView<br/>side-by-side plan variants]
+    Frontend --> F4[ItineraryMap<br/>MapLibre GL markers + routes]
+    Frontend --> F5[ThreadSidebar<br/>history, resume, delete]
+    Frontend --> F6[Export/Share<br/>PDF, JSON, Markdown, links]
 ```
 
 ---
