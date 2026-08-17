@@ -26,12 +26,12 @@ class Settings(BaseSettings):
 
     # LLM provider config — LiteLLM model strings
     # Format: "provider/model-name" (e.g. "gemini/gemini-2.5-pro", "openai/gpt-4o")
-    LLM_ORCHESTRATOR_MODEL: str = "gemini/gemini-2.5-pro"
+    LLM_ORCHESTRATOR_MODEL: str = "gemini/gemini-3.7-flash"
     LLM_ORCHESTRATOR_FALLBACK: str | None = None
-    LLM_SUBAGENT_MODEL: str = "gemini/gemini-3.5-flash"
+    LLM_SUBAGENT_MODEL: str = "gemini/gemini-3.5-flash-lite"
     LLM_SUBAGENT_FALLBACK: str | None = None
-    LLM_TEMPERATURE_ORCHESTRATOR: float = 0.2
-    LLM_TEMPERATURE_SUBAGENT: float = 0.3
+    LLM_TEMPERATURE_ORCHESTRATOR: float = 1.0
+    LLM_TEMPERATURE_SUBAGENT: float = 1.0
 
     LANGSMITH_API_KEY: str | None = None
     LANGSMITH_PROJECT: str = "voyagerai"
