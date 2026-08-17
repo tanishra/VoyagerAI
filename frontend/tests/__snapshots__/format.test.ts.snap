@@ -1,0 +1,13 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`formatCurrency snapshots per locale > matches snapshot for de 1`] = `"1.500 €"`;
+
+exports[`formatCurrency snapshots per locale > matches snapshot for en 1`] = `"$1,500"`;
+
+exports[`formatCurrency snapshots per locale > matches snapshot for es 1`] = `"1500 €"`;
+
+exports[`formatCurrency snapshots per locale > matches snapshot for fr 1`] = `"1 500 €"`;
+
+exports[`formatCurrency snapshots per locale > matches snapshot for hi 1`] = `"₹1,500"`;
+
+exports[`formatCurrency snapshots per locale > matches snapshot for ja 1`] = `"￥1,500"`;
