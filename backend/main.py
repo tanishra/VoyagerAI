@@ -137,8 +137,12 @@ def _parse_chat_event(event: dict, active_tasks: dict[str, str]) -> list[dict]:
                 if not isinstance(block, dict):
                     continue
                 block_type = block.get("type", "")
-                if block_type == "text-delta" and block.get("text"):
+                if block_type in ("text-delta", "text") and block.get("text"):
                     payloads.append(_sse("token", block["text"]))
+                elif block_type in ("reasoning", "reasoning-delta"):
+                    reasoning_text = block.get("reasoning", "") or block.get("text", "")
+                    if reasoning_text:
+                        payloads.append(_sse("thinking", reasoning_text))
                 elif block_type == "tool_use" and block.get("name") != "task":
                     payloads.append(_sse("status", {"tool": block["name"], "status": "running"}))
             return payloads

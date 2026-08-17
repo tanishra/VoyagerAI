@@ -43,6 +43,62 @@ class TestTokenStreaming:
         event = _ev("on_chat_model_stream", data={"chunk": _Chunk([{"type": "tool_use", "name": "task"}])})
         assert _parse_chat_event(event, {}) == []
 
+    def test_text_block_emits_token(self):
+        """Plain 'text' blocks (not just 'text-delta') must emit tokens too."""
+        event = _ev("on_chat_model_stream", data={"chunk": _Chunk([{"type": "text", "text": "Hello"}])})
+        payloads = _parse_chat_event(event, {})
+        assert len(payloads) == 1
+        assert payloads[0]["event"] == "token"
+        assert json_data(payloads[0]) == "Hello"
+
+    def test_mixed_text_and_text_delta_blocks(self):
+        """Both text and text-delta blocks in the same chunk should emit tokens."""
+        event = _ev("on_chat_model_stream", data={"chunk": _Chunk([
+            {"type": "text", "text": "Hello "},
+            {"type": "text-delta", "text": "world"},
+        ])})
+        payloads = _parse_chat_event(event, {})
+        assert len(payloads) == 2
+        assert json_data(payloads[0]) == "Hello "
+        assert json_data(payloads[1]) == "world"
+
+    def test_reasoning_block_emits_thinking(self):
+        """Reasoning blocks should emit thinking SSE events."""
+        event = _ev("on_chat_model_stream", data={"chunk": _Chunk([
+            {"type": "reasoning", "reasoning": "Let me think about this..."},
+        ])})
+        payloads = _parse_chat_event(event, {})
+        assert len(payloads) == 1
+        assert payloads[0]["event"] == "thinking"
+        assert json_data(payloads[0]) == "Let me think about this..."
+
+    def test_reasoning_delta_block_emits_thinking(self):
+        """reasoning-delta blocks should also emit thinking SSE events."""
+        event = _ev("on_chat_model_stream", data={"chunk": _Chunk([
+            {"type": "reasoning-delta", "reasoning": "considering options..."},
+        ])})
+        payloads = _parse_chat_event(event, {})
+        assert len(payloads) == 1
+        assert payloads[0]["event"] == "thinking"
+        assert json_data(payloads[0]) == "considering options..."
+
+    def test_reasoning_block_falls_back_to_text_field(self):
+        """Reasoning blocks with 'text' field instead of 'reasoning' should still work."""
+        event = _ev("on_chat_model_stream", data={"chunk": _Chunk([
+            {"type": "reasoning", "text": "thinking via text field"},
+        ])})
+        payloads = _parse_chat_event(event, {})
+        assert len(payloads) == 1
+        assert payloads[0]["event"] == "thinking"
+        assert json_data(payloads[0]) == "thinking via text field"
+
+    def test_empty_reasoning_emits_nothing(self):
+        """Empty reasoning text should not emit a thinking event."""
+        event = _ev("on_chat_model_stream", data={"chunk": _Chunk([
+            {"type": "reasoning", "reasoning": ""},
+        ])})
+        assert _parse_chat_event(event, {}) == []
+
     def test_non_text_blocks_ignored(self):
         event = _ev("on_chat_model_stream", data={"chunk": _Chunk([{"type": "image"}])})
         assert _parse_chat_event(event, {}) == []

@@ -119,6 +119,7 @@ class _ModelStream:
         self._agent = agent
         self._config = config
         self._texts: dict[str, str] = {}
+        self._reasoning_texts: dict[str, str] = {}
         self._order: list[str] = []
 
     async def events(self, inputs):
@@ -131,25 +132,44 @@ class _ModelStream:
                     c = chunk.content
                     if isinstance(c, str):
                         text = c
+                        reasoning_text = ""
                     elif isinstance(c, list):
                         text = "".join(
                             p.get("text", "")
                             for p in c
-                            if isinstance(p, dict) and p.get("type") == "text"
+                            if isinstance(p, dict)
+                            and p.get("type") in ("text", "text-delta")
+                        )
+                        reasoning_text = "".join(
+                            p.get("reasoning", "") or p.get("text", "")
+                            for p in c
+                            if isinstance(p, dict)
+                            and p.get("type") in ("reasoning", "reasoning-delta")
                         )
                     else:
                         text = ""
+                        reasoning_text = ""
                     run_id = event.get("run_id")
                     if run_id is not None:
                         if run_id not in self._texts:
                             self._order.append(run_id)
                         self._texts[run_id] = self._texts.get(run_id, "") + text
+                        if reasoning_text:
+                            self._reasoning_texts[run_id] = (
+                                self._reasoning_texts.get(run_id, "") + reasoning_text
+                            )
             yield event
 
     def last_text(self) -> str:
         for run_id in reversed(self._order):
             if self._texts.get(run_id, "").strip():
                 return self._texts[run_id]
+        return ""
+
+    def last_reasoning(self) -> str:
+        for run_id in reversed(self._order):
+            if self._reasoning_texts.get(run_id, "").strip():
+                return self._reasoning_texts[run_id]
         return ""
 
 
@@ -295,7 +315,7 @@ def _extract_chat_itinerary(state: dict) -> dict | None:
             texts.append(c)
         elif isinstance(c, list):
             texts.extend(
-                p["text"] for p in c if isinstance(p, dict) and p.get("type") == "text"
+                p["text"] for p in c if isinstance(p, dict) and p.get("type") in ("text", "text-delta")
             )
         for text in texts:
             itinerary = _extract_itinerary_from_text(text)
@@ -351,7 +371,7 @@ def _last_assistant_text(state: dict) -> str:
             texts = [
                 p["text"]
                 for p in c
-                if isinstance(p, dict) and p.get("type") == "text"
+                if isinstance(p, dict) and p.get("type") in ("text", "text-delta")
             ]
             if texts:
                 return " ".join(texts)
@@ -443,20 +463,13 @@ async def stream_chat_agent(
     }
 
     stream = _ModelStream(agent, config)
-    event_count = 0
     async for event in stream.events(
         {"messages": [{"role": "user", "content": message}]}
     ):
-        event_count += 1
-        if event.get("event") == "on_chat_model_stream":
-            chunk = event.get("data", {}).get("chunk")
-            if chunk is not None:
-                content = getattr(chunk, "content", None)
-                logger.debug("stream event #%d: on_chat_model_stream content_type=%s content=%r", event_count, type(content).__name__, content[:100] if isinstance(content, str) else content)
         yield event
 
     stream_text = stream.last_text()
-    logger.info("stream finished: %d events, last_text len=%d, has_tags=%s", event_count, len(stream_text), bool(stream_text and (_ITINERARY_TAG_RE.search(stream_text) or _COMPARISON_TAG_RE.search(stream_text))))
+    logger.info("stream finished: last_text len=%d, has_tags=%s", len(stream_text), bool(stream_text and (_ITINERARY_TAG_RE.search(stream_text) or _COMPARISON_TAG_RE.search(stream_text))))
 
     # Only attempt structured extraction if the agent's response contains
     # itinerary or comparison tags — conversational responses (clarifying
