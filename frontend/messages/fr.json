@@ -243,6 +243,24 @@
     "messages": "{count} messages"
   },
   "common": {
-    "loading": "Chargement..."
+    "loading": "Chargement...",
+    "errorTitle": "Une erreur est survenue",
+    "errorDescription": "Une erreur inattendue s'est produite dans cette section.",
+    "tryAgain": "Réessayer"
+  },
+  "export": {
+    "noItinerary": "Aucun itinéraire trouvé dans cette conversation.",
+    "backToChat": "Retour au chat",
+    "print": "Imprimer",
+    "printOptimized": "Vue d'itinéraire optimisée pour l'impression",
+    "printHint": "Cliquez sur \"Imprimer\" ci-dessus ou utilisez Cmd/Ctrl+P pour enregistrer en PDF",
+    "loading": "Chargement de l'itinéraire..."
+  },
+  "share": {
+    "linkExpired": "Lien expiré",
+    "linkExpiredDesc": "Ce lien de partage n'est plus valide ou a expiré.",
+    "sharedItinerary": "Itinéraire partagé",
+    "poweredBy": "Propulsé par VoyagerAI",
+    "loading": "Chargement de l'itinéraire partagé..."
   }
 }

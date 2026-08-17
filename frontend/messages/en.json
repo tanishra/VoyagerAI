@@ -243,6 +243,24 @@
     "messages": "{count} msgs"
   },
   "common": {
-    "loading": "Loading..."
+    "loading": "Loading...",
+    "errorTitle": "Something went wrong",
+    "errorDescription": "An unexpected error occurred in this section.",
+    "tryAgain": "Try Again"
+  },
+  "export": {
+    "noItinerary": "No itinerary found in this conversation.",
+    "backToChat": "Back to chat",
+    "print": "Print",
+    "printOptimized": "Print-optimized itinerary view",
+    "printHint": "Click \"Print\" above or use Cmd/Ctrl+P to save as PDF",
+    "loading": "Loading itinerary..."
+  },
+  "share": {
+    "linkExpired": "Link expired",
+    "linkExpiredDesc": "This share link is no longer valid or has expired.",
+    "sharedItinerary": "Shared itinerary",
+    "poweredBy": "Powered by VoyagerAI",
+    "loading": "Loading shared itinerary..."
   }
 }

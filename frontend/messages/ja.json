@@ -243,6 +243,24 @@
     "messages": "{count}件"
   },
   "common": {
-    "loading": "読み込み中..."
+    "loading": "読み込み中...",
+    "errorTitle": "エラーが発生しました",
+    "errorDescription": "このセクションで予期しないエラーが発生しました。",
+    "tryAgain": "再試行"
+  },
+  "export": {
+    "noItinerary": "この会話に旅程が見つかりませんでした。",
+    "backToChat": "チャットに戻る",
+    "print": "印刷",
+    "printOptimized": "印刷最適化された旅程ビュー",
+    "printHint": "上の「印刷」をクリックするか、Cmd/Ctrl+PでPDFとして保存",
+    "loading": "旅程を読み込み中..."
+  },
+  "share": {
+    "linkExpired": "リンク期限切れ",
+    "linkExpiredDesc": "この共有リンクは無効または期限切れです。",
+    "sharedItinerary": "共有旅程",
+    "poweredBy": "VoyagerAI によって提供",
+    "loading": "共有旅程を読み込み中..."
   }
 }

@@ -243,6 +243,24 @@
     "messages": "{count} Nachr."
   },
   "common": {
-    "loading": "Laden..."
+    "loading": "Laden...",
+    "errorTitle": "Etwas ist schiefgelaufen",
+    "errorDescription": "In diesem Abschnitt ist ein unerwarteter Fehler aufgetreten.",
+    "tryAgain": "Erneut versuchen"
+  },
+  "export": {
+    "noItinerary": "In dieser Konversation wurde keine Reiseroute gefunden.",
+    "backToChat": "Zurück zum Chat",
+    "print": "Drucken",
+    "printOptimized": "Druckoptimierte Reiseroute-Ansicht",
+    "printHint": "Klicken Sie oben auf \"Drucken\" oder verwenden Sie Cmd/Ctrl+P, um als PDF zu speichern",
+    "loading": "Reiseroute wird geladen..."
+  },
+  "share": {
+    "linkExpired": "Link abgelaufen",
+    "linkExpiredDesc": "Dieser Freigabelink ist nicht mehr gültig oder abgelaufen.",
+    "sharedItinerary": "Geteilte Reiseroute",
+    "poweredBy": "Betrieben von VoyagerAI",
+    "loading": "Geteilte Reiseroute wird geladen..."
   }
 }
