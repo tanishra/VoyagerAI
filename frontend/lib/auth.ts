@@ -21,14 +21,15 @@ export async function getSession(): Promise<SessionUser | null> {
     try {
       const res = await fetch(`${API_URL}/auth/me`, { credentials: 'include' });
       if (!res.ok) {
-        cachedNull = true;
+        if (res.status === 401) {
+          cachedNull = true;
+        }
         return null;
       }
       const user = await res.json();
       cachedUser = user;
       return user;
     } catch {
-      cachedNull = true;
       return null;
     } finally {
       fetchPromise = null;

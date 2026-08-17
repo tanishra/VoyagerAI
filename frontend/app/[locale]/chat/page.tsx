@@ -87,7 +87,15 @@ export default function ChatPage() {
   const messagesContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    getSession().then((user) => {
+    let cancelled = false;
+    getSession().then(async (user) => {
+      if (cancelled) return;
+      if (!user) {
+        // Retry once after a delay — backend may still be starting up
+        await new Promise((r) => setTimeout(r, 1500));
+        if (cancelled) return;
+        user = await getSession();
+      }
       if (!user) {
         window.location.href = '/login';
         return;
@@ -98,6 +106,7 @@ export default function ChatPage() {
         setHasMoreThreads(res.has_more);
       });
     });
+    return () => { cancelled = true; };
   }, []);
 
   // Auto-scroll only when user is at bottom

@@ -36,7 +36,14 @@ export default function PreferencesPage() {
   }
 
   useEffect(() => {
-    getSession().then((user) => {
+    let cancelled = false;
+    getSession().then(async (user) => {
+      if (cancelled) return;
+      if (!user) {
+        await new Promise((r) => setTimeout(r, 1500));
+        if (cancelled) return;
+        user = await getSession();
+      }
       if (!user) {
         window.location.href = '/login';
         return;
@@ -46,6 +53,7 @@ export default function PreferencesPage() {
       }, 0);
       return () => clearTimeout(timer);
     });
+    return () => { cancelled = true; };
   }, []);
 
   async function handleSave() {
