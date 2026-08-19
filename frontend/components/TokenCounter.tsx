@@ -20,11 +20,6 @@ export default function TokenCounter({
   const total = totalInputTokens + totalOutputTokens;
   if (total === 0 && !isStreaming) return null;
 
-  const lastModel = usage.length > 0 ? usage[usage.length - 1].model : null;
-  const shortModel = lastModel
-    ? lastModel.replace(/^gemini\//, '').replace(/^gemini-/, '')
-    : null;
-
   return (
     <div
       className={clsx(
@@ -37,12 +32,6 @@ export default function TokenCounter({
       <span className="tabular-nums">
         {total.toLocaleString()} tokens
       </span>
-      {shortModel && (
-        <>
-          <span className="text-muted-foreground/30">·</span>
-          <span className="truncate max-w-24">{shortModel}</span>
-        </>
-      )}
       {total > 0 && (
         <>
           <span className="text-muted-foreground/30">·</span>
