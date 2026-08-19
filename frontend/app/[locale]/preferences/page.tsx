@@ -2,14 +2,17 @@
 
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Sparkles, Save, CheckCircle, AlertCircle, Loader2, FileText } from 'lucide-react';
+import { Save, CheckCircle, AlertCircle, Loader2, FileText, ArrowLeft } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { getSession } from '@/lib/auth';
+import { useLocale } from '@/lib/useLocale';
+import Link from 'next/link';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 export default function PreferencesPage() {
   const t = useTranslations('preferences');
+  const locale = useLocale();
   const [content, setContent] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -84,41 +87,27 @@ export default function PreferencesPage() {
   }
 
   return (
-    <main className="relative min-h-screen overflow-hidden pt-16">
-      <div className="pointer-events-none fixed inset-0">
-        <div className="absolute top-0 left-1/4 w-[600px] h-[600px] bg-indigo-400/[0.06] rounded-full blur-[120px] animate-aurora" />
-        <div className="absolute bottom-0 right-1/4 w-[500px] h-[500px] bg-violet-400/[0.04] rounded-full blur-[100px] animate-float-slow" />
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[400px] bg-blue-300/[0.03] rounded-full blur-[140px]" />
-      </div>
-
-      <div
-        className="pointer-events-none fixed inset-0 opacity-[0.02]"
-        style={{
-          backgroundImage: `linear-gradient(rgba(0,0,0,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(0,0,0,0.1) 1px, transparent 1px)`,
-          backgroundSize: '60px 60px',
-        }}
-      />
-
-      <div className="relative z-10 max-w-2xl mx-auto px-4 pt-8 pb-12">
-        <motion.div
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
-          className="text-center mb-8"
+    <main className="min-h-screen bg-background flex flex-col items-center pt-12 px-4">
+      <div className="w-full max-w-2xl">
+        {/* Back to chat link */}
+        <Link
+          href={`/${locale}/chat`}
+          className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors mb-6"
         >
-          <div className="flex items-center justify-center gap-2.5 mb-3">
-            <motion.div
-              animate={{ rotate: [0, 10, -10, 0] }}
-              transition={{ repeat: Infinity, duration: 6, ease: 'easeInOut' }}
-              className="p-2 rounded-xl bg-gradient-to-br from-indigo-500/10 to-violet-500/10 border border-indigo-500/15"
-            >
-              <Sparkles className="w-6 h-6 text-primary" />
-            </motion.div>
-            <h1 className="text-3xl md:text-4xl font-bold text-foreground">
-              {t('title')}
-            </h1>
-          </div>
-          <p className="text-sm md:text-base text-muted-foreground max-w-md mx-auto">
+          <ArrowLeft className="w-4 h-4" />
+          {t('title')}
+        </Link>
+
+        <motion.div
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4 }}
+          className="mb-6"
+        >
+          <h1 className="text-2xl font-bold text-foreground mb-1">
+            {t('title')}
+          </h1>
+          <p className="text-sm text-muted-foreground">
             {t('subtitle')}
           </p>
         </motion.div>
@@ -127,7 +116,7 @@ export default function PreferencesPage() {
           <motion.div
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
-            className={`mb-6 p-4 rounded-xl border text-sm flex items-center gap-3 ${
+            className={`mb-4 p-3 rounded-xl border text-sm flex items-center gap-3 ${
               message.type === 'success'
                 ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-600'
                 : 'bg-red-500/10 border-red-500/20 text-red-600'
@@ -150,15 +139,15 @@ export default function PreferencesPage() {
           <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 0.1 }}
+            transition={{ duration: 0.3 }}
           >
-            <div className="rounded-xl border border-border bg-card backdrop-blur-xl overflow-hidden shadow-sm">
+            <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
               <div className="p-4 border-b border-border">
                 <label className="text-sm font-medium text-foreground flex items-center gap-2">
                   <FileText className="w-4 h-4 text-muted-foreground" />
                   {t('fileLabel')}
                 </label>
-                <p className="text-xs text-muted-foreground">
+                <p className="text-xs text-muted-foreground mt-0.5">
                   {t('fileHint')}
                 </p>
               </div>
@@ -175,7 +164,7 @@ export default function PreferencesPage() {
                 <button
                   onClick={handleSave}
                   disabled={saving}
-                  className="inline-flex items-center gap-2 px-5 py-2 text-sm font-medium rounded-lg bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                  className="inline-flex items-center gap-2 px-5 py-2 text-sm font-medium rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
                 >
                   {saving ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
