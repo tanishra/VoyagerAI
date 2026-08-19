@@ -541,7 +541,10 @@ async def stream_chat_agent(
 
     # Persist activity metadata for this thread
     if stream.activity["thinking"] or stream.activity["tool_calls"] or stream.activity["usage"]:
-        store = create_redis_store() if settings.STORE_BACKEND == "redis" else InMemoryStore()
+        try:
+            store = create_redis_store() if settings.STORE_BACKEND == "redis" else InMemoryStore()
+        except Exception:
+            store = InMemoryStore()
         await save_activity(store, thread_id, stream.activity)
 
     stream_text = stream.last_text()
@@ -613,5 +616,8 @@ async def stream_chat_agent(
 
     # Re-save activity if retry added more data
     if stream.activity["thinking"] or stream.activity["tool_calls"] or stream.activity["usage"]:
-        store = create_redis_store() if settings.STORE_BACKEND == "redis" else InMemoryStore()
+        try:
+            store = create_redis_store() if settings.STORE_BACKEND == "redis" else InMemoryStore()
+        except Exception:
+            store = InMemoryStore()
         await save_activity(store, thread_id, stream.activity)
