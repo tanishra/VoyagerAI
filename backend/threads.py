@@ -125,7 +125,7 @@ class ThreadStore:
                 pipe = r.pipeline()
                 pipe.hset(key, mapping={
                     "thread_id": thread_id,
-                    "summary": summary[:100],
+                    "summary": summary[:50],
                     "created_at": str(created_at),
                     "updated_at": str(now),
                     "status": status,
@@ -146,7 +146,7 @@ class ThreadStore:
         count = message_count if message_count > 0 else prev_count
         user_threads[thread_id] = ThreadMeta(
             thread_id=thread_id,
-            summary=summary[:100],
+            summary=summary[:50],
             created_at=created_at,
             updated_at=now,
             status=status,
@@ -310,9 +310,9 @@ async def generate_summary(
 
         model = get_subagent_model()
         system_content = (
-            "Summarize this travel conversation in ONE short sentence "
-            "(max 80 chars). Focus on destination, duration, and budget. "
-            "No preamble, no quotes."
+            "Summarize this travel conversation in 2-5 words "
+            "(max 40 chars). Just destination and trip type. "
+            "No preamble, no quotes, no periods."
         )
         if locale and locale in _LANGUAGE_NAMES and locale != "en":
             system_content += f" Respond in {_LANGUAGE_NAMES[locale]}."
@@ -336,7 +336,7 @@ async def generate_summary(
                 if isinstance(p, dict) and p.get("type") == "text"
             )
         summary = content.strip() if isinstance(content, str) else str(content).strip()
-        return summary[:100] if summary else user_message[:100]
+        return summary[:50] if summary else user_message[:50]
     except Exception:  # noqa: BLE001 (intentional fallback)
         logger.warning("AI summary generation failed, using fallback")
-        return user_message[:100]
+        return user_message[:50]
