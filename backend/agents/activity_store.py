@@ -20,7 +20,7 @@ async def save_activity(store: Any, thread_id: str, activity: dict) -> None:
     """Save activity metadata for the latest assistant message in a thread."""
     try:
         key = f"{thread_id}:latest"
-        store.aput(
+        await store.aput(
             _ACTIVITY_NAMESPACE,
             key,
             {
@@ -39,7 +39,7 @@ async def load_activity(store: Any, thread_id: str) -> dict | None:
     """Load activity metadata for the latest assistant message in a thread."""
     try:
         key = f"{thread_id}:latest"
-        item = store.aget(_ACTIVITY_NAMESPACE, key)
+        item = await store.aget(_ACTIVITY_NAMESPACE, key)
         if item is None:
             return None
         return item.value
