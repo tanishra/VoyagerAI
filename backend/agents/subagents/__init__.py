@@ -71,6 +71,9 @@ class _ResilientModel(BaseChatModel):
         async for chunk in self.inner.astream(input, config=config, **kwargs):
             yield chunk
 
+    def bind_tools(self, tools, **kwargs):
+        return self.inner.bind_tools(tools, **kwargs)
+
 
 def wrap_subagent_for_resilience(spec: SubAgent) -> SubAgent:
     """Wrap a SubAgent spec's model with _ResilientModel for graceful degradation."""
