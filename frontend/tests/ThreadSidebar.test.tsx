@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
+import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import ThreadSidebar from '@/app/[locale]/chat/ThreadSidebar';
 import type { ThreadMeta } from '@/lib/threads-api';
@@ -6,6 +7,21 @@ import type { ThreadMeta } from '@/lib/threads-api';
 vi.mock('@/lib/share-api', () => ({
   listShares: vi.fn().mockResolvedValue([]),
   revokeShare: vi.fn().mockResolvedValue(true),
+}));
+
+vi.mock('next/navigation', () => ({
+  usePathname: vi.fn().mockReturnValue('/en/chat'),
+  useRouter: vi.fn().mockReturnValue({ push: vi.fn() }),
+}));
+
+vi.mock('@/lib/useLocale', () => ({
+  useLocale: vi.fn().mockReturnValue('en'),
+  setLocale: vi.fn(),
+  locales: ['en', 'fr'],
+}));
+
+vi.mock('@/components/LanguageSwitcher', () => ({
+  default: () => <div data-testid="lang-switcher" />,
 }));
 
 const mockThreads: ThreadMeta[] = [
@@ -40,6 +56,7 @@ describe('ThreadSidebar', () => {
         onDelete={() => {}}
         onNewChat={() => {}}
         onLoadMore={() => {}}
+        user={null}
       />,
     );
     expect(screen.getByText('Plan a 3-day Tokyo trip')).toBeInTheDocument();
@@ -58,6 +75,7 @@ describe('ThreadSidebar', () => {
         onDelete={() => {}}
         onNewChat={() => {}}
         onLoadMore={() => {}}
+        user={null}
       />,
     );
     expect(screen.getByText('No conversations yet. Start chatting!')).toBeInTheDocument();
@@ -76,6 +94,7 @@ describe('ThreadSidebar', () => {
         onDelete={() => {}}
         onNewChat={() => {}}
         onLoadMore={() => {}}
+        user={null}
       />,
     );
     fireEvent.click(screen.getByText('Plan a 3-day Tokyo trip'));
@@ -95,13 +114,14 @@ describe('ThreadSidebar', () => {
         onDelete={() => {}}
         onNewChat={onNewChat}
         onLoadMore={() => {}}
+        user={null}
       />,
     );
     fireEvent.click(screen.getByText('New Chat'));
     expect(onNewChat).toHaveBeenCalled();
   });
 
-  it('calls onDelete when delete button is clicked twice (confirm)', () => {
+  it('calls onDelete when delete is confirmed via three-dot menu', () => {
     const onDelete = vi.fn();
     render(
       <ThreadSidebar
@@ -114,15 +134,19 @@ describe('ThreadSidebar', () => {
         onDelete={onDelete}
         onNewChat={() => {}}
         onLoadMore={() => {}}
+        user={null}
       />,
     );
-    // First click shows confirm
-    const deleteButtons = screen.getAllByLabelText('Delete thread');
-    fireEvent.click(deleteButtons[0]);
+    // Click three-dot menu button
+    const menuButtons = screen.getAllByLabelText('More options');
+    fireEvent.click(menuButtons[0]);
+    // Click "Delete" in dropdown
+    const deleteBtn = screen.getByText('Delete');
+    fireEvent.click(deleteBtn);
     expect(onDelete).not.toHaveBeenCalled();
-    // Second click confirms
-    const confirmButton = screen.getByText('Confirm?');
-    fireEvent.click(confirmButton);
+    // Click "Confirm delete?" to confirm
+    const confirmBtn = screen.getByText('Confirm delete?');
+    fireEvent.click(confirmBtn);
     expect(onDelete).toHaveBeenCalledWith('chat:abc:t1');
   });
 
@@ -139,6 +163,7 @@ describe('ThreadSidebar', () => {
         onDelete={() => {}}
         onNewChat={() => {}}
         onLoadMore={onLoadMore}
+        user={null}
       />,
     );
     const loadMoreBtn = screen.getByText('Load more');
@@ -158,6 +183,7 @@ describe('ThreadSidebar', () => {
         onDelete={() => {}}
         onNewChat={() => {}}
         onLoadMore={() => {}}
+        user={null}
       />,
     );
     expect(screen.queryByText('Load more')).not.toBeInTheDocument();
@@ -176,6 +202,7 @@ describe('ThreadSidebar', () => {
         onDelete={() => {}}
         onNewChat={() => {}}
         onLoadMore={() => {}}
+        user={null}
       />,
     );
     const threadItem = screen.getByText('Plan a 3-day Tokyo trip').closest('[role="button"]');
@@ -197,6 +224,7 @@ describe('ThreadSidebar', () => {
         onDelete={() => {}}
         onNewChat={() => {}}
         onLoadMore={() => {}}
+        user={null}
       />,
     );
     const threadItem = screen.getByText('Plan a 3-day Tokyo trip').closest('[role="button"]');
