@@ -1,10 +1,15 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Plus, Trash2, MessageSquare, Loader2, ChevronDown, Link2, Copy as CopyIcon, Check, X } from 'lucide-react';
+import { Plus, Trash2, MessageSquare, Loader2, ChevronDown, Link2, Copy as CopyIcon, Check, X, Sparkles, LogOut, Home, Settings, MoreHorizontal, Search } from 'lucide-react';
 import { useTranslations } from 'next-intl';
+import Link from 'next/link';
+import Image from 'next/image';
+import { usePathname, useRouter } from 'next/navigation';
 import type { ThreadMeta } from '@/lib/threads-api';
 import { listShares, revokeShare, type ShareLink } from '@/lib/share-api';
+import { type SessionUser, logout } from '@/lib/auth';
+import { useLocale } from '@/lib/useLocale';
 
 function formatRelativeTime(timestamp: number): string {
   const now = Date.now() / 1000;
@@ -17,12 +22,57 @@ function formatRelativeTime(timestamp: number): string {
   return new Date(timestamp * 1000).toLocaleDateString();
 }
 
-const STATUS_COLORS: Record<string, string> = {
-  idle: 'bg-green-500',
-  busy: 'bg-blue-500 animate-pulse',
-  error: 'bg-red-500',
-  interrupted: 'bg-amber-500',
-};
+function groupThreadsByDate(threads: ThreadMeta[]): { label: string; threads: ThreadMeta[] }[] {
+  const now = Date.now() / 1000;
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const todayStartTs = today.getTime() / 1000;
+  const yesterdayStartTs = todayStartTs - 86400;
+  const sevenDaysAgoTs = todayStartTs - 7 * 86400;
+
+  const groups: { label: string; threads: ThreadMeta[] }[] = [
+    { label: 'today', threads: [] },
+    { label: 'yesterday', threads: [] },
+    { label: 'previous7Days', threads: [] },
+    { label: 'older', threads: [] },
+  ];
+
+  for (const thread of threads) {
+    const ts = thread.updated_at || thread.created_at;
+    if (ts >= todayStartTs) groups[0].threads.push(thread);
+    else if (ts >= yesterdayStartTs) groups[1].threads.push(thread);
+    else if (ts >= sevenDaysAgoTs) groups[2].threads.push(thread);
+    else groups[3].threads.push(thread);
+  }
+
+  return groups.filter(g => g.threads.length > 0);
+}
+
+function Avatar({ user, size = 'sm' }: { user: SessionUser; size?: 'sm' | 'md' }) {
+  const dims = size === 'md' ? 'w-8 h-8' : 'w-6 h-6';
+  const text = size === 'md' ? 'text-xs' : 'text-[10px]';
+  if (user.avatar_url) {
+    return (
+      <Image
+        src={user.avatar_url}
+        alt={user.display_name}
+        width={size === 'md' ? 32 : 24}
+        height={size === 'md' ? 32 : 24}
+        className={`${dims} rounded-full object-cover border border-border`}
+      />
+    );
+  }
+  const initials = user.display_name
+    .split(' ')
+    .map(w => w[0])
+    .slice(0, 2)
+    .join('')
+    .toUpperCase();
+  return (
+    <div className={`${dims} rounded-full bg-primary/10 flex items-center justify-center ${text} font-semibold text-primary`}>
+      {initials || '?'}
+    </div>
+  );
+}
 
 interface ThreadSidebarProps {
   threads: ThreadMeta[];
@@ -34,6 +84,8 @@ interface ThreadSidebarProps {
   onDelete: (threadId: string) => void;
   onNewChat: () => void;
   onLoadMore: () => void;
+  onClose?: () => void;
+  user: SessionUser | null;
 }
 
 export default function ThreadSidebar({
@@ -46,9 +98,17 @@ export default function ThreadSidebar({
   onDelete,
   onNewChat,
   onLoadMore,
+  onClose,
+  user,
 }: ThreadSidebarProps) {
   const t = useTranslations('threads');
+  const tNav = useTranslations('nav');
+  const locale = useLocale();
+  const pathname = usePathname();
+  const router = useRouter();
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [openMenu, setOpenMenu] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
   const [shares, setShares] = useState<ShareLink[]>([]);
   const [sharesExpanded, setSharesExpanded] = useState(false);
   const [copiedToken, setCopiedToken] = useState<string | null>(null);
@@ -94,90 +154,183 @@ export default function ThreadSidebar({
     }
   };
 
+  const handleLogout = async () => {
+    await logout();
+    router.push(`/${locale}/login`);
+  };
+
+  const navLinks = [
+    { href: `/${locale}`, icon: Home, key: 'home' },
+    { href: `/${locale}/chat`, icon: MessageSquare, key: 'chat' },
+    { href: `/${locale}/preferences`, icon: Settings, key: 'preferences' },
+  ];
+
+  const renderThreadItem = (thread: ThreadMeta) => {
+    const isActive = thread.thread_id === activeThreadId;
+    const isConfirming = confirmDelete === thread.thread_id;
+    return (
+      <div
+        key={thread.thread_id}
+        onClick={() => onSelect(thread.thread_id)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onSelect(thread.thread_id);
+          }
+        }}
+        role="button"
+        tabIndex={0}
+        className={`group relative px-3 py-2 rounded-lg cursor-pointer transition-colors focus:outline-none focus:ring-2 focus:ring-primary/40 ${
+          isActive ? 'bg-muted' : 'hover:bg-muted/50'
+        }`}
+      >
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex-1 min-w-0">
+            <p className={`text-sm truncate ${isActive ? 'text-foreground font-medium' : 'text-foreground/80'}`}>
+              {thread.summary || t('untitled')}
+            </p>
+            <p className="text-[11px] text-muted-foreground/60 mt-0.5">
+              {formatRelativeTime(thread.updated_at)}
+            </p>
+          </div>
+          {/* Three-dot menu */}
+          <div className="relative shrink-0">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setOpenMenu(openMenu === thread.thread_id ? null : thread.thread_id);
+                setConfirmDelete(null);
+              }}
+              className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted opacity-0 group-hover:opacity-100 transition-all cursor-pointer"
+              aria-label={t('moreOptions')}
+            >
+              <MoreHorizontal className="w-4 h-4" />
+            </button>
+            {openMenu === thread.thread_id && (
+              <>
+                <div
+                  className="fixed inset-0 z-40"
+                  onClick={(e) => { e.stopPropagation(); setOpenMenu(null); setConfirmDelete(null); }}
+                />
+                <div className="absolute right-0 top-7 z-50 min-w-[130px] rounded-lg border border-border bg-card shadow-lg py-1">
+                  {isConfirming ? (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDelete(e, thread.thread_id);
+                        setOpenMenu(null);
+                      }}
+                      className="w-full px-3 py-1.5 text-xs text-red-600 hover:bg-red-500/10 text-left cursor-pointer"
+                    >
+                      {t('confirmDeleteText')}
+                    </button>
+                  ) : (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setConfirmDelete(thread.thread_id);
+                      }}
+                      className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-red-600 hover:bg-red-500/10 text-left cursor-pointer"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                      {t('delete')}
+                    </button>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+        {isActive && loadingHistory && (
+          <div className="absolute inset-0 flex items-center justify-center bg-card/80 rounded-lg">
+            <Loader2 className="w-4 h-4 animate-spin text-primary" />
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
-    <div className="w-[260px] shrink-0 border-r border-border bg-card flex flex-col h-full">
+    <div className="w-[260px] shrink-0 bg-sidebar flex flex-col h-full border-r border-border/50">
+      {/* Header — Logo + brand */}
+      <div className="flex items-center justify-between px-3 h-14 border-b border-border/50 shrink-0">
+        <Link
+          href={`/${locale}`}
+          className="flex items-center gap-2 font-bold text-sm text-foreground hover:text-primary transition-colors"
+        >
+          <div className="p-1.5 rounded-lg bg-gradient-to-br from-indigo-500/10 to-violet-500/10 border border-indigo-500/15">
+            <Sparkles className="w-3.5 h-3.5 text-primary" />
+          </div>
+          {tNav('brand')}
+        </Link>
+      </div>
+
       {/* New Chat button */}
-      <div className="p-3 border-b border-border">
+      <div className="p-2.5 shrink-0">
         <button
           onClick={onNewChat}
-          className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-primary/10 hover:bg-primary/20 border border-primary/20 text-primary text-sm font-medium transition-colors cursor-pointer"
+          className="w-full flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-muted text-sm font-medium text-foreground transition-colors cursor-pointer"
         >
           <Plus className="w-4 h-4" />
           {t('newChat')}
         </button>
       </div>
 
+      {/* Search bar */}
+      <div className="px-2.5 pb-2 shrink-0">
+        <div className="relative">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground/50" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder={t('search')}
+            className="w-full pl-8 pr-3 py-1.5 text-xs rounded-lg bg-muted/50 border-0 text-foreground placeholder:text-muted-foreground/50 outline-none focus:bg-muted focus:ring-2 focus:ring-primary/20 transition-all"
+          />
+        </div>
+      </div>
+
       {/* Thread list */}
-      <div className="flex-1 overflow-y-auto p-2 space-y-1">
+      <div className="flex-1 overflow-y-auto px-2">
         {threads.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-center px-4">
-            <MessageSquare className="w-8 h-8 text-muted-foreground/30 mb-2" />
-            <p className="text-sm text-muted-foreground">
+            <MessageSquare className="w-7 h-7 text-muted-foreground/30 mb-2" />
+            <p className="text-xs text-muted-foreground">
               {t('noConversations')}
             </p>
           </div>
-        ) : (
-          <>
-            {threads.map((thread) => {
-              const isActive = thread.thread_id === activeThreadId;
-              const isConfirming = confirmDelete === thread.thread_id;
-              const statusColor = STATUS_COLORS[thread.status] || 'bg-muted-foreground/30';
+        ) : searchQuery ? (
+          /* Search results (flat list, no grouping) */
+          (() => {
+            const filtered = threads.filter(t =>
+              (t.summary || '').toLowerCase().includes(searchQuery.toLowerCase())
+            );
+            if (filtered.length === 0) {
               return (
-                <div
-                  key={thread.thread_id}
-                  onClick={() => onSelect(thread.thread_id)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault();
-                      onSelect(thread.thread_id);
-                    }
-                  }}
-                  role="button"
-                  tabIndex={0}
-                  className={`group relative px-3 py-2.5 rounded-lg cursor-pointer transition-all focus:outline-none focus:ring-2 focus:ring-primary/40 ${
-                    isActive
-                      ? 'border-l-2 border-primary bg-primary/5'
-                      : 'hover:bg-muted border-l-2 border-transparent'
-                  }`}
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-1.5">
-                        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${statusColor}`} />
-                        <p className={`text-sm truncate ${isActive ? 'text-foreground font-medium' : 'text-foreground/80'}`}>
-                          {thread.summary || t('untitled')}
-                        </p>
-                      </div>
-                      <p className="text-[10px] text-muted-foreground mt-0.5 ml-3">
-                        {formatRelativeTime(thread.updated_at)}
-                        {thread.message_count > 0 && ` · ${thread.message_count} msgs`}
-                      </p>
-                    </div>
-                    <button
-                      onClick={(e) => handleDelete(e, thread.thread_id)}
-                      className={`shrink-0 p-1 rounded transition-all cursor-pointer ${
-                        isConfirming
-                          ? 'text-red-600 bg-red-500/10 opacity-100'
-                          : 'text-muted-foreground hover:text-red-600 opacity-0 group-hover:opacity-100'
-                      }`}
-                      aria-label={isConfirming ? t('confirmDelete') : t('deleteThread')}
-                      title={isConfirming ? t('confirmDelete') : t('deleteThread')}
-                    >
-                      {isConfirming ? (
-                        <span className="text-[10px] font-medium">{t('confirm')}</span>
-                      ) : (
-                        <Trash2 className="w-3.5 h-3.5" />
-                      )}
-                    </button>
-                  </div>
-                  {isActive && loadingHistory && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-card/80 rounded-lg">
-                      <Loader2 className="w-4 h-4 animate-spin text-primary" />
-                    </div>
-                  )}
-                </div>
+                <p className="text-xs text-muted-foreground text-center py-8 px-4">
+                  {t('noResults')}
+                </p>
               );
-            })}
+            }
+            return (
+              <div className="space-y-0.5">
+                {filtered.map((thread) => renderThreadItem(thread))}
+              </div>
+            );
+          })()
+        ) : (
+          /* Grouped thread list */
+          <>
+            {groupThreadsByDate(threads).map((group) => (
+              <div key={group.label}>
+                <p className="text-[11px] font-medium text-muted-foreground/60 px-3 pt-3 pb-1">
+                  {t(group.label)}
+                </p>
+                <div className="space-y-0.5">
+                  {group.threads.map((thread) => renderThreadItem(thread))}
+                </div>
+              </div>
+            ))}
             {hasMore && (
               <button
                 onClick={onLoadMore}
@@ -197,7 +350,7 @@ export default function ThreadSidebar({
       </div>
 
       {/* Shared Links section */}
-      <div className="border-t border-border">
+      <div className="border-t border-border/50 shrink-0">
         <button
           onClick={() => setSharesExpanded(!sharesExpanded)}
           className="w-full flex items-center justify-between px-3 py-2 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
@@ -263,6 +416,51 @@ export default function ThreadSidebar({
                 </div>
               ))
             )}
+          </div>
+        )}
+      </div>
+
+      {/* Footer — Nav links + user profile + logout */}
+      <div className="border-t border-border/50 shrink-0 p-2.5 space-y-2">
+        {/* Nav links */}
+        <div className="flex items-center justify-around px-1">
+          {navLinks.map((link) => {
+            const active = pathname === link.href;
+            const Icon = link.icon;
+            return (
+              <Link
+                key={link.href}
+                href={link.href}
+                className={`p-2 rounded-lg transition-colors cursor-pointer ${
+                  active
+                    ? 'text-primary bg-primary/10'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                }`}
+                aria-label={tNav(link.key)}
+                title={tNav(link.key)}
+              >
+                <Icon className="w-4 h-4" />
+              </Link>
+            );
+          })}
+        </div>
+
+        {/* User profile + logout */}
+        {user && (
+          <div className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-muted transition-colors">
+            <Avatar user={user} size="md" />
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-medium text-foreground truncate">{user.display_name}</p>
+              <p className="text-[10px] text-muted-foreground truncate">{user.email}</p>
+            </div>
+            <button
+              onClick={handleLogout}
+              className="p-1.5 rounded-lg text-muted-foreground hover:text-red-600 hover:bg-red-500/10 transition-colors cursor-pointer"
+              aria-label={tNav('signOut')}
+              title={tNav('signOut')}
+            >
+              <LogOut className="w-3.5 h-3.5" />
+            </button>
           </div>
         )}
       </div>
