@@ -1,9 +1,7 @@
 import { NextIntlClientProvider } from "next-intl";
 import { getMessages, setRequestLocale } from "next-intl/server";
 import { notFound } from "next/navigation";
-import Navbar from "@/components/Navbar";
-import Footer from "@/components/Footer";
-import { SmoothScroll } from "@/components/providers/SmoothScroll";
+import ConditionalChrome from "@/components/ConditionalChrome";
 import { locales, type Locale } from "@/lib/i18n-config";
 
 export function generateStaticParams() {
@@ -34,13 +32,7 @@ export default async function LocaleLayout({
       >
         Skip to main content
       </a>
-      <SmoothScroll>
-        <Navbar />
-        <div id="main-content" className="flex-1 flex flex-col">
-          {children}
-        </div>
-        <Footer />
-      </SmoothScroll>
+      <ConditionalChrome locale={locale}>{children}</ConditionalChrome>
     </NextIntlClientProvider>
   );
 }
