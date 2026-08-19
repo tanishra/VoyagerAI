@@ -2,12 +2,12 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Send, Square, MessageSquare, RotateCcw, Globe, Search, ShieldAlert, ListChecks, Loader2, PanelLeft, ChevronDown, Clock } from 'lucide-react';
+import { Send, Square, RotateCcw, Globe, Search, ShieldAlert, ListChecks, Loader2, PanelLeft, ChevronDown, Clock, Sparkles, Copy, Check, MapPin, Plane, Calendar, Compass } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useLocale } from '@/lib/useLocale';
 import { streamChat } from '@/lib/chat-api';
 import { listThreads, getThreadHistory, deleteThread, type ThreadMeta } from '@/lib/threads-api';
-import { getSession } from '@/lib/auth';
+import { getSession, type SessionUser } from '@/lib/auth';
 import { useOnlineStatus } from '@/lib/useOnlineStatus';
 import { queueMessage, replayQueuedMessages, type QueuedMessage } from '@/lib/message-queue';
 import ErrorBoundary from '@/components/ErrorBoundary';
@@ -17,7 +17,6 @@ import OfflineBanner from '@/components/OfflineBanner';
 import ThinkingBlock from '@/components/ThinkingBlock';
 import ToolCallCard from '@/components/ToolCallCard';
 import SubagentTimeline from '@/components/SubagentTimeline';
-import TokenCounter from '@/components/TokenCounter';
 import ComparisonView from './ComparisonView';
 import ThreadSidebar from './ThreadSidebar';
 import type { ChatMessage, ComparisonData, Itinerary, ActivityData } from '@/lib/types';
@@ -43,20 +42,35 @@ const TOOL_ICONS: Record<string, React.ReactNode> = {
   quality_scorer: <ListChecks className="w-3 h-3" />,
 };
 
+function CopyButton({ content }: { content: string }) {
+  const [copied, setCopied] = useState(false);
+  const t = useTranslations('chat');
+  return (
+    <button
+      onClick={() => {
+        navigator.clipboard.writeText(content);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      }}
+      className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+      aria-label={t('copy')}
+      title={t('copy')}
+    >
+      {copied ? (
+        <Check className="w-3.5 h-3.5 text-emerald-600" />
+      ) : (
+        <Copy className="w-3.5 h-3.5" />
+      )}
+    </button>
+  );
+}
+
 export default function ChatPage() {
   const t = useTranslations('chat');
   const tStatus = useTranslations('status');
   const tCommon = useTranslations('common');
   const locale = useLocale();
-  const [messages, setMessages] = useState<ChatMessage[]>([{
-    id: 'welcome',
-    role: 'assistant',
-    content: '',
-  }]);
-
-  useEffect(() => {
-    setMessages(prev => prev.map(m => m.id === 'welcome' ? { ...m, content: t('welcome') } : m));
-  }, [t]);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -80,6 +94,7 @@ export default function ChatPage() {
   const [elapsed, setElapsed] = useState(0);
   const [isAtBottom, setIsAtBottom] = useState(true);
   const [authChecked, setAuthChecked] = useState(false);
+  const [currentUser, setCurrentUser] = useState<SessionUser | null>(null);
   const isOnline = useOnlineStatus();
   const [pendingMessages, setPendingMessages] = useState<QueuedMessage[]>([]);
   const [replaying, setReplaying] = useState(false);
@@ -106,6 +121,7 @@ export default function ChatPage() {
         window.location.href = '/login';
         return;
       }
+      setCurrentUser(user);
       setAuthChecked(true);
       listThreads().then((res) => {
         setThreads(res.threads);
@@ -114,6 +130,14 @@ export default function ChatPage() {
     });
     return () => { cancelled = true; };
   }, []);
+
+  // Auto-resize textarea
+  useEffect(() => {
+    if (inputRef.current) {
+      inputRef.current.style.height = 'auto';
+      inputRef.current.style.height = `${Math.min(inputRef.current.scrollHeight, 128)}px`;
+    }
+  }, [input]);
 
   // Auto-scroll only when user is at bottom
   useEffect(() => {
@@ -164,11 +188,7 @@ export default function ChatPage() {
     abortRef.current?.abort();
     sessionResetRef.current = true;
     setSidebarOpen(false);
-    setMessages([{
-      id: 'welcome',
-      role: 'assistant',
-      content: t('welcome'),
-    }]);
+    setMessages([]);
     setThreadId(null);
     localStorage.removeItem(THREAD_STORAGE_KEY);
     setError(null);
@@ -204,11 +224,7 @@ export default function ChatPage() {
     }));
 
     if (historyMessages.length === 0) {
-      setMessages([{
-        id: 'welcome',
-        role: 'assistant',
-        content: t('welcome'),
-      }]);
+      setMessages([]);
     } else {
       setMessages(historyMessages);
     }
@@ -233,8 +249,8 @@ export default function ChatPage() {
     }
   };
 
-  const handleSend = useCallback(async () => {
-    const text = input.trim();
+  const handleSend = useCallback(async (overrideText?: string) => {
+    const text = (overrideText ?? input).trim();
     if (!text || loading || sendingRef.current) return;
 
     // If offline, queue the message instead of sending
@@ -263,6 +279,19 @@ export default function ChatPage() {
     };
     setMessages((prev) => [...prev, userMessage]);
 
+    // Optimistic thread title — immediately show in sidebar before AI response completes
+    if (!threadId) {
+      const optimisticThread: ThreadMeta = {
+        thread_id: 'optimistic-' + Date.now(),
+        summary: text.slice(0, 40),
+        created_at: Date.now() / 1000,
+        updated_at: Date.now() / 1000,
+        status: 'busy',
+        message_count: 1,
+      };
+      setThreads((prev) => [optimisticThread, ...prev]);
+    }
+
     const assistantId = `assistant-${Date.now()}`;
     setMessages((prev) => [...prev, { id: assistantId, role: 'assistant', content: '' }]);
 
@@ -280,11 +309,9 @@ export default function ChatPage() {
     let aborted = false;
 
     const updateActivity = (updater: (prev: ActivityData | null) => ActivityData) => {
-      setStreamingActivity((prev) => {
-        const next = updater(prev);
-        streamingActivityRef.current = next;
-        return next;
-      });
+      const next = updater(streamingActivityRef.current);
+      streamingActivityRef.current = next;
+      setStreamingActivity(next);
     };
 
     try {
@@ -518,39 +545,34 @@ export default function ChatPage() {
                 );
               },
               onThinking: (text) => {
-                setStreamingActivity((prev) => {
-                  const next = { thinking: [...(prev?.thinking ?? []), { text }], tool_calls: prev?.tool_calls ?? [], usage: prev?.usage ?? [], total_input_tokens: prev?.total_input_tokens ?? 0, total_output_tokens: prev?.total_output_tokens ?? 0 };
-                  streamingActivityRef.current = next;
-                  return next;
-                });
+                const prev = streamingActivityRef.current;
+                const next = { thinking: [...(prev?.thinking ?? []), { text }], tool_calls: prev?.tool_calls ?? [], usage: prev?.usage ?? [], total_input_tokens: prev?.total_input_tokens ?? 0, total_output_tokens: prev?.total_output_tokens ?? 0 };
+                streamingActivityRef.current = next;
+                setStreamingActivity(next);
               },
               onToolStart: (tool) => {
-                setStreamingActivity((prev) => {
-                  const next = { thinking: prev?.thinking ?? [], tool_calls: [...(prev?.tool_calls ?? []), { run_id: tool.run_id, name: tool.name, input: tool.input, status: 'running' as const, started_at: Date.now() }], usage: prev?.usage ?? [], total_input_tokens: prev?.total_input_tokens ?? 0, total_output_tokens: prev?.total_output_tokens ?? 0 };
-                  streamingActivityRef.current = next;
-                  return next;
-                });
+                const prev = streamingActivityRef.current;
+                const next = { thinking: prev?.thinking ?? [], tool_calls: [...(prev?.tool_calls ?? []), { run_id: tool.run_id, name: tool.name, input: tool.input, status: 'running' as const, started_at: Date.now() }], usage: prev?.usage ?? [], total_input_tokens: prev?.total_input_tokens ?? 0, total_output_tokens: prev?.total_output_tokens ?? 0 };
+                streamingActivityRef.current = next;
+                setStreamingActivity(next);
               },
               onToolEnd: (tool) => {
-                setStreamingActivity((prev) => {
-                  const next = { thinking: prev?.thinking ?? [], tool_calls: (prev?.tool_calls ?? []).map((tc) => tc.run_id === tool.run_id ? { ...tc, output: tool.output, status: 'done' as const, ended_at: Date.now() } : tc), usage: prev?.usage ?? [], total_input_tokens: prev?.total_input_tokens ?? 0, total_output_tokens: prev?.total_output_tokens ?? 0 };
-                  streamingActivityRef.current = next;
-                  return next;
-                });
+                const prev = streamingActivityRef.current;
+                const next = { thinking: prev?.thinking ?? [], tool_calls: (prev?.tool_calls ?? []).map((tc) => tc.run_id === tool.run_id ? { ...tc, output: tool.output, status: 'done' as const, ended_at: Date.now() } : tc), usage: prev?.usage ?? [], total_input_tokens: prev?.total_input_tokens ?? 0, total_output_tokens: prev?.total_output_tokens ?? 0 };
+                streamingActivityRef.current = next;
+                setStreamingActivity(next);
               },
               onToolError: (tool) => {
-                setStreamingActivity((prev) => {
-                  const next = { thinking: prev?.thinking ?? [], tool_calls: (prev?.tool_calls ?? []).map((tc) => tc.run_id === tool.run_id ? { ...tc, error: tool.error, status: 'error' as const, ended_at: Date.now() } : tc), usage: prev?.usage ?? [], total_input_tokens: prev?.total_input_tokens ?? 0, total_output_tokens: prev?.total_output_tokens ?? 0 };
-                  streamingActivityRef.current = next;
-                  return next;
-                });
+                const prev = streamingActivityRef.current;
+                const next = { thinking: prev?.thinking ?? [], tool_calls: (prev?.tool_calls ?? []).map((tc) => tc.run_id === tool.run_id ? { ...tc, error: tool.error, status: 'error' as const, ended_at: Date.now() } : tc), usage: prev?.usage ?? [], total_input_tokens: prev?.total_input_tokens ?? 0, total_output_tokens: prev?.total_output_tokens ?? 0 };
+                streamingActivityRef.current = next;
+                setStreamingActivity(next);
               },
               onUsage: (usage) => {
-                setStreamingActivity((prev) => {
-                  const next = { thinking: prev?.thinking ?? [], tool_calls: prev?.tool_calls ?? [], usage: [...(prev?.usage ?? []), usage], total_input_tokens: (prev?.total_input_tokens ?? 0) + usage.input_tokens, total_output_tokens: (prev?.total_output_tokens ?? 0) + usage.output_tokens };
-                  streamingActivityRef.current = next;
-                  return next;
-                });
+                const prev = streamingActivityRef.current;
+                const next = { thinking: prev?.thinking ?? [], tool_calls: prev?.tool_calls ?? [], usage: [...(prev?.usage ?? []), usage], total_input_tokens: (prev?.total_input_tokens ?? 0) + usage.input_tokens, total_output_tokens: (prev?.total_output_tokens ?? 0) + usage.output_tokens };
+                streamingActivityRef.current = next;
+                setStreamingActivity(next);
               },
               onError: (msg) => {
                 streamFailed = true;
@@ -631,29 +653,15 @@ export default function ChatPage() {
 
   if (!authChecked) {
     return (
-      <main className="min-h-screen flex items-center justify-center pt-16">
+      <main className="h-screen flex items-center justify-center">
         <Loader2 className="w-8 h-8 text-primary animate-spin" />
       </main>
     );
   }
 
   return (
-    <main className="relative min-h-screen overflow-hidden pt-16 flex flex-col">
+    <main className="h-screen flex flex-col overflow-hidden bg-background">
       <OfflineBanner replaying={replaying} />
-      {/* Background gradients */}
-      <div className="pointer-events-none fixed inset-0">
-        <div className="absolute top-0 right-1/4 w-[600px] h-[600px] bg-indigo-400/[0.06] rounded-full blur-[120px] animate-aurora" />
-        <div className="absolute bottom-0 left-1/4 w-[500px] h-[500px] bg-violet-400/[0.04] rounded-full blur-[100px] animate-float-slow" />
-      </div>
-
-      {/* Grid overlay */}
-      <div
-        className="pointer-events-none fixed inset-0 opacity-[0.02]"
-        style={{
-          backgroundImage: `linear-gradient(rgba(0,0,0,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(0,0,0,0.1) 1px, transparent 1px)`,
-          backgroundSize: '60px 60px',
-        }}
-      />
 
       <div className="relative z-10 flex flex-1 overflow-hidden">
         {/* Desktop sidebar (inline) */}
@@ -675,6 +683,8 @@ export default function ChatPage() {
                 onSelect={handleSelectThread}
                 onDelete={handleDeleteThread}
                 onNewChat={handleNewChat}
+                onClose={() => setShowSidebar(false)}
+                user={currentUser}
                 onLoadMore={async () => {
                   setLoadingMore(true);
                   const res = await listThreads(threads.length);
@@ -717,6 +727,8 @@ export default function ChatPage() {
                   onSelect={handleSelectThread}
                   onDelete={handleDeleteThread}
                   onNewChat={handleNewChat}
+                  onClose={() => setSidebarOpen(false)}
+                  user={currentUser}
                   onLoadMore={async () => {
                     setLoadingMore(true);
                     const res = await listThreads(threads.length);
@@ -730,9 +742,77 @@ export default function ChatPage() {
           )}
         </AnimatePresence>
 
-        <div className="flex flex-col flex-1 max-w-3xl mx-auto w-full px-2 sm:px-4">
+        <div className="flex flex-col flex-1 min-w-0 relative">
+        {/* Subtle background tint */}
+        <div className="absolute inset-0 bg-gradient-to-b from-primary/[0.015] via-transparent to-primary/[0.01] pointer-events-none" />
+
+        {messages.length === 0 && !loading ? (
+          /* ─── Centered empty state (ChatGPT-style) ─── */
+          <div className="flex-1 flex flex-col items-center justify-center px-4 relative">
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4 }}
+              className="flex flex-col items-center w-full max-w-2xl"
+            >
+              <div className="p-3.5 rounded-2xl bg-gradient-to-br from-indigo-500/10 to-violet-500/10 border border-indigo-500/15 mb-5">
+                <Sparkles className="w-8 h-8 text-primary" />
+              </div>
+              <h1 className="text-2xl font-semibold text-foreground mb-2">{t('greeting')}</h1>
+              <p className="text-sm text-muted-foreground max-w-lg text-center mb-8">{t('subtitle')}</p>
+
+              {/* Suggestion chips */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full mb-8">
+                {[
+                  { icon: MapPin, text: t('suggestion1') },
+                  { icon: Plane, text: t('suggestion2') },
+                  { icon: Calendar, text: t('suggestion3') },
+                  { icon: Compass, text: t('suggestion4') },
+                ].map((s, i) => (
+                  <button
+                    key={i}
+                    onClick={() => handleSend(s.text)}
+                    className="flex items-center gap-3 rounded-xl border border-border bg-card p-4 hover:border-primary/30 hover:shadow-sm transition-all text-left cursor-pointer"
+                  >
+                    <s.icon className="w-4 h-4 text-primary shrink-0" />
+                    <span className="text-sm text-foreground/80">{s.text}</span>
+                  </button>
+                ))}
+              </div>
+
+              {/* Centered input bar */}
+              <div className="w-full">
+                <div className="flex items-center gap-2 rounded-2xl border border-border bg-card shadow-sm px-4 py-3 focus-within:border-primary/40 focus-within:shadow-md transition-all">
+                  <textarea
+                    ref={inputRef}
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    onKeyDown={handleKeyDown}
+                    placeholder={t('placeholder')}
+                    rows={1}
+                    aria-label={t('messageInput')}
+                    className="flex-1 bg-transparent border-0 text-sm text-foreground placeholder:text-muted-foreground/50 resize-none outline-none focus:ring-0 transition-colors max-h-32 leading-6"
+                  />
+                  <button
+                    onClick={() => handleSend()}
+                    disabled={!input.trim()}
+                    className="shrink-0 p-2 rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground transition-all disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+                    aria-label={t('send')}
+                  >
+                    <Send className="w-4 h-4" />
+                  </button>
+                </div>
+                <p className="text-[10px] text-muted-foreground/40 mt-2 text-center">
+                  {t('enterToSend')}
+                </p>
+              </div>
+            </motion.div>
+          </div>
+        ) : (
+          /* ─── Normal chat layout ─── */
+          <>
         {/* Header */}
-        <header className="flex items-center justify-between py-4 border-b border-border">
+        <header className="flex items-center justify-between py-3 px-4 border-b border-border/50 relative">
           <div className="flex items-center gap-2">
             <button
               onClick={() => {
@@ -747,10 +827,14 @@ export default function ChatPage() {
             >
               <PanelLeft className="w-4 h-4" />
             </button>
-            <div className="p-1.5 rounded-lg bg-gradient-to-br from-indigo-500/10 to-violet-500/10 border border-indigo-500/15">
-              <MessageSquare className="w-4 h-4 text-primary" />
-            </div>
-            <h1 className="text-lg font-semibold text-foreground hidden sm:block">{t('title')}</h1>
+            {!showSidebar && (
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 rounded-lg bg-gradient-to-br from-indigo-500/10 to-violet-500/10 border border-indigo-500/15">
+                  <Sparkles className="w-3.5 h-3.5 text-primary" />
+                </div>
+                <span className="text-sm font-semibold text-foreground">{t('title')}</span>
+              </div>
+            )}
           </div>
           <button
             onClick={handleNewChat}
@@ -769,7 +853,7 @@ export default function ChatPage() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
               role="alert"
-              className="p-3 mt-2 rounded-xl bg-red-500/10 border border-red-500/20"
+              className="p-3 mt-2 rounded-xl bg-red-500/10 border border-red-500/20 relative"
             >
               <p className="text-red-600 text-sm">{error}</p>
             </motion.div>
@@ -783,8 +867,9 @@ export default function ChatPage() {
           role="log"
           aria-live="polite"
           aria-label={t('chatMessages')}
-          className="flex-1 overflow-y-auto py-4 space-y-4 relative md:px-4"
+          className="flex-1 overflow-y-auto py-6 relative"
         >
+          <div className="max-w-3xl mx-auto w-full px-4 space-y-6">
           <ErrorBoundary
             errorTitle={tCommon('errorTitle')}
             errorDescription={tCommon('errorDescription')}
@@ -795,7 +880,10 @@ export default function ChatPage() {
               </div>
             }
           >
-          {messages.map((msg) => (
+          {messages.map((msg, msgIndex) => {
+            const isLastAssistant = msg.role === 'assistant' && msgIndex === messages.length - 1;
+            const prevUserMsg = msgIndex > 0 && messages[msgIndex - 1].role === 'user' ? messages[msgIndex - 1] : null;
+            return (
             <motion.div
               key={msg.id}
               initial={{ opacity: 0, y: 10 }}
@@ -805,43 +893,54 @@ export default function ChatPage() {
               role="article"
               aria-label={msg.role === 'user' ? t('userMessage') : t('assistantMessage')}
             >
-              <div
-                className={`max-w-[85%] rounded-2xl px-4 py-3 ${
-                  msg.role === 'user'
-                    ? 'bg-primary/10 border border-primary/20 text-foreground'
-                    : 'bg-card border border-border text-foreground/90 shadow-sm'
-                }`}
-                tabIndex={0}
-              >
-                {msg.role === 'assistant' && msg.activity?.thinking && msg.activity.thinking.length > 0 && (
-                  <ThinkingBlock blocks={msg.activity.thinking} />
-                )}
-                {msg.role === 'assistant' && msg.activity?.tool_calls && msg.activity.tool_calls.length > 0 && (
-                  <div className="space-y-0">
-                    {msg.activity.tool_calls.map((tc, i) => (
-                      <ToolCallCard key={`${tc.run_id}-${i}`} tool={tc} />
-                    ))}
-                  </div>
-                )}
-                {msg.role === 'assistant' ? (
-                  <MarkdownRenderer content={msg.content} />
-                ) : (
+              {msg.role === 'user' ? (
+                <div
+                  className="max-w-[75%] rounded-2xl px-4 py-3 bg-primary/10 border border-primary/15 text-foreground"
+                  tabIndex={0}
+                >
                   <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
-                )}
-                {msg.comparison && <ComparisonView data={msg.comparison} onSelect={handleSelectPlan} />}
-                {msg.itinerary && <ItineraryCard itinerary={msg.itinerary} threadId={threadId ?? undefined} />}
-                {msg.role === 'assistant' && msg.activity && (msg.activity.total_input_tokens > 0 || msg.activity.total_output_tokens > 0) && (
-                  <div className="mt-2">
-                    <TokenCounter
-                      usage={msg.activity.usage}
-                      totalInputTokens={msg.activity.total_input_tokens}
-                      totalOutputTokens={msg.activity.total_output_tokens}
-                    />
+                </div>
+              ) : (
+                <div className="w-full group" tabIndex={0}>
+                  <div className="px-1 py-1">
+                    {msg.activity?.thinking && msg.activity.thinking.length > 0 && (
+                      <ThinkingBlock blocks={msg.activity.thinking} />
+                    )}
+                    {msg.activity?.tool_calls && msg.activity.tool_calls.length > 0 && (
+                      <div className="space-y-0">
+                        {msg.activity.tool_calls.map((tc, i) => (
+                          <ToolCallCard key={`${tc.run_id}-${i}`} tool={tc} />
+                        ))}
+                      </div>
+                    )}
+                    <MarkdownRenderer content={msg.content} />
+                    {msg.comparison && <ComparisonView data={msg.comparison} onSelect={handleSelectPlan} />}
+                    {msg.itinerary && <ItineraryCard itinerary={msg.itinerary} threadId={threadId ?? undefined} />}
                   </div>
-                )}
-              </div>
+                  {/* Copy + Regenerate buttons */}
+                  {msg.content && (
+                    <div className="flex items-center gap-1 px-1 mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <CopyButton content={msg.content} />
+                      {isLastAssistant && prevUserMsg && (
+                        <button
+                          onClick={() => {
+                            setMessages((prev) => prev.slice(0, msgIndex));
+                            handleSend(prevUserMsg.content);
+                          }}
+                          className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                          aria-label={t('regenerate')}
+                          title={t('regenerate')}
+                        >
+                          <RotateCcw className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
             </motion.div>
-          ))}
+            );
+          })}
 
           {/* Pending (offline-queued) messages */}
           {pendingMessages.map((msg) => (
@@ -868,7 +967,7 @@ export default function ChatPage() {
               animate={{ opacity: 1, y: 0 }}
               className="flex justify-start"
             >
-              <div className="max-w-[85%] rounded-2xl px-4 py-3 bg-card border border-border text-foreground/90 shadow-sm">
+              <div className="w-full px-1 py-1">
                 {streamingActivity?.thinking && streamingActivity.thinking.length > 0 && (
                   <ThinkingBlock blocks={streamingActivity.thinking} isStreaming />
                 )}
@@ -908,22 +1007,13 @@ export default function ChatPage() {
                 )}
                 {streamingComparison && <ComparisonView data={streamingComparison} onSelect={handleSelectPlan} />}
                 {streamingItinerary && <ItineraryCard itinerary={streamingItinerary} threadId={threadId ?? undefined} />}
-                {streamingActivity && (streamingActivity.total_input_tokens > 0 || streamingActivity.total_output_tokens > 0) && (
-                  <div className="mt-2">
-                    <TokenCounter
-                      usage={streamingActivity.usage}
-                      totalInputTokens={streamingActivity.total_input_tokens}
-                      totalOutputTokens={streamingActivity.total_output_tokens}
-                      isStreaming
-                    />
-                  </div>
-                )}
               </div>
             </motion.div>
           )}
 
           <div ref={messagesEndRef} />
           </ErrorBoundary>
+          </div>
 
           {/* Scroll to bottom button */}
           <AnimatePresence>
@@ -943,41 +1033,45 @@ export default function ChatPage() {
         </div>
 
         {/* Input bar */}
-        <div className="py-4 border-t border-border">
-          <div className="flex items-end gap-2">
-            <textarea
-              ref={inputRef}
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder={t('placeholder')}
-              rows={1}
-              disabled={loading}
-              aria-label={t('messageInput')}
-              className="flex-1 bg-muted border border-border rounded-xl px-3 sm:px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground/50 resize-none outline-none focus:border-primary/40 focus:bg-card transition-colors disabled:opacity-50"
-            />
-            <button
-              onClick={handleSend}
-              disabled={!input.trim() || loading}
-              className="p-3 bg-primary/10 hover:bg-primary/20 border border-primary/30 rounded-xl text-primary transition-all disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
-              aria-label={t('send')}
-            >
-              <Send className="w-4 h-4" />
-            </button>
-            {loading && (
+        <div className="px-4 pb-3 pt-1 relative">
+          <div className="max-w-3xl mx-auto w-full">
+            <div className="flex items-center gap-2 rounded-2xl border border-border bg-card shadow-sm px-4 py-3 focus-within:border-primary/40 focus-within:shadow-md transition-all">
+              <textarea
+                ref={inputRef}
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder={t('placeholder')}
+                rows={1}
+                disabled={loading}
+                aria-label={t('messageInput')}
+                className="flex-1 bg-transparent border-0 text-sm text-foreground placeholder:text-muted-foreground/50 resize-none outline-none focus:ring-0 transition-colors disabled:opacity-50 max-h-32 leading-6"
+              />
+              {loading && (
+                <button
+                  onClick={() => abortRef.current?.abort()}
+                  className="shrink-0 p-2 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-600 transition-all cursor-pointer"
+                  aria-label={t('stop')}
+                >
+                  <Square className="w-4 h-4" />
+                </button>
+              )}
               <button
-                onClick={() => abortRef.current?.abort()}
-                className="p-3 bg-red-500/10 hover:bg-red-500/20 border border-red-500/25 rounded-xl text-red-600 transition-all cursor-pointer"
-                aria-label={t('stop')}
+                onClick={() => handleSend()}
+                disabled={!input.trim() || loading}
+                className="shrink-0 p-2 rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground transition-all disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+                aria-label={t('send')}
               >
-                <Square className="w-4 h-4" />
+                <Send className="w-4 h-4" />
               </button>
-            )}
+            </div>
+            <p className="text-[10px] text-muted-foreground/40 mt-2 text-center">
+              {t('enterToSend')}
+            </p>
           </div>
-          <p className="text-[10px] text-muted-foreground/40 mt-1.5 text-center">
-            {t('enterToSend')}
-          </p>
         </div>
+          </>
+        )}
         </div>
       </div>
     </main>
