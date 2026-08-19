@@ -23,6 +23,7 @@ def get_orchestrator_model() -> ChatLiteLLM:
     return ChatLiteLLM(
         model=settings.LLM_ORCHESTRATOR_MODEL,
         temperature=settings.LLM_TEMPERATURE_ORCHESTRATOR,
+        streaming=True,
         fallbacks=_build_fallbacks(settings.LLM_ORCHESTRATOR_FALLBACK),
     )
 
@@ -32,6 +33,7 @@ def get_subagent_model() -> ChatLiteLLM:
     return ChatLiteLLM(
         model=settings.LLM_SUBAGENT_MODEL,
         temperature=settings.LLM_TEMPERATURE_SUBAGENT,
+        streaming=True,
         fallbacks=_build_fallbacks(settings.LLM_SUBAGENT_FALLBACK),
     )
 
@@ -41,6 +43,7 @@ def get_formatter_model(schema: type) -> BaseChatModel:
     model = ChatLiteLLM(
         model=settings.LLM_ORCHESTRATOR_MODEL,
         temperature=0.1,
+        streaming=True,
         fallbacks=_build_fallbacks(settings.LLM_ORCHESTRATOR_FALLBACK),
     )
     return model.with_structured_output(schema)
