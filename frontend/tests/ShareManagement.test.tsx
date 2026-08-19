@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import ThreadSidebar from '@/app/[locale]/chat/ThreadSidebar';
 import type { ThreadMeta } from '@/lib/threads-api';
@@ -6,7 +7,18 @@ import type { ShareLink } from '@/lib/share-api';
 
 vi.mock('next/navigation', () => ({
   useParams: () => ({}),
+  usePathname: vi.fn().mockReturnValue('/en/chat'),
   useRouter: () => ({ push: vi.fn() }),
+}));
+
+vi.mock('@/lib/useLocale', () => ({
+  useLocale: vi.fn().mockReturnValue('en'),
+  setLocale: vi.fn(),
+  locales: ['en', 'fr'],
+}));
+
+vi.mock('@/components/LanguageSwitcher', () => ({
+  default: () => <div data-testid="lang-switcher" />,
 }));
 
 const mockListShares = vi.fn();
@@ -48,6 +60,7 @@ const defaultProps = {
   onDelete: vi.fn(),
   onNewChat: vi.fn(),
   onLoadMore: vi.fn(),
+  user: null,
 };
 
 describe('ThreadSidebar — Shared Links', () => {
