@@ -193,18 +193,18 @@ class TestQualityScorerPrompt:
         assert "80" in QUALITY_SCORER_SYSTEM_PROMPT
 
 
-class TestChatPromptSelfCritique:
-    def test_chat_prompt_has_self_critique_block(self):
-        assert "<self_critique>" in CHAT_AGENT_SYSTEM_PROMPT
+class TestChatPromptAntiLoop:
+    def test_chat_prompt_has_anti_loop_rules(self):
+        assert "<anti_loop_rules>" in CHAT_AGENT_SYSTEM_PROMPT
 
-    def test_chat_prompt_mentions_quality_scorer(self):
-        assert "quality_scorer" in CHAT_AGENT_SYSTEM_PROMPT
+    def test_anti_loop_mentions_no_retry(self):
+        assert "do NOT retry" in CHAT_AGENT_SYSTEM_PROMPT
 
-    def test_self_critique_mentions_parallel_scoring(self):
-        assert "ONE message" in CHAT_AGENT_SYSTEM_PROMPT.split("<self_critique>")[1].split("</self_critique>")[0]
+    def test_anti_loop_mentions_one_round(self):
+        assert "ONE round" in CHAT_AGENT_SYSTEM_PROMPT
 
-    def test_self_critique_mentions_max_iterations(self):
-        assert "2 fix iterations" in CHAT_AGENT_SYSTEM_PROMPT
+    def test_anti_loop_mentions_stop_after_output(self):
+        assert "STOP" in CHAT_AGENT_SYSTEM_PROMPT
 
 
 class TestResilientModel:
