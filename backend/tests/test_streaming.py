@@ -14,8 +14,8 @@ class _Chunk:
         self.content = content
 
 
-def _ev(event: str, name: str = "", run_id: str = "", data=None) -> dict:
-    return {"event": event, "name": name, "run_id": run_id, "data": data}
+def _ev(event: str, name: str = "", run_id: str = "", data=None, parent_ids=None) -> dict:
+    return {"event": event, "name": name, "run_id": run_id, "data": data, "parent_ids": parent_ids or []}
 
 
 class TestTokenStreaming:
@@ -102,6 +102,97 @@ class TestTokenStreaming:
     def test_non_text_blocks_ignored(self):
         event = _ev("on_chat_model_stream", data={"chunk": _Chunk([{"type": "image"}])})
         assert _parse_chat_event(event, {}) == []
+
+
+class TestNestedSubagentStreamFiltering:
+    """Regression: subagents dispatched via the `task` tool run concurrently and
+    stream their own on_chat_model_stream events, which bubble up into the same
+    astream_events source as the orchestrator's own output. Without filtering by
+    parent_ids, these nested LLM chunks interleave with (and get concatenated
+    into) the orchestrator's "token" stream, producing garbled text on the
+    frontend. Any chat-model-stream event whose parent_ids chain includes a
+    known `task` run_id must be dropped from token/thinking output."""
+
+    def test_task_start_registers_subagent_run_id(self):
+        subagent_run_ids: set[str] = set()
+        event = _ev(
+            "on_tool_start",
+            name="task",
+            run_id="task-run-1",
+            data={"input": {"description": "Research hotels", "subagent_type": "researcher"}},
+        )
+        _parse_chat_event(event, {}, subagent_run_ids)
+        assert "task-run-1" in subagent_run_ids
+
+    def test_nested_chat_model_stream_is_dropped(self):
+        """A token event whose parent chain includes a task run_id must not
+        leak into the main token stream."""
+        subagent_run_ids = {"task-run-1"}
+        event = _ev(
+            "on_chat_model_stream",
+            data={"chunk": _Chunk([{"type": "text-delta", "text": "leaked subagent text"}])},
+            parent_ids=["task-run-1"],
+        )
+        assert _parse_chat_event(event, {}, subagent_run_ids) == []
+
+    def test_top_level_chat_model_stream_is_not_dropped(self):
+        """The orchestrator's own model stream (no task ancestor) must still
+        emit tokens normally, even while subagent_run_ids is non-empty."""
+        subagent_run_ids = {"task-run-1"}
+        event = _ev(
+            "on_chat_model_stream",
+            data={"chunk": _Chunk([{"type": "text-delta", "text": "orchestrator text"}])},
+            parent_ids=[],
+        )
+        payloads = _parse_chat_event(event, {}, subagent_run_ids)
+        assert len(payloads) == 1
+        assert payloads[0]["event"] == "token"
+        assert json_data(payloads[0]) == "orchestrator text"
+
+    def test_deeply_nested_chat_model_stream_is_dropped(self):
+        """parent_ids may contain multiple ancestors; a task run_id anywhere
+        in the chain should still trigger filtering."""
+        subagent_run_ids = {"task-run-1"}
+        event = _ev(
+            "on_chat_model_stream",
+            data={"chunk": _Chunk("nested text")},
+            parent_ids=["root-run", "task-run-1", "inner-run"],
+        )
+        assert _parse_chat_event(event, {}, subagent_run_ids) == []
+
+    def test_end_to_end_parallel_subagents_do_not_leak_tokens(self):
+        """Simulates two subagents (researcher, risk_detector) dispatched in
+        parallel, each streaming their own text, interleaved with the
+        orchestrator's own final output. Only the orchestrator's tokens should
+        survive filtering."""
+        subagent_run_ids: set[str] = set()
+        active_tasks: dict[str, str] = {}
+        collected_tokens: list[str] = []
+
+        events = [
+            _ev("on_tool_start", name="task", run_id="task-researcher",
+                data={"input": {"subagent_type": "researcher"}}),
+            _ev("on_tool_start", name="task", run_id="task-risk",
+                data={"input": {"subagent_type": "risk_detector"}}),
+            _ev("on_chat_model_stream", run_id="llm-researcher",
+                data={"chunk": _Chunk("Researcher: ")}, parent_ids=["task-researcher"]),
+            _ev("on_chat_model_stream", run_id="llm-risk",
+                data={"chunk": _Chunk("Risk: ")}, parent_ids=["task-risk"]),
+            _ev("on_chat_model_stream", run_id="llm-researcher",
+                data={"chunk": _Chunk("hotels found")}, parent_ids=["task-researcher"]),
+            _ev("on_tool_end", name="task", run_id="task-researcher", data={"output": "..."}),
+            _ev("on_tool_end", name="task", run_id="task-risk", data={"output": "..."}),
+            _ev("on_chat_model_stream", run_id="llm-orchestrator",
+                data={"chunk": _Chunk("Here is your itinerary")}, parent_ids=[]),
+        ]
+
+        for event in events:
+            for payload in _parse_chat_event(event, active_tasks, subagent_run_ids):
+                if payload["event"] == "token":
+                    collected_tokens.append(json_data(payload))
+
+        assert collected_tokens == ["Here is your itinerary"]
+
 
 class TestSubagentStatus:
     def test_task_start_emits_running_status_and_tool_start(self):
