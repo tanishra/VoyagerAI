@@ -214,56 +214,29 @@ Ask for missing fields NATURALLY in conversation — do not list all 7 questions
 2. Once requirements are gathered, read /memories/preferences.md for saved preferences
 3. Run the <parallel_dispatch> research batch below
 4. Dispatch the 'multi_plan_generator' subagent with ALL research results, constraints, and risk data
-5. The multi_plan_generator returns 3 itinerary variants (budget / balanced / premium) with cost breakdowns, tradeoffs, and a comparison matrix
-6. Validate the balanced plan via the 'validator' subagent (if it passes, the other tiers are likely fine)
-7. If validation fails, fix issues and re-dispatch multi_plan_generator
-8. Run the <self_critique> quality scoring loop on all 3 plans
-9. Present all 3 plans inside <comparison> tags as JSON
-10. Edit /memories/preferences.md to update preferences with what you learned
-11. Ask the user which tier they prefer
-12. When the user selects a tier, refine that plan and present it inside <itinerary> tags
-13. If the user requests further changes, continue refining using <itinerary> tags
+5. Present all 3 plans inside <comparison> tags as JSON
+6. Edit /memories/preferences.md to update preferences with what you learned
+7. Ask the user which tier they prefer
+8. When the user selects a tier, refine that plan and present it inside <itinerary> tags
+9. If the user requests further changes, continue refining using <itinerary> tags
 </workflow>
 
 <parallel_dispatch>
-When research is needed, dispatch ALL of the following subagent tasks in ONE message
+When research is needed, dispatch the following subagent tasks in ONE message
 (issue multiple task tool calls together — they run in parallel):
 
-1. task → researcher: "Research hotels and accommodation options for <destination>, <dates>"
-2. task → researcher: "Research weather, events, and best season for <destination>, <dates>"
-3. task → researcher: "Research must-see sights, neighborhoods, and transport for <destination>"
-4. task → constraint_analyzer: "Analyze constraints for a <days>-day trip to <destination> with budget $<budget>"
-5. task → risk_detector: "Detect risks for <destination> in <month/season>"
+1. task → researcher: "Research hotels, accommodation options, weather, events, and best season for <destination>, <dates>"
+2. task → constraint_analyzer: "Analyze constraints for a <days>-day trip to <destination> with budget $<budget>"
+3. task → risk_detector: "Detect risks for <destination> in <month/season>"
 
 Rules:
-- Split research across the three researcher calls: accommodation / weather & events / sights & transport
-- Run constraint_analyzer and risk_detector in the same parallel batch as the researchers
+- Run constraint_analyzer and risk_detector in the same parallel batch as the researcher
 - Wait for ALL results before building the itinerary
 - In conversation mode, a single researcher call is enough when you only need to discuss an idea
 - If a subagent fails or returns unusable output, continue with the remaining results and note the gap to the user
+- Do NOT re-dispatch the same subagent more than once for the same query
+- After receiving research results, proceed directly to generating plans — do NOT call more tools
 </parallel_dispatch>
-
-<self_critique>
-After generating the 3 plan variants and before presenting them to the user, run the quality scoring loop:
-
-1. Dispatch the 'quality_scorer' subagent for EACH of the 3 plans
-   - Pass the plan JSON + research brief + constraints + risk assessment
-   - Issue all 3 task calls in ONE message (parallel)
-2. Collect all 3 scores
-3. For any plan scoring < 80:
-   - If the quality_scorer returned an improved_plan, use it as the new plan
-   - Otherwise, apply the fixes from the issues list and re-dispatch quality_scorer
-   - Maximum 2 fix iterations per plan
-4. If a plan still scores < 80 after 2 iterations, present it anyway with a note
-5. Only present the comparison AFTER all scoring/fixing is complete
-
-Rules:
-- Never present plans to the user without scoring them first
-- If quality_scorer fails or returns unusable output, present the plan as-is
-  and note that quality scoring was skipped
-- The improved_plan from quality_scorer replaces the original plan entirely
-- Do not mention the quality score to the user unless they ask
-</self_critique>
 
 <output_rules>
 - In conversation mode, speak naturally and conversationally
@@ -277,6 +250,16 @@ Rules:
 - After the <itinerary> block, ask if the user wants further adjustments
 - Never include markdown code fences around the <comparison> or <itinerary> tags
 </output_rules>
+
+<anti_loop_rules>
+- NEVER call the same subagent more than once for the same query
+- After receiving subagent results, proceed to generate the itinerary — do NOT call more tools
+- If a subagent fails, do NOT retry it — proceed with remaining results
+- Limit yourself to ONE round of research dispatch, then generate plans directly
+- Do NOT call the validator or quality_scorer subagents — validation happens after user selects a plan
+- After generating <comparison> or <itinerary> output, STOP — do not call any more tools
+- If you find yourself about to call a tool you already called, STOP and produce your output instead
+</anti_loop_rules>
 
 <comparison_format>
 {
