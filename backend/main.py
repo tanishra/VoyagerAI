@@ -116,14 +116,31 @@ def _truncate_tool_data(data, max_chars: int = 1000) -> str:
     return s[:max_chars] + ("..." if len(s) > max_chars else "")
 
 
-def _parse_chat_event(event: dict, active_tasks: dict[str, str]) -> list[dict]:
+def _parse_chat_event(
+    event: dict,
+    active_tasks: dict[str, str],
+    subagent_run_ids: set[str] | None = None,
+) -> list[dict]:
     """Map a stream event to SSE payloads.
 
     Handles synthetic envelopes (itinerary/done/error) plus raw langchain v2
     astream_events (on_chat_model_stream -> token, on_tool_start/on_tool_end
     for the task tool -> subagent status). `active_tasks` maps task tool
     run_id -> subagent_type so completion status names the right subagent.
+
+    `subagent_run_ids` accumulates every `task` tool run_id seen so far (never
+    popped, unlike `active_tasks`). Subagents dispatched via the `task` tool
+    run concurrently and stream their own `on_chat_model_stream` events, which
+    bubble up into this same event stream. Without filtering, those nested
+    LLM chunks interleave with the orchestrator's own output and get
+    concatenated into the same "token" channel — producing garbled text on
+    the frontend. Any chat-model-stream event whose `parent_ids` chain
+    includes a known task run_id is nested inside a subagent and must be
+    excluded from "token"/"thinking" — that content already surfaces via the
+    subagent's tool_start/tool_end/status events instead.
     """
+    if subagent_run_ids is None:
+        subagent_run_ids = set()
     event_type = event.get("event", "data")
     event_data = event.get("data")
 
@@ -137,6 +154,9 @@ def _parse_chat_event(event: dict, active_tasks: dict[str, str]) -> list[dict]:
         return [_sse("error", str(event_data))]
 
     if event_type == "on_chat_model_stream":
+        parent_ids = event.get("parent_ids") or []
+        if subagent_run_ids and subagent_run_ids.intersection(parent_ids):
+            return []
         chunk = event_data.get("chunk") if isinstance(event_data, dict) else None
         if chunk is None:
             return []
@@ -170,6 +190,7 @@ def _parse_chat_event(event: dict, active_tasks: dict[str, str]) -> list[dict]:
             if subagent_type:
                 if run_id:
                     active_tasks[run_id] = subagent_type
+                    subagent_run_ids.add(run_id)
                 payloads.append(_sse("status", {"tool": subagent_type, "status": "running"}))
                 payloads.append(_sse("tool_start", {
                     "name": subagent_type,
@@ -332,6 +353,7 @@ async def chat_stream(
         yield _sse("status", {"tool": "agent", "status": "thinking"})
 
         active_tasks: dict[str, str] = {}
+        subagent_run_ids: set[str] = set()
         stream_failed = False
         stream_text = ""
 
@@ -348,7 +370,7 @@ async def chat_stream(
                 user_id=user_id,
                 locale=locale,
             ):
-                for payload in _parse_chat_event(event, active_tasks):
+                for payload in _parse_chat_event(event, active_tasks, subagent_run_ids):
                     if payload.get("event") == "token":
                         raw = json.loads(payload["data"])
                         stream_text += raw.get("data", "")
@@ -434,7 +456,7 @@ async def get_thread_history(
         agent = await create_chat_agent(user_id=user_id)
         config = {
             "configurable": {"thread_id": thread_id, "user_id": user_id},
-            "recursion_limit": 50,
+            "recursion_limit": 100,
         }
         state = await agent.aget_state(config)
     except Exception:  # noqa: BLE001 (intentional fallback handler)
@@ -634,7 +656,7 @@ async def _get_latest_itinerary(thread_id: str, user_id: str) -> dict | None:
         agent = await create_chat_agent(user_id=user_id)
         config = {
             "configurable": {"thread_id": thread_id, "user_id": user_id},
-            "recursion_limit": 50,
+            "recursion_limit": 100,
         }
         state = await agent.aget_state(config)
     except Exception:  # noqa: BLE001
