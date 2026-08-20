@@ -21,6 +21,7 @@ from agents.prompts import build_chat_agent_prompt
 from agents.subagents import get_subagents
 from config.settings import settings
 from geocode_service import geocode
+from langchain.agents.middleware import ModelCallLimitMiddleware
 
 logger = logging.getLogger("travel_agent.deep_agent")
 
@@ -288,6 +289,9 @@ async def create_chat_agent(checkpointer=None, store=None, user_id=None, locale=
             ),
         ],
         backend=_make_backend,
+        middleware=[
+            ModelCallLimitMiddleware(run_limit=40, exit_behavior="end"),
+        ],
     )
 
     return agent
@@ -530,7 +534,7 @@ async def stream_chat_agent(
             "thread_id": thread_id,
             "user_id": user_id or "anonymous",
         },
-        "recursion_limit": 50,
+        "recursion_limit": 100,
     }
 
     stream = _ModelStream(agent, config)
