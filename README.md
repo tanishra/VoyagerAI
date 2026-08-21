@@ -18,7 +18,7 @@
 ## Features
 
 - **Conversational Multi-Agent Planning** — Free-form chat, agent decomposes requests and dispatches sub-agents in parallel (researcher, constraint analyzer, risk detector, quality scorer, and more)
-- **Multi-Plan Comparison** — Generates 3 budget tiers (budget / balanced / premium) side-by-side with tradeoff highlights
+- **Multi-Plan Comparison** — Generates 2 budget tiers (budget / balanced / premium) side-by-side with tradeoff highlights
 - **Self-Critique Loop** — Quality scorer evaluates plans against 10 criteria, applies fixes, re-scores (max 2 iterations)
 - **Interactive Itinerary Cards** — Day-by-day breakdown with morning/afternoon/evening slots, costs, transport, tips, warnings, packing essentials
 - **Map Visualization** — MapLibre GL with per-day route lines, numbered markers, cost popups, and Google Maps deep links
