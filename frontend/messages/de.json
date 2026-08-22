@@ -26,6 +26,7 @@
     "welcome": "Hallo! Ich bin Ihr KI-Reiseplaner. Erzählen Sie mir von der Reise, von der Sie träumen — wohin möchten Sie, für wie lange und wie hoch ist Ihr Budget?",
     "generationFailed": "⚠ Generierung fehlgeschlagen: {error}",
     "generationStopped": "⏹ Generierung gestoppt.",
+    "stopped": "Gestoppt",
     "scrollToLatest": "Zur letzten Nachricht scrollen",
     "greeting": "Planen Sie Ihr nächstes Abenteuer",
     "subtitle": "Erzählen Sie mir von der Reise, von der Sie träumen — ich kümmere mich um Reiseroute, Budget und Buchungen.",
