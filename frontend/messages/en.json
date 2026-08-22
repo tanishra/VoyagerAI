@@ -26,6 +26,7 @@
     "welcome": "Hi! I'm your AI travel planner. Tell me about the trip you're dreaming of — where would you like to go, for how long, and what's your budget?",
     "generationFailed": "⚠ Generation failed: {error}",
     "generationStopped": "⏹ Generation stopped.",
+    "stopped": "Stopped",
     "scrollToLatest": "Scroll to latest message",
     "greeting": "Plan your next adventure",
     "subtitle": "Tell me about the trip you're dreaming of — I'll handle the itinerary, budget, and bookings.",
