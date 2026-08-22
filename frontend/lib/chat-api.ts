@@ -10,7 +10,7 @@ export async function streamChat(
   body: { message: string; thread_id?: string; locale?: string },
   callbacks: ChatStreamCallbacks,
 ): Promise<string | undefined> {
-  const { onToken, onItinerary, onComparison, onStatus, onThreadId, onDone, onError, onAbort, signal, errorMessages, onThinking, onToolStart, onToolEnd, onToolError, onUsage } = callbacks;
+  const { onToken, onItinerary, onComparison, onStatus, onThreadId, onDone, onError, onAbort, onCancelled, signal, errorMessages, onThinking, onToolStart, onToolEnd, onToolError, onUsage } = callbacks;
   let resolvedThreadId: string | undefined;
 
   try {
@@ -74,6 +74,7 @@ export async function streamChat(
                 sawDone = true;
                 onDone?.();
               },
+              onCancelled,
               onThinking,
               onToolStart,
               onToolEnd,
@@ -130,6 +131,22 @@ export async function streamChat(
   }
 }
 
+export async function cancelStream(threadId: string): Promise<void> {
+  try {
+    await fetch(
+      `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/chat/cancel`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ thread_id: threadId }),
+      },
+    );
+  } catch {
+    // Best-effort — the fetch abort will also stop the stream
+  }
+}
+
 function handleChatEvent(
   event: string,
   parsed: Record<string, unknown>,
@@ -141,6 +158,7 @@ function handleChatEvent(
     onThreadId?: (threadId: string) => void;
     onError?: (error: string) => void;
     onDone?: () => void;
+    onCancelled?: () => void;
     onThinking?: (text: string) => void;
     onToolStart?: (tool: { name: string; input?: string; run_id: string }) => void;
     onToolEnd?: (tool: { name: string; output?: string; run_id: string }) => void;
@@ -148,7 +166,7 @@ function handleChatEvent(
     onUsage?: (usage: UsageEntry) => void;
   },
 ) {
-  const { onToken, onItinerary, onComparison, onStatus, onThreadId, onError, onDone, onThinking, onToolStart, onToolEnd, onToolError, onUsage } = callbacks;
+  const { onToken, onItinerary, onComparison, onStatus, onThreadId, onError, onDone, onCancelled, onThinking, onToolStart, onToolEnd, onToolError, onUsage } = callbacks;
 
   switch (event) {
     case 'token': {
@@ -182,6 +200,10 @@ function handleChatEvent(
     }
     case 'done': {
       onDone?.();
+      break;
+    }
+    case 'cancelled': {
+      onCancelled?.();
       break;
     }
     case 'thinking': {
