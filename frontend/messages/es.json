@@ -26,6 +26,7 @@
     "welcome": "¡Hola! Soy tu planificador de viajes con IA. Cuéntame sobre el viaje que estás soñando — ¿a dónde te gustaría ir, por cuánto tiempo y cuál es tu presupuesto?",
     "generationFailed": "⚠ La generación falló: {error}",
     "generationStopped": "⏹ Generación detenida.",
+    "stopped": "Detenido",
     "scrollToLatest": "Desplazar al último mensaje",
     "greeting": "Planifica tu próxima aventura",
     "subtitle": "Cuéntame sobre el viaje que estás soñando — me encargaré del itinerario, presupuesto y reservas.",
