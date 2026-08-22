@@ -29,6 +29,7 @@ from agents.deep_agent import (
 )
 from auth import verify_api_key
 from cache import cache_client
+from cancel_registry import cancel_stream, register_cancel, unregister_cancel
 from config import REQUEST_TIMEOUT_SECONDS, logger, settings
 from models import ChatRequest
 from oauth import (
@@ -150,6 +151,8 @@ def _parse_chat_event(
         return [_sse("comparison", event_data)]
     if event_type == "done":
         return [_sse("done", None)]
+    if event_type == "cancelled":
+        return [_sse("cancelled", None)]
     if event_type == "error":
         return [_sse("error", str(event_data))]
 
@@ -352,10 +355,12 @@ async def chat_stream(
         yield _sse("thread_id", {"thread_id": thread_id})
         yield _sse("status", {"tool": "agent", "status": "thinking"})
 
+        cancel_event = register_cancel(thread_id)
         active_tasks: dict[str, str] = {}
         subagent_run_ids: set[str] = set()
         stream_failed = False
         stream_text = ""
+        was_cancelled = False
 
         # Mark thread as busy at the start of the stream
         try:
@@ -369,7 +374,12 @@ async def chat_stream(
                 thread_id=thread_id,
                 user_id=user_id,
                 locale=locale,
+                cancel_event=cancel_event,
             ):
+                if cancel_event.is_set():
+                    was_cancelled = True
+                    yield _sse("cancelled", None)
+                    break
                 for payload in _parse_chat_event(event, active_tasks, subagent_run_ids):
                     if payload.get("event") == "token":
                         raw = json.loads(payload["data"])
@@ -385,6 +395,7 @@ async def chat_stream(
             stream_failed = True
             yield _sse("error", get_error_message("streaming_failed", locale, error=str(exc)))
         finally:
+            unregister_cancel(thread_id)
             # Save/update thread metadata with AI summary and status — never blocks stream
             try:
                 final_status = "error" if stream_failed else "idle"
@@ -402,6 +413,27 @@ async def chat_stream(
                     pass
 
     return EventSourceResponse(event_generator())
+
+
+@app.post(
+    "/chat/cancel",
+    summary="Cancel an active chat stream",
+    tags=["chat"],
+    dependencies=[Depends(verify_api_key)],
+)
+@limiter.limit("30/minute")
+async def chat_cancel(
+    request: Request,
+    body: dict,
+    user: dict = Depends(get_current_user),
+) -> dict:
+    thread_id = body.get("thread_id", "")
+    if not thread_id:
+        raise HTTPException(status_code=400, detail="thread_id required")
+    user_id = user["user_id"]
+    scoped_thread_id = _scoped_chat_thread_id(thread_id, user_id)
+    cancelled = cancel_stream(scoped_thread_id)
+    return {"cancelled": cancelled}
 
 
 @app.get(
