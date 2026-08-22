@@ -143,10 +143,12 @@ class _ModelStream:
         }
         self._tool_call_index: dict[str, int] = {}
 
-    async def events(self, inputs):
+    async def events(self, inputs, cancel_event=None):
         async for event in self._agent.astream_events(
             inputs, self._config, version="v2"
         ):
+            if cancel_event and cancel_event.is_set():
+                break
             etype = event.get("event", "")
             run_id = event.get("run_id", "")
             edata = event.get("data", {})
@@ -527,6 +529,7 @@ async def stream_chat_agent(
     thread_id: str,
     user_id: str | None = None,
     locale: str | None = None,
+    cancel_event=None,
 ):
     agent = await create_chat_agent(user_id=user_id, locale=locale)
     config = {
@@ -539,9 +542,14 @@ async def stream_chat_agent(
 
     stream = _ModelStream(agent, config)
     async for event in stream.events(
-        {"messages": [{"role": "user", "content": message}]}
+        {"messages": [{"role": "user", "content": message}]},
+        cancel_event=cancel_event,
     ):
         yield event
+
+    if cancel_event and cancel_event.is_set():
+        yield {"event": "cancelled", "data": None}
+        return
 
     # Persist activity metadata for this thread
     if stream.activity["thinking"] or stream.activity["tool_calls"] or stream.activity["usage"]:
