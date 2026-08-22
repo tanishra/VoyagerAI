@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Send, Square, RotateCcw, Globe, Search, ShieldAlert, ListChecks, Loader2, PanelLeft, ChevronDown, Clock, Sparkles, Copy, Check, MapPin, Plane, Calendar, Compass } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useLocale } from '@/lib/useLocale';
-import { streamChat } from '@/lib/chat-api';
+import { streamChat, cancelStream } from '@/lib/chat-api';
 import { listThreads, getThreadHistory, deleteThread, type ThreadMeta } from '@/lib/threads-api';
 import { getSession, type SessionUser } from '@/lib/auth';
 import { useOnlineStatus } from '@/lib/useOnlineStatus';
@@ -416,6 +416,9 @@ export default function ChatPage() {
           onAbort: () => {
             aborted = true;
           },
+          onCancelled: () => {
+            aborted = true;
+          },
           errorMessages: {
             serverResponse: (status, detail) => t('errorServerResponse', { status, detail }),
             responseBody: t('errorResponseBody'),
@@ -435,6 +438,15 @@ export default function ChatPage() {
             updated[idx] = {
               ...updated[idx],
               content: t('generationFailed', { error: errorMessage || 'unknown error' }),
+            };
+          } else if (aborted && accumulatedText) {
+            updated[idx] = {
+              ...updated[idx],
+              content: accumulatedText,
+              itinerary: accumulatedItinerary ?? undefined,
+              comparison: accumulatedComparison ?? undefined,
+              activity: streamingActivityRef.current ?? undefined,
+              wasStopped: true,
             };
           } else if (aborted && !accumulatedText) {
             updated[idx] = { ...updated[idx], content: t('generationStopped') };
@@ -914,6 +926,12 @@ export default function ChatPage() {
                       </div>
                     )}
                     <MarkdownRenderer content={msg.content} />
+                    {msg.wasStopped && (
+                      <span className="inline-flex items-center gap-1 mt-1 text-[10px] text-muted-foreground/60">
+                        <Square className="w-2.5 h-2.5 fill-current" />
+                        {t('stopped')}
+                      </span>
+                    )}
                     {msg.comparison && <ComparisonView data={msg.comparison} onSelect={handleSelectPlan} />}
                     {msg.itinerary && <ItineraryCard itinerary={msg.itinerary} threadId={threadId ?? undefined} />}
                   </div>
@@ -1049,11 +1067,15 @@ export default function ChatPage() {
               />
               {loading && (
                 <button
-                  onClick={() => abortRef.current?.abort()}
-                  className="shrink-0 p-2 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-600 transition-all cursor-pointer"
+                  onClick={() => {
+                    cancelStream(threadId ?? '');
+                    abortRef.current?.abort();
+                  }}
+                  className="shrink-0 inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-muted hover:bg-accent border border-border text-foreground text-xs font-medium transition-all cursor-pointer"
                   aria-label={t('stop')}
                 >
-                  <Square className="w-4 h-4" />
+                  <Square className="w-3 h-3 fill-current" />
+                  {t('stop')}
                 </button>
               )}
               <button
