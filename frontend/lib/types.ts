@@ -95,6 +95,7 @@ export interface ChatMessage {
   itinerary?: Itinerary;
   comparison?: ComparisonData;
   activity?: ActivityData;
+  wasStopped?: boolean;
 }
 
 export interface ChatStreamCallbacks {
@@ -106,6 +107,7 @@ export interface ChatStreamCallbacks {
   onDone?: () => void;
   onError?: (error: string) => void;
   onAbort?: () => void;
+  onCancelled?: () => void;
   onThinking?: (text: string) => void;
   onToolStart?: (tool: { name: string; input?: string; run_id: string }) => void;
   onToolEnd?: (tool: { name: string; output?: string; run_id: string }) => void;
