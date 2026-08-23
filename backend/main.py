@@ -25,7 +25,9 @@ from agents.deep_agent import (
     _extract_chat_itinerary,
     _extract_comparison_from_text,
     _extract_itinerary_from_text,
+    _find_fork_checkpoint,
     create_checkpointer,
+    regenerate_chat_agent,
 )
 from auth import verify_api_key
 from cache import cache_client
@@ -436,6 +438,81 @@ async def chat_cancel(
     return {"cancelled": cancelled}
 
 
+@app.post(
+    "/chat/regenerate",
+    summary="Regenerate the last assistant response",
+    tags=["chat"],
+    dependencies=[Depends(verify_api_key)],
+)
+@limiter.limit("30/minute")
+async def chat_regenerate(
+    request: Request,
+    body: dict,
+    user: dict = Depends(get_current_user),
+):
+    raw_thread_id = body.get("thread_id", "")
+    if not raw_thread_id:
+        raise HTTPException(status_code=400, detail="thread_id required")
+
+    user_id = user["user_id"]
+    thread_id = _scoped_chat_thread_id(raw_thread_id, user_id)
+    locale = extract_locale(request, body.get("locale"))
+
+    logger.info("POST /chat/regenerate — thread_id=%s, user=%s", thread_id, user_id)
+
+    async def event_generator():
+        yield _sse("thread_id", {"thread_id": thread_id})
+        yield _sse("status", {"tool": "agent", "status": "thinking"})
+
+        cancel_event = register_cancel(thread_id)
+        active_tasks: dict[str, str] = {}
+        subagent_run_ids: set[str] = set()
+        stream_failed = False
+        stream_text = ""
+
+        try:
+            await thread_store.update_status(user_id, thread_id, "busy")
+        except Exception:  # noqa: BLE001, S110
+            pass
+
+        try:
+            async for event in regenerate_chat_agent(
+                thread_id=thread_id,
+                user_id=user_id,
+                locale=locale,
+                cancel_event=cancel_event,
+            ):
+                if cancel_event.is_set():
+                    yield _sse("cancelled", None)
+                    break
+                for payload in _parse_chat_event(event, active_tasks, subagent_run_ids):
+                    if payload.get("event") == "token":
+                        raw = json.loads(payload["data"])
+                        stream_text += raw.get("data", "")
+                    yield payload
+        except Exception as exc:  # noqa: BLE001
+            logger.error(
+                "Chat regenerate failed for thread=%s: %s",
+                thread_id,
+                exc,
+                exc_info=True,
+            )
+            stream_failed = True
+            yield _sse("error", get_error_message("streaming_failed", locale, error=str(exc)))
+        finally:
+            unregister_cancel(thread_id)
+            try:
+                final_status = "error" if stream_failed else "idle"
+                summary = await generate_summary("", stream_text, locale=locale)
+                await thread_store.upsert_thread(
+                    user_id, thread_id, summary, status=final_status,
+                )
+            except Exception:  # noqa: BLE001
+                logger.warning("Failed to save thread metadata after regenerate", exc_info=True)
+
+    return EventSourceResponse(event_generator())
+
+
 @app.get(
     "/threads",
     summary="List user's recent threads",
@@ -473,11 +550,12 @@ async def list_threads(
 async def get_thread_history(
     thread_id: str,
     request: Request,
+    checkpoint_id: str | None = None,
     user: dict = Depends(get_current_user),
 ) -> list[dict]:
     user_id = user["user_id"]
     locale = extract_locale(request)
-    logger.info("GET /threads/%s/history user=%s locale=%s", thread_id, user_id, locale)
+    logger.info("GET /threads/%s/history user=%s locale=%s checkpoint_id=%s", thread_id, user_id, locale, checkpoint_id)
 
     # Security: verify the thread belongs to this user
     user_tag = hashlib.sha256(user_id.encode()).hexdigest()[:12]
@@ -490,6 +568,8 @@ async def get_thread_history(
             "configurable": {"thread_id": thread_id, "user_id": user_id},
             "recursion_limit": 100,
         }
+        if checkpoint_id:
+            config["configurable"]["checkpoint_id"] = checkpoint_id
         state = await agent.aget_state(config)
     except Exception:  # noqa: BLE001 (intentional fallback handler)
         logger.warning("Failed to load thread history for %s", thread_id, exc_info=True)
@@ -540,6 +620,87 @@ async def get_thread_history(
         content=result,
         headers={"Cache-Control": "public, max-age=300"},
     )
+
+
+@app.get(
+    "/threads/{thread_id}/branches",
+    summary="List branches for the last assistant response",
+    tags=["threads"],
+    dependencies=[Depends(verify_api_key)],
+)
+@limiter.limit("30/minute")
+async def get_thread_branches(
+    thread_id: str,
+    request: Request,
+    user: dict = Depends(get_current_user),
+) -> dict:
+    user_id = user["user_id"]
+    logger.info("GET /threads/%s/branches user=%s", thread_id, user_id)
+
+    # Security: verify the thread belongs to this user
+    user_tag = hashlib.sha256(user_id.encode()).hexdigest()[:12]
+    if not thread_id.startswith(f"chat:{user_tag}:"):
+        raise HTTPException(status_code=403, detail="Thread does not belong to this user")
+
+    try:
+        agent = await create_chat_agent(user_id=user_id)
+        config = {
+            "configurable": {"thread_id": thread_id, "user_id": user_id},
+            "recursion_limit": 100,
+        }
+
+        # Find the fork point (checkpoint before last assistant response)
+        fork_config = await _find_fork_checkpoint(agent, config)
+        if fork_config is None:
+            return {"branches": []}
+
+        fork_checkpoint_id = fork_config.get("configurable", {}).get("checkpoint_id", "")
+
+        # Get current state's checkpoint_id
+        current_state = await agent.aget_state(config)
+        current_checkpoint_id = ""
+        if current_state and current_state.config:
+            current_checkpoint_id = current_state.config.get("configurable", {}).get("checkpoint_id", "")
+
+        # Iterate state history to find all branches from the same fork point
+        branches: list[dict] = []
+        seen_checkpoint_ids: set[str] = set()
+
+        async for snapshot in agent.aget_state_history(config):
+            parent_config = snapshot.parent_config
+            if parent_config is None:
+                continue
+            parent_checkpoint_id = parent_config.get("configurable", {}).get("checkpoint_id", "")
+
+            # Only include checkpoints whose parent is the fork point
+            if parent_checkpoint_id != fork_checkpoint_id:
+                continue
+
+            snap_checkpoint_id = snapshot.config.get("configurable", {}).get("checkpoint_id", "")
+            if snap_checkpoint_id in seen_checkpoint_ids:
+                continue
+            seen_checkpoint_ids.add(snap_checkpoint_id)
+
+            # Get the last message content for this branch (for display)
+            messages = snapshot.values.get("messages", [])
+            last_content = ""
+            if messages:
+                last_msg = messages[-1]
+                last_content = getattr(last_msg, "content", "")
+                if not isinstance(last_content, str):
+                    last_content = str(last_content)
+
+            branches.append({
+                "checkpoint_id": snap_checkpoint_id,
+                "is_current": snap_checkpoint_id == current_checkpoint_id,
+                "preview": last_content[:200],
+            })
+
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Failed to load branches for %s: %s", thread_id, exc, exc_info=True)
+        raise HTTPException(status_code=503, detail="Failed to load branches")
+
+    return {"branches": branches}
 
 
 @app.delete(
