@@ -1,4 +1,4 @@
-import type { ChatStreamCallbacks, ComparisonData, Itinerary, UsageEntry } from './types';
+import type { BranchInfo, ChatStreamCallbacks, ComparisonData, Itinerary, UsageEntry } from './types';
 
 function parseSSELine(line: string): { event?: string; data?: string } | null {
   if (line.startsWith('event: ')) return { event: line.slice(7).trim() };
@@ -231,5 +231,108 @@ function handleChatEvent(
       onUsage?.(data);
       break;
     }
+  }
+}
+
+export async function regenerateStream(
+  body: { thread_id: string; locale?: string },
+  callbacks: ChatStreamCallbacks,
+): Promise<string | undefined> {
+  const { onToken, onItinerary, onComparison, onStatus, onThreadId, onDone, onError, onAbort, onCancelled, signal, errorMessages, onThinking, onToolStart, onToolEnd, onToolError, onUsage } = callbacks;
+  let resolvedThreadId: string | undefined;
+
+  try {
+    const response = await fetch(
+      `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/chat/regenerate`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'text/event-stream',
+          ...(body.locale ? { 'Accept-Language': body.locale } : {}),
+        },
+        body: JSON.stringify(body),
+        signal,
+        credentials: 'include',
+      },
+    );
+
+    if (response.status === 401) {
+      window.location.href = '/login';
+      return undefined;
+    }
+
+    if (!response.ok || !response.body) {
+      onError?.(`HTTP ${response.status}`);
+      return undefined;
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      const lines = buffer.split('\n');
+      buffer = lines.pop() ?? '';
+
+      let currentEvent: string | undefined;
+      for (const line of lines) {
+        const parsed = parseSSELine(line);
+        if (!parsed) continue;
+        if (parsed.event) {
+          currentEvent = parsed.event;
+          continue;
+        }
+        if (parsed.data && currentEvent) {
+          let data: Record<string, unknown>;
+          try {
+            data = JSON.parse(parsed.data);
+          } catch {
+            data = { data: parsed.data };
+          }
+          if (currentEvent === 'thread_id') {
+            const tid = data.thread_id as string;
+            if (tid) {
+              resolvedThreadId = tid;
+              onThreadId?.(tid);
+            }
+          } else {
+            handleChatEvent(currentEvent, data, {
+              onToken, onItinerary, onComparison, onStatus, onThreadId, onDone, onError, onCancelled, onThinking, onToolStart, onToolEnd, onToolError, onUsage,
+            });
+          }
+        }
+      }
+    }
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      onAbort?.();
+    } else {
+      onError?.(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  return resolvedThreadId;
+}
+
+export async function getBranches(threadId: string): Promise<BranchInfo[]> {
+  try {
+    const res = await fetch(
+      `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/threads/${threadId}/branches`,
+      { credentials: 'include' },
+    );
+    if (res.status === 401) {
+      window.location.href = '/login';
+      return [];
+    }
+    if (!res.ok) return [];
+    const data = await res.json();
+    return data.branches ?? [];
+  } catch {
+    return [];
   }
 }
