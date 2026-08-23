@@ -2,11 +2,11 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Send, Square, RotateCcw, Globe, Search, ShieldAlert, ListChecks, Loader2, PanelLeft, ChevronDown, Clock, Sparkles, Copy, Check, MapPin, Plane, Calendar, Compass } from 'lucide-react';
+import { Send, Square, RotateCcw, Globe, Search, ShieldAlert, ListChecks, Loader2, PanelLeft, ChevronDown, ChevronLeft, ChevronRight, Clock, Sparkles, Copy, Check, MapPin, Plane, Calendar, Compass } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useLocale } from '@/lib/useLocale';
-import { streamChat, cancelStream } from '@/lib/chat-api';
-import { listThreads, getThreadHistory, deleteThread, type ThreadMeta } from '@/lib/threads-api';
+import { streamChat, cancelStream, regenerateStream } from '@/lib/chat-api';
+import { listThreads, getThreadHistory, getBranches, deleteThread, type ThreadMeta } from '@/lib/threads-api';
 import { getSession, type SessionUser } from '@/lib/auth';
 import { useOnlineStatus } from '@/lib/useOnlineStatus';
 import { queueMessage, replayQueuedMessages, type QueuedMessage } from '@/lib/message-queue';
@@ -19,7 +19,7 @@ import ToolCallCard from '@/components/ToolCallCard';
 import SubagentTimeline from '@/components/SubagentTimeline';
 import ComparisonView from './ComparisonView';
 import ThreadSidebar from './ThreadSidebar';
-import type { ChatMessage, ComparisonData, Itinerary, ActivityData } from '@/lib/types';
+import type { ChatMessage, ComparisonData, Itinerary, ActivityData, BranchInfo } from '@/lib/types';
 
 const THREAD_STORAGE_KEY = 'voyagerai_chat_thread_id';
 
@@ -98,6 +98,9 @@ export default function ChatPage() {
   const isOnline = useOnlineStatus();
   const [pendingMessages, setPendingMessages] = useState<QueuedMessage[]>([]);
   const [replaying, setReplaying] = useState(false);
+  const [branches, setBranches] = useState<BranchInfo[]>([]);
+  const [activeBranchIndex, setActiveBranchIndex] = useState(0);
+  const [regenerating, setRegenerating] = useState(false);
 
   const abortRef = useRef<AbortController | null>(null);
   const sendingRef = useRef(false);
@@ -190,6 +193,8 @@ export default function ChatPage() {
     setSidebarOpen(false);
     setMessages([]);
     setThreadId(null);
+    setBranches([]);
+    setActiveBranchIndex(0);
     localStorage.removeItem(THREAD_STORAGE_KEY);
     setError(null);
     setStreamingText('');
@@ -206,6 +211,8 @@ export default function ChatPage() {
     abortRef.current?.abort();
     setLoadingHistory(true);
     setThreadId(selectedThreadId);
+    setBranches([]);
+    setActiveBranchIndex(0);
     setSidebarOpen(false);
     try {
       localStorage.setItem(THREAD_STORAGE_KEY, selectedThreadId);
@@ -488,6 +495,224 @@ export default function ChatPage() {
       });
     }
   }, [input, loading, threadId, isOnline]);
+
+  const handleRegenerate = useCallback(async () => {
+    if (!threadId || loading || regenerating) return;
+
+    setRegenerating(true);
+    setError(null);
+    setStreamingText('');
+    setStreamingItinerary(null);
+    setStreamingComparison(null);
+    setStreamingActivity(null);
+    streamingActivityRef.current = null;
+    setActiveWorkers([]);
+
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    let accumulatedText = '';
+    let accumulatedItinerary: Itinerary | null = null;
+    let accumulatedComparison: ComparisonData | null = null;
+    let streamFailed = false;
+    let errorMessage = '';
+    let aborted = false;
+
+    try {
+      await regenerateStream(
+        { thread_id: threadId, locale },
+        {
+          signal: controller.signal,
+          onToken: (token) => {
+            accumulatedText += token;
+            setStreamingText(accumulatedText);
+          },
+          onItinerary: (itinerary) => {
+            accumulatedItinerary = itinerary;
+            setStreamingItinerary(itinerary);
+          },
+          onComparison: (data) => {
+            accumulatedComparison = data;
+            setStreamingComparison(data);
+          },
+          onThreadId: (tid) => {
+            if (sessionResetRef.current) return;
+          },
+          onStatus: (status) => {
+            const tool = status.tool;
+            if (!TOOL_LABEL_KEYS[tool]) return;
+            setActiveWorkers((prev) =>
+              status.status === 'running'
+                ? prev.includes(tool) ? prev : [...prev, tool]
+                : prev.filter((t) => t !== tool),
+            );
+          },
+          onThinking: (text) => {
+            const next = {
+              thinking: [...(streamingActivityRef.current?.thinking ?? []), { text }],
+              tool_calls: streamingActivityRef.current?.tool_calls ?? [],
+              usage: streamingActivityRef.current?.usage ?? [],
+              total_input_tokens: streamingActivityRef.current?.total_input_tokens ?? 0,
+              total_output_tokens: streamingActivityRef.current?.total_output_tokens ?? 0,
+            };
+            streamingActivityRef.current = next;
+            setStreamingActivity(next);
+          },
+          onToolStart: (tool) => {
+            const next = {
+              thinking: streamingActivityRef.current?.thinking ?? [],
+              tool_calls: [...(streamingActivityRef.current?.tool_calls ?? []), {
+                run_id: tool.run_id,
+                name: tool.name,
+                input: tool.input,
+                status: 'running' as const,
+                started_at: Date.now(),
+              }],
+              usage: streamingActivityRef.current?.usage ?? [],
+              total_input_tokens: streamingActivityRef.current?.total_input_tokens ?? 0,
+              total_output_tokens: streamingActivityRef.current?.total_output_tokens ?? 0,
+            };
+            streamingActivityRef.current = next;
+            setStreamingActivity(next);
+          },
+          onToolEnd: (tool) => {
+            const next = {
+              thinking: streamingActivityRef.current?.thinking ?? [],
+              tool_calls: (streamingActivityRef.current?.tool_calls ?? []).map((tc) =>
+                tc.run_id === tool.run_id
+                  ? { ...tc, output: tool.output, status: 'done' as const, ended_at: Date.now() }
+                  : tc
+              ),
+              usage: streamingActivityRef.current?.usage ?? [],
+              total_input_tokens: streamingActivityRef.current?.total_input_tokens ?? 0,
+              total_output_tokens: streamingActivityRef.current?.total_output_tokens ?? 0,
+            };
+            streamingActivityRef.current = next;
+            setStreamingActivity(next);
+          },
+          onToolError: (tool) => {
+            const next = {
+              thinking: streamingActivityRef.current?.thinking ?? [],
+              tool_calls: (streamingActivityRef.current?.tool_calls ?? []).map((tc) =>
+                tc.run_id === tool.run_id
+                  ? { ...tc, error: tool.error, status: 'error' as const, ended_at: Date.now() }
+                  : tc
+              ),
+              usage: streamingActivityRef.current?.usage ?? [],
+              total_input_tokens: streamingActivityRef.current?.total_input_tokens ?? 0,
+              total_output_tokens: streamingActivityRef.current?.total_output_tokens ?? 0,
+            };
+            streamingActivityRef.current = next;
+            setStreamingActivity(next);
+          },
+          onUsage: (usage) => {
+            const next = {
+              thinking: streamingActivityRef.current?.thinking ?? [],
+              tool_calls: streamingActivityRef.current?.tool_calls ?? [],
+              usage: [...(streamingActivityRef.current?.usage ?? []), usage],
+              total_input_tokens: (streamingActivityRef.current?.total_input_tokens ?? 0) + usage.input_tokens,
+              total_output_tokens: (streamingActivityRef.current?.total_output_tokens ?? 0) + usage.output_tokens,
+            };
+            streamingActivityRef.current = next;
+            setStreamingActivity(next);
+          },
+          onError: (msg) => {
+            streamFailed = true;
+            errorMessage = msg;
+            setError(msg);
+          },
+          onAbort: () => {
+            aborted = true;
+          },
+          onCancelled: () => {
+            aborted = true;
+          },
+          onDone: () => {},
+        },
+      );
+    } finally {
+      // Replace the last assistant message with the regenerated response
+      setMessages((prev) => {
+        const updated = [...prev];
+        // Find the last assistant message
+        for (let i = updated.length - 1; i >= 0; i--) {
+          if (updated[i].role === 'assistant') {
+            if (streamFailed) {
+              updated[i] = {
+                ...updated[i],
+                content: accumulatedText || (errorMessage || t('generationFailed', { error: '' })),
+              };
+            } else if (aborted) {
+              updated[i] = {
+                ...updated[i],
+                content: accumulatedText,
+                wasStopped: true,
+              };
+            } else {
+              updated[i] = {
+                ...updated[i],
+                content: accumulatedText,
+                itinerary: accumulatedItinerary ?? undefined,
+                comparison: accumulatedComparison ?? undefined,
+                activity: streamingActivityRef.current ?? undefined,
+              };
+            }
+            break;
+          }
+        }
+        return updated;
+      });
+
+      setRegenerating(false);
+      setLoading(false);
+      abortRef.current = null;
+      setActiveWorkers([]);
+      setStreamingText('');
+      setStreamingItinerary(null);
+      setStreamingComparison(null);
+      setStreamingActivity(null);
+      streamingActivityRef.current = null;
+
+      // Fetch branches after regeneration
+      if (threadId && !aborted) {
+        const branchList = await getBranches(threadId);
+        setBranches(branchList);
+        const currentIdx = branchList.findIndex((b) => b.is_current);
+        setActiveBranchIndex(currentIdx >= 0 ? currentIdx : 0);
+      }
+
+      listThreads().then((res) => {
+        setThreads(res.threads);
+        setHasMoreThreads(res.has_more);
+      });
+    }
+  }, [threadId, loading, regenerating, locale, t]);
+
+  const handleSwitchBranch = useCallback(async (checkpointId: string, index: number) => {
+    if (!threadId) return;
+
+    setLoadingHistory(true);
+    try {
+      const history = await getThreadHistory(threadId, checkpointId);
+      const historyMessages: ChatMessage[] = history.map((msg, i) => ({
+        id: `branch-${i}`,
+        role: msg.role,
+        content: msg.content,
+        itinerary: msg.itinerary,
+        comparison: msg.comparison,
+        activity: msg.activity,
+      }));
+
+      setMessages(historyMessages);
+      setActiveBranchIndex(index);
+      setBranches((prev) => prev.map((b, i) => ({
+        ...b,
+        is_current: i === index,
+      })));
+    } finally {
+      setLoadingHistory(false);
+    }
+  }, [threadId]);
 
   // Replay queued messages when back online
   useEffect(() => {
@@ -935,22 +1160,57 @@ export default function ChatPage() {
                     {msg.comparison && <ComparisonView data={msg.comparison} onSelect={handleSelectPlan} />}
                     {msg.itinerary && <ItineraryCard itinerary={msg.itinerary} threadId={threadId ?? undefined} />}
                   </div>
-                  {/* Copy + Regenerate buttons */}
+                  {/* Copy + Regenerate + Branch navigation buttons */}
                   {msg.content && (
                     <div className="flex items-center gap-1 px-1 mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
                       <CopyButton content={msg.content} />
                       {isLastAssistant && prevUserMsg && (
-                        <button
-                          onClick={() => {
-                            setMessages((prev) => prev.slice(0, msgIndex));
-                            handleSend(prevUserMsg.content);
-                          }}
-                          className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-                          aria-label={t('regenerate')}
-                          title={t('regenerate')}
-                        >
-                          <RotateCcw className="w-3.5 h-3.5" />
-                        </button>
+                        <>
+                          <button
+                            onClick={() => handleRegenerate()}
+                            disabled={regenerating}
+                            className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                            aria-label={regenerating ? t('regenerating') : t('regenerate')}
+                            title={regenerating ? t('regenerating') : t('regenerate')}
+                          >
+                            {regenerating ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                              <RotateCcw className="w-3.5 h-3.5" />
+                            )}
+                          </button>
+                          {branches.length > 1 && (
+                            <div className="flex items-center gap-0.5 ml-1">
+                              <button
+                                onClick={() => {
+                                  const prevIdx = activeBranchIndex > 0 ? activeBranchIndex - 1 : branches.length - 1;
+                                  handleSwitchBranch(branches[prevIdx].checkpoint_id, prevIdx);
+                                }}
+                                disabled={loadingHistory}
+                                className="p-1 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors cursor-pointer disabled:opacity-50"
+                                aria-label={t('previousBranch')}
+                                title={t('previousBranch')}
+                              >
+                                <ChevronLeft className="w-3.5 h-3.5" />
+                              </button>
+                              <span className="text-[10px] text-muted-foreground tabular-nums px-0.5">
+                                {activeBranchIndex + 1}/{branches.length}
+                              </span>
+                              <button
+                                onClick={() => {
+                                  const nextIdx = activeBranchIndex < branches.length - 1 ? activeBranchIndex + 1 : 0;
+                                  handleSwitchBranch(branches[nextIdx].checkpoint_id, nextIdx);
+                                }}
+                                disabled={loadingHistory}
+                                className="p-1 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors cursor-pointer disabled:opacity-50"
+                                aria-label={t('nextBranch')}
+                                title={t('nextBranch')}
+                              >
+                                <ChevronRight className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          )}
+                        </>
                       )}
                     </div>
                   )}
@@ -979,7 +1239,7 @@ export default function ChatPage() {
           ))}
 
           {/* Streaming message */}
-          {loading && (
+          {(loading || regenerating) && (
             <motion.div
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
@@ -1061,11 +1321,11 @@ export default function ChatPage() {
                 onKeyDown={handleKeyDown}
                 placeholder={t('placeholder')}
                 rows={1}
-                disabled={loading}
+                disabled={loading || regenerating}
                 aria-label={t('messageInput')}
                 className="flex-1 bg-transparent border-0 text-sm text-foreground placeholder:text-muted-foreground/50 resize-none outline-none focus:ring-0 transition-colors disabled:opacity-50 max-h-32 leading-6"
               />
-              {loading && (
+              {(loading || regenerating) && (
                 <button
                   onClick={() => {
                     cancelStream(threadId ?? '');
