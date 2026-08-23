@@ -88,6 +88,12 @@ export interface ActivityData {
   total_output_tokens: number;
 }
 
+export interface BranchInfo {
+  checkpoint_id: string;
+  is_current: boolean;
+  preview?: string;
+}
+
 export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
@@ -96,6 +102,8 @@ export interface ChatMessage {
   comparison?: ComparisonData;
   activity?: ActivityData;
   wasStopped?: boolean;
+  branches?: BranchInfo[];
+  activeBranchIndex?: number;
 }
 
 export interface ChatStreamCallbacks {
