@@ -1,4 +1,4 @@
-import type { Itinerary, ComparisonData, ActivityData } from '@/lib/types';
+import type { Itinerary, ComparisonData, ActivityData, BranchInfo } from '@/lib/types';
 import { putThreads, getAllCachedThreads, putThreadHistory, getCachedThreadHistory, clearOldThreads } from './offline-db';
 
 export interface ThreadMeta {
@@ -53,9 +53,13 @@ export async function listThreads(offset: number = 0): Promise<ThreadListRespons
   }
 }
 
-export async function getThreadHistory(threadId: string): Promise<ThreadMessage[]> {
+export async function getThreadHistory(threadId: string, checkpointId?: string): Promise<ThreadMessage[]> {
   try {
-    const res = await fetch(`${API_URL}/threads/${threadId}/history`, {
+    const url = new URL(`${API_URL}/threads/${threadId}/history`);
+    if (checkpointId) {
+      url.searchParams.set('checkpoint_id', checkpointId);
+    }
+    const res = await fetch(url.toString(), {
       credentials: 'include',
     });
     if (res.status === 401) {
@@ -70,6 +74,23 @@ export async function getThreadHistory(threadId: string): Promise<ThreadMessage[
   } catch {
     // Network failure — fall back to cached history
     return getCachedThreadHistory(threadId);
+  }
+}
+
+export async function getBranches(threadId: string): Promise<BranchInfo[]> {
+  try {
+    const res = await fetch(`${API_URL}/threads/${threadId}/branches`, {
+      credentials: 'include',
+    });
+    if (res.status === 401) {
+      window.location.href = '/login';
+      return [];
+    }
+    if (!res.ok) return [];
+    const data = await res.json();
+    return data.branches ?? [];
+  } catch {
+    return [];
   }
 }
 
