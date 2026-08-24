@@ -336,3 +336,88 @@ export async function getBranches(threadId: string): Promise<BranchInfo[]> {
     return [];
   }
 }
+
+export async function editStream(
+  body: { thread_id: string; message: string; locale?: string },
+  callbacks: ChatStreamCallbacks,
+): Promise<string | undefined> {
+  const { onToken, onItinerary, onComparison, onStatus, onThreadId, onDone, onError, onAbort, onCancelled, signal, errorMessages, onThinking, onToolStart, onToolEnd, onToolError, onUsage } = callbacks;
+  let resolvedThreadId: string | undefined;
+
+  try {
+    const response = await fetch(
+      `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/chat/edit`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'text/event-stream',
+          ...(body.locale ? { 'Accept-Language': body.locale } : {}),
+        },
+        body: JSON.stringify(body),
+        signal,
+        credentials: 'include',
+      },
+    );
+
+    if (response.status === 401) {
+      window.location.href = '/login';
+      return undefined;
+    }
+
+    if (!response.ok || !response.body) {
+      onError?.(`HTTP ${response.status}`);
+      return undefined;
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      const lines = buffer.split('\n');
+      buffer = lines.pop() ?? '';
+
+      let currentEvent: string | undefined;
+      for (const line of lines) {
+        const parsed = parseSSELine(line);
+        if (!parsed) continue;
+        if (parsed.event) {
+          currentEvent = parsed.event;
+          continue;
+        }
+        if (parsed.data && currentEvent) {
+          let data: Record<string, unknown>;
+          try {
+            data = JSON.parse(parsed.data);
+          } catch {
+            data = { data: parsed.data };
+          }
+          if (currentEvent === 'thread_id') {
+            const tid = data.thread_id as string;
+            if (tid) {
+              resolvedThreadId = tid;
+              onThreadId?.(tid);
+            }
+          } else {
+            handleChatEvent(currentEvent, data, {
+              onToken, onItinerary, onComparison, onStatus, onThreadId, onDone, onError, onCancelled, onThinking, onToolStart, onToolEnd, onToolError, onUsage,
+            });
+          }
+        }
+      }
+    }
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      onAbort?.();
+    } else {
+      onError?.(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  return resolvedThreadId;
+}
