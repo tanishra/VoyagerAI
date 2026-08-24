@@ -771,3 +771,137 @@ async def regenerate_chat_agent(
         except Exception:
             store = InMemoryStore()
         await save_activity(store, thread_id, stream.activity)
+
+
+async def _find_edit_fork_checkpoint(agent, config) -> dict | None:
+    """Find the parent checkpoint of the last user message.
+
+    Unlike _find_fork_checkpoint (which returns the checkpoint WHERE the
+    last message is human), this returns the PARENT of that checkpoint —
+    i.e. the state just before the user's message was added. This lets us
+    inject edited content as a fresh user message at the fork point.
+    """
+    async for snapshot in agent.aget_state_history(config):
+        messages = snapshot.values.get("messages", [])
+        if not messages:
+            continue
+        last_msg = messages[-1]
+        if getattr(last_msg, "type", "") == "human":
+            parent = snapshot.parent_config
+            if parent is not None:
+                return parent
+            return snapshot.config
+    return None
+
+
+async def edit_chat_agent(
+    thread_id: str,
+    new_message: str,
+    user_id: str | None = None,
+    locale: str | None = None,
+    cancel_event=None,
+):
+    """Edit the last user message and regenerate the assistant response.
+
+    Finds the parent checkpoint of the last user message, creates a pure
+    fork, then streams with the new edited content as a fresh user message.
+    The original branch is preserved; this creates a new branch.
+    """
+    agent = await create_chat_agent(user_id=user_id, locale=locale)
+    config = {
+        "configurable": {
+            "thread_id": thread_id,
+            "user_id": user_id or "anonymous",
+        },
+        "recursion_limit": 100,
+    }
+
+    fork_config = await _find_edit_fork_checkpoint(agent, config)
+    if fork_config is None:
+        yield {"event": "error", "data": "No messages to edit"}
+        return
+
+    forked_config = await agent.aupdate_state(fork_config, None)
+
+    stream = _ModelStream(agent, forked_config)
+    async for event in stream.events(
+        {"messages": [{"role": "user", "content": new_message}]},
+        cancel_event=cancel_event,
+    ):
+        yield event
+
+    if cancel_event and cancel_event.is_set():
+        yield {"event": "cancelled", "data": None}
+        return
+
+    if stream.activity["thinking"] or stream.activity["tool_calls"] or stream.activity["usage"]:
+        try:
+            store = create_redis_store() if settings.STORE_BACKEND == "redis" else InMemoryStore()
+        except Exception:
+            store = InMemoryStore()
+        await save_activity(store, thread_id, stream.activity)
+
+    stream_text = stream.last_text()
+    logger.info("edit finished: last_text len=%d, has_tags=%s", len(stream_text), bool(stream_text and (_ITINERARY_TAG_RE.search(stream_text) or _COMPARISON_TAG_RE.search(stream_text))))
+
+    has_tags = bool(stream_text and (
+        _ITINERARY_TAG_RE.search(stream_text) or _COMPARISON_TAG_RE.search(stream_text)
+    ))
+
+    if not has_tags:
+        yield {"event": "done", "data": None}
+        return
+
+    comparison = _extract_comparison_from_text(stream_text) if stream_text else None
+
+    if comparison is None:
+        itinerary = _extract_itinerary_from_text(stream_text) if stream_text else None
+        if itinerary is None:
+            state = await agent.aget_state(forked_config)
+            itinerary = _extract_chat_itinerary(state.values)
+
+        if itinerary is None:
+            retry = _ModelStream(agent, forked_config)
+            async for event in retry.events(
+                {
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": _extraction_failure_hint(state.values, stream_text),
+                        }
+                    ]
+                },
+                cancel_event=cancel_event,
+            ):
+                yield event
+
+            if cancel_event and cancel_event.is_set():
+                yield {"event": "cancelled", "data": None}
+                return
+
+            stream_text = stream.last_text() or retry.last_text()
+            comparison = _extract_comparison_from_text(stream_text) if stream_text else None
+            if comparison is None:
+                itinerary = _extract_itinerary_from_text(stream_text) if stream_text else None
+                if itinerary is None:
+                    state = await agent.aget_state(forked_config)
+                    itinerary = _extract_chat_itinerary(state.values)
+            else:
+                itinerary = None
+
+    try:
+        if comparison is not None:
+            yield {"event": "comparison", "data": comparison}
+        elif itinerary is not None:
+            itinerary = await _enrich_itinerary_with_coordinates(itinerary)
+            yield {"event": "itinerary", "data": itinerary}
+        yield {"event": "done", "data": None}
+    except (ValueError, json.JSONDecodeError) as exc:
+        yield {"event": "error", "data": str(exc)}
+
+    if stream.activity["thinking"] or stream.activity["tool_calls"] or stream.activity["usage"]:
+        try:
+            store = create_redis_store() if settings.STORE_BACKEND == "redis" else InMemoryStore()
+        except Exception:
+            store = InMemoryStore()
+        await save_activity(store, thread_id, stream.activity)
