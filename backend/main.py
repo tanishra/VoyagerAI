@@ -27,6 +27,7 @@ from agents.deep_agent import (
     _extract_itinerary_from_text,
     _find_fork_checkpoint,
     create_checkpointer,
+    edit_chat_agent,
     regenerate_chat_agent,
 )
 from auth import verify_api_key
@@ -509,6 +510,86 @@ async def chat_regenerate(
                 )
             except Exception:  # noqa: BLE001
                 logger.warning("Failed to save thread metadata after regenerate", exc_info=True)
+
+    return EventSourceResponse(event_generator())
+
+
+@app.post(
+    "/chat/edit",
+    summary="Edit the last user message and regenerate the assistant response",
+    tags=["chat"],
+    dependencies=[Depends(verify_api_key)],
+)
+@limiter.limit("30/minute")
+async def chat_edit(
+    request: Request,
+    body: dict,
+    user: dict = Depends(get_current_user),
+):
+    raw_thread_id = body.get("thread_id", "")
+    if not raw_thread_id:
+        raise HTTPException(status_code=400, detail="thread_id required")
+
+    new_message = body.get("message", "")
+    if not new_message:
+        raise HTTPException(status_code=400, detail="message required")
+
+    user_id = user["user_id"]
+    thread_id = _scoped_chat_thread_id(raw_thread_id, user_id)
+    locale = extract_locale(request, body.get("locale"))
+
+    logger.info("POST /chat/edit — thread_id=%s, user=%s", thread_id, user_id)
+
+    async def event_generator():
+        yield _sse("thread_id", {"thread_id": thread_id})
+        yield _sse("status", {"tool": "agent", "status": "thinking"})
+
+        cancel_event = register_cancel(thread_id)
+        active_tasks: dict[str, str] = {}
+        subagent_run_ids: set[str] = set()
+        stream_failed = False
+        stream_text = ""
+
+        try:
+            await thread_store.update_status(user_id, thread_id, "busy")
+        except Exception:  # noqa: BLE001, S110
+            pass
+
+        try:
+            async for event in edit_chat_agent(
+                thread_id=thread_id,
+                new_message=new_message,
+                user_id=user_id,
+                locale=locale,
+                cancel_event=cancel_event,
+            ):
+                if cancel_event.is_set():
+                    yield _sse("cancelled", None)
+                    break
+                for payload in _parse_chat_event(event, active_tasks, subagent_run_ids):
+                    if payload.get("event") == "token":
+                        raw = json.loads(payload["data"])
+                        stream_text += raw.get("data", "")
+                    yield payload
+        except Exception as exc:  # noqa: BLE001
+            logger.error(
+                "Chat edit failed for thread=%s: %s",
+                thread_id,
+                exc,
+                exc_info=True,
+            )
+            stream_failed = True
+            yield _sse("error", get_error_message("streaming_failed", locale, error=str(exc)))
+        finally:
+            unregister_cancel(thread_id)
+            try:
+                final_status = "error" if stream_failed else "idle"
+                summary = await generate_summary(new_message, stream_text, locale=locale)
+                await thread_store.upsert_thread(
+                    user_id, thread_id, summary, status=final_status,
+                )
+            except Exception:  # noqa: BLE001
+                logger.warning("Failed to save thread metadata after edit", exc_info=True)
 
     return EventSourceResponse(event_generator())
 
