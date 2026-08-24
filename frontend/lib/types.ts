@@ -102,6 +102,7 @@ export interface ChatMessage {
   comparison?: ComparisonData;
   activity?: ActivityData;
   wasStopped?: boolean;
+  editing?: boolean;
   branches?: BranchInfo[];
   activeBranchIndex?: number;
 }
