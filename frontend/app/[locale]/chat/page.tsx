@@ -2,10 +2,10 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Send, Square, RotateCcw, Globe, Search, ShieldAlert, ListChecks, Loader2, PanelLeft, ChevronDown, ChevronLeft, ChevronRight, Clock, Sparkles, Copy, Check, MapPin, Plane, Calendar, Compass } from 'lucide-react';
+import { Send, Square, RotateCcw, Globe, Search, ShieldAlert, ListChecks, Loader2, PanelLeft, ChevronDown, ChevronLeft, ChevronRight, Clock, Sparkles, Copy, Check, MapPin, Plane, Calendar, Compass, Pencil, X } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useLocale } from '@/lib/useLocale';
-import { streamChat, cancelStream, regenerateStream } from '@/lib/chat-api';
+import { streamChat, cancelStream, regenerateStream, editStream } from '@/lib/chat-api';
 import { listThreads, getThreadHistory, getBranches, deleteThread, type ThreadMeta } from '@/lib/threads-api';
 import { getSession, type SessionUser } from '@/lib/auth';
 import { useOnlineStatus } from '@/lib/useOnlineStatus';
@@ -101,6 +101,8 @@ export default function ChatPage() {
   const [branches, setBranches] = useState<BranchInfo[]>([]);
   const [activeBranchIndex, setActiveBranchIndex] = useState(0);
   const [regenerating, setRegenerating] = useState(false);
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [editContent, setEditContent] = useState('');
 
   const abortRef = useRef<AbortController | null>(null);
   const sendingRef = useRef(false);
@@ -195,6 +197,8 @@ export default function ChatPage() {
     setThreadId(null);
     setBranches([]);
     setActiveBranchIndex(0);
+    setEditingMessageId(null);
+    setEditContent('');
     localStorage.removeItem(THREAD_STORAGE_KEY);
     setError(null);
     setStreamingText('');
@@ -213,6 +217,8 @@ export default function ChatPage() {
     setThreadId(selectedThreadId);
     setBranches([]);
     setActiveBranchIndex(0);
+    setEditingMessageId(null);
+    setEditContent('');
     setSidebarOpen(false);
     try {
       localStorage.setItem(THREAD_STORAGE_KEY, selectedThreadId);
@@ -714,6 +720,200 @@ export default function ChatPage() {
     }
   }, [threadId]);
 
+  const handleEditSave = useCallback(async () => {
+    if (!threadId || !editingMessageId || !editContent.trim()) return;
+
+    setEditingMessageId(null);
+    setLoading(true);
+    setError(null);
+    setStreamingText('');
+    setStreamingItinerary(null);
+    setStreamingComparison(null);
+    setStreamingActivity(null);
+    streamingActivityRef.current = null;
+    setActiveWorkers([]);
+
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    let accumulatedText = '';
+    let accumulatedItinerary: Itinerary | null = null;
+    let accumulatedComparison: ComparisonData | null = null;
+    let streamFailed = false;
+    let errorMessage = '';
+    let aborted = false;
+
+    const updateActivity = (updater: (prev: ActivityData | null) => ActivityData) => {
+      const next = updater(streamingActivityRef.current);
+      streamingActivityRef.current = next;
+      setStreamingActivity(next);
+    };
+
+    try {
+      await editStream(
+        { thread_id: threadId, message: editContent.trim(), locale },
+        {
+          signal: controller.signal,
+          onToken: (token) => {
+            accumulatedText += token;
+            setStreamingText(accumulatedText);
+          },
+          onItinerary: (itinerary) => {
+            accumulatedItinerary = itinerary;
+            setStreamingItinerary(itinerary);
+          },
+          onComparison: (data) => {
+            accumulatedComparison = data;
+            setStreamingComparison(data);
+          },
+          onThreadId: () => {},
+          onStatus: (status) => {
+            const tool = status.tool;
+            if (!TOOL_LABEL_KEYS[tool]) return;
+            setActiveWorkers((prev) =>
+              status.status === 'running'
+                ? prev.includes(tool) ? prev : [...prev, tool]
+                : prev.filter((t) => t !== tool),
+            );
+          },
+          onThinking: (text) => {
+            updateActivity((prev) => ({
+              thinking: [...(prev?.thinking ?? []), { text }],
+              tool_calls: prev?.tool_calls ?? [],
+              usage: prev?.usage ?? [],
+              total_input_tokens: prev?.total_input_tokens ?? 0,
+              total_output_tokens: prev?.total_output_tokens ?? 0,
+            }));
+          },
+          onToolStart: (tool) => {
+            updateActivity((prev) => ({
+              thinking: prev?.thinking ?? [],
+              tool_calls: [...(prev?.tool_calls ?? []), {
+                run_id: tool.run_id,
+                name: tool.name,
+                input: tool.input,
+                status: 'running' as const,
+                started_at: Date.now(),
+              }],
+              usage: prev?.usage ?? [],
+              total_input_tokens: prev?.total_input_tokens ?? 0,
+              total_output_tokens: prev?.total_output_tokens ?? 0,
+            }));
+          },
+          onToolEnd: (tool) => {
+            updateActivity((prev) => ({
+              thinking: prev?.thinking ?? [],
+              tool_calls: (prev?.tool_calls ?? []).map((tc) =>
+                tc.run_id === tool.run_id
+                  ? { ...tc, output: tool.output, status: 'done' as const, ended_at: Date.now() }
+                  : tc
+              ),
+              usage: prev?.usage ?? [],
+              total_input_tokens: prev?.total_input_tokens ?? 0,
+              total_output_tokens: prev?.total_output_tokens ?? 0,
+            }));
+          },
+          onToolError: (tool) => {
+            updateActivity((prev) => ({
+              thinking: prev?.thinking ?? [],
+              tool_calls: (prev?.tool_calls ?? []).map((tc) =>
+                tc.run_id === tool.run_id
+                  ? { ...tc, error: tool.error, status: 'error' as const, ended_at: Date.now() }
+                  : tc
+              ),
+              usage: prev?.usage ?? [],
+              total_input_tokens: prev?.total_input_tokens ?? 0,
+              total_output_tokens: prev?.total_output_tokens ?? 0,
+            }));
+          },
+          onUsage: (usage) => {
+            updateActivity((prev) => ({
+              thinking: prev?.thinking ?? [],
+              tool_calls: prev?.tool_calls ?? [],
+              usage: [...(prev?.usage ?? []), usage],
+              total_input_tokens: (prev?.total_input_tokens ?? 0) + usage.input_tokens,
+              total_output_tokens: (prev?.total_output_tokens ?? 0) + usage.output_tokens,
+            }));
+          },
+          onError: (msg) => {
+            streamFailed = true;
+            errorMessage = msg;
+            setError(msg);
+          },
+          onAbort: () => { aborted = true; },
+          onCancelled: () => { aborted = true; },
+          onDone: () => {},
+        },
+      );
+    } finally {
+      // Update the user message content and replace the assistant response
+      setMessages((prev) => {
+        const updated = [...prev];
+        // Update the last user message with edited content
+        for (let i = updated.length - 1; i >= 0; i--) {
+          if (updated[i].role === 'user') {
+            updated[i] = { ...updated[i], content: editContent.trim() };
+            break;
+          }
+        }
+        // Replace the last assistant message
+        for (let i = updated.length - 1; i >= 0; i--) {
+          if (updated[i].role === 'assistant') {
+            if (streamFailed) {
+              updated[i] = {
+                ...updated[i],
+                content: accumulatedText || t('generationFailed', { error: errorMessage || '' }),
+              };
+            } else if (aborted) {
+              updated[i] = {
+                ...updated[i],
+                content: accumulatedText,
+                wasStopped: true,
+              };
+            } else {
+              updated[i] = {
+                ...updated[i],
+                content: accumulatedText,
+                itinerary: accumulatedItinerary ?? undefined,
+                comparison: accumulatedComparison ?? undefined,
+                activity: streamingActivityRef.current ?? undefined,
+              };
+            }
+            break;
+          }
+        }
+        return updated;
+      });
+
+      setLoading(false);
+      abortRef.current = null;
+      setActiveWorkers([]);
+      setStreamingText('');
+      setStreamingItinerary(null);
+      setStreamingComparison(null);
+      setStreamingActivity(null);
+      streamingActivityRef.current = null;
+
+      // Fetch branches after edit
+      if (threadId && !aborted) {
+        const branchList = await getBranches(threadId);
+        setBranches(branchList);
+        const currentIdx = branchList.findIndex((b) => b.is_current);
+        setActiveBranchIndex(currentIdx >= 0 ? currentIdx : 0);
+      }
+
+      listThreads().then((res) => {
+        setThreads(res.threads);
+        setHasMoreThreads(res.has_more);
+      });
+    }
+  }, [threadId, editingMessageId, editContent, locale, t]);
+
+  const handleEditCancel = useCallback(() => {
+    setEditingMessageId(null);
+    setEditContent('');
+  }, []);
+
   // Replay queued messages when back online
   useEffect(() => {
     if (!isOnline || replaying) return;
@@ -1119,6 +1319,7 @@ export default function ChatPage() {
           >
           {messages.map((msg, msgIndex) => {
             const isLastAssistant = msg.role === 'assistant' && msgIndex === messages.length - 1;
+            const isLastUser = msg.role === 'user' && msgIndex === messages.length - 1;
             const prevUserMsg = msgIndex > 0 && messages[msgIndex - 1].role === 'user' ? messages[msgIndex - 1] : null;
             return (
             <motion.div
@@ -1131,12 +1332,55 @@ export default function ChatPage() {
               aria-label={msg.role === 'user' ? t('userMessage') : t('assistantMessage')}
             >
               {msg.role === 'user' ? (
+                editingMessageId === msg.id ? (
+                  <div className="max-w-[75%] w-full">
+                    <textarea
+                      value={editContent}
+                      onChange={(e) => setEditContent(e.target.value)}
+                      autoFocus
+                      rows={2}
+                      className="w-full rounded-2xl px-4 py-3 bg-primary/10 border border-primary/30 text-foreground text-sm resize-none outline-none focus:ring-1 focus:ring-primary/40"
+                      aria-label={t('editing')}
+                    />
+                    <div className="flex items-center gap-2 mt-2 justify-end">
+                      <button
+                        onClick={handleEditCancel}
+                        className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground bg-muted hover:bg-accent border border-border rounded-lg transition-colors cursor-pointer"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                        {t('cancelEdit')}
+                      </button>
+                      <button
+                        onClick={handleEditSave}
+                        disabled={!editContent.trim() || loading}
+                        className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-primary-foreground bg-primary hover:bg-primary/90 rounded-lg transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                        {t('saveEdit')}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
                 <div
-                  className="max-w-[75%] rounded-2xl px-4 py-3 bg-primary/10 border border-primary/15 text-foreground"
+                  className="max-w-[75%] rounded-2xl px-4 py-3 bg-primary/10 border border-primary/15 text-foreground group relative"
                   tabIndex={0}
                 >
                   <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+                  {isLastUser && !loading && !regenerating && (
+                    <button
+                      onClick={() => {
+                        setEditingMessageId(msg.id);
+                        setEditContent(msg.content);
+                      }}
+                      className="absolute -bottom-7 right-0 p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors cursor-pointer opacity-0 group-hover:opacity-100"
+                      aria-label={t('edit')}
+                      title={t('edit')}
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
+                    </button>
+                  )}
                 </div>
+                )
               ) : (
                 <div className="w-full group" tabIndex={0}>
                   <div className="px-1 py-1">
