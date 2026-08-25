@@ -50,10 +50,10 @@ describe('MarkdownRenderer', () => {
   });
 
   it('renders code blocks', () => {
-    render(<MarkdownRenderer content={`\`\`\`
+    const { container } = render(<MarkdownRenderer content={`\`\`\`
 const x = 1;
 \`\`\``} />);
-    expect(screen.getByText('const x = 1;')).toBeInTheDocument();
+    expect(container.textContent).toContain('const x = 1');
   });
 
   it('renders inline code', () => {
@@ -64,5 +64,35 @@ const x = 1;
   it('renders blockquotes', () => {
     render(<MarkdownRenderer content="> This is a quote" />);
     expect(screen.getByText('This is a quote')).toBeInTheDocument();
+  });
+
+  it('streaming: renders incomplete code fence without crashing', () => {
+    render(<MarkdownRenderer content="Here is code:\n```js\nconst x = 1" streaming={true} />);
+    expect(screen.getByText(/const x = 1/)).toBeInTheDocument();
+  });
+
+  it('streaming: renders incomplete bold without showing raw **', () => {
+    render(<MarkdownRenderer content="This is **bold" streaming={true} />);
+    const strong = screen.getByText('bold');
+    expect(strong.tagName).toBe('STRONG');
+  });
+
+  it('streaming: renders incomplete italic without showing raw *', () => {
+    render(<MarkdownRenderer content="This is *italic" streaming={true} />);
+    const em = screen.getByText('italic');
+    expect(em.tagName).toBe('EM');
+  });
+
+  it('streaming: complete markdown matches non-streaming render', () => {
+    const md = '## Heading\n\n**bold** and *italic*\n\n- Item 1\n- Item 2';
+    const { container: streamingContainer } = render(<MarkdownRenderer content={md} streaming={true} />);
+    const { container: nonStreamingContainer } = render(<MarkdownRenderer content={md} streaming={false} />);
+    expect(streamingContainer.innerHTML).toBe(nonStreamingContainer.innerHTML);
+  });
+
+  it('renders code block with syntax highlighting structure', () => {
+    const { container } = render(<MarkdownRenderer content="```js\nconst x = 1;\n```" />);
+    const codeElements = container.querySelectorAll('code');
+    expect(codeElements.length).toBeGreaterThan(0);
   });
 });
