@@ -9,6 +9,7 @@ import { streamChat, cancelStream, regenerateStream, editStream } from '@/lib/ch
 import { listThreads, getThreadHistory, getBranches, deleteThread, type ThreadMeta } from '@/lib/threads-api';
 import { getSession, type SessionUser } from '@/lib/auth';
 import { useOnlineStatus } from '@/lib/useOnlineStatus';
+import { useThrottledValue } from '@/lib/useThrottledValue';
 import { queueMessage, replayQueuedMessages, type QueuedMessage } from '@/lib/message-queue';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import MarkdownRenderer from '@/components/MarkdownRenderer';
@@ -103,6 +104,8 @@ export default function ChatPage() {
   const [regenerating, setRegenerating] = useState(false);
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [editContent, setEditContent] = useState('');
+
+  const throttledStreamingText = useThrottledValue(streamingText, loading || regenerating);
 
   const abortRef = useRef<AbortController | null>(null);
   const sendingRef = useRef(false);
@@ -1510,9 +1513,9 @@ export default function ChatPage() {
                     ))}
                   </div>
                 )}
-                {streamingText ? (
+                {throttledStreamingText ? (
                   <>
-                    <MarkdownRenderer content={streamingText} />
+                    <MarkdownRenderer content={throttledStreamingText} streaming={true} />
                     <span className="inline-block w-2 h-4 bg-primary animate-pulse ml-0.5" />
                   </>
                 ) : (
