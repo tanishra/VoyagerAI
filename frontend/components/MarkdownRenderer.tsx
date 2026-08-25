@@ -1,7 +1,48 @@
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import rehypeHighlight from 'rehype-highlight';
+import 'highlight.js/styles/github-dark.css';
 
-export default function MarkdownRenderer({ content }: { content: string }) {
+function closeIncompleteMarkdown(text: string): string {
+  let result = text;
+
+  const fenceCount = (result.match(/```/g) ?? []).length;
+  if (fenceCount % 2 !== 0) {
+    result += '\n```';
+  }
+
+  const boldCount = (result.match(/\*\*/g) ?? []).length;
+  if (boldCount % 2 !== 0) {
+    result += '**';
+  }
+
+  const singleStarCount = (result.match(/(?<!\*)\*(?!\*)/g) ?? []).length;
+  if (singleStarCount % 2 !== 0) {
+    result += '*';
+  }
+
+  const openLinks = result.match(/\[([^\]]*)\]\(([^)\s]*)$/);
+  if (openLinks) {
+    result += ')';
+  }
+
+  const openBrackets = result.match(/\[([^\]]*)\]?\($/);
+  if (openBrackets && !openLinks) {
+    result += ')';
+  }
+
+  return result;
+}
+
+export default function MarkdownRenderer({
+  content,
+  streaming = false,
+}: {
+  content: string;
+  streaming?: boolean;
+}) {
+  const processedContent = streaming ? closeIncompleteMarkdown(content) : content;
+
   return (
     <div
       className="
@@ -29,6 +70,7 @@ export default function MarkdownRenderer({ content }: { content: string }) {
     >
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
+        rehypePlugins={[[rehypeHighlight, { detect: true, ignoreMissing: true }]]}
         components={{
           a: ({ href, children }) => (
             <a href={href} target="_blank" rel="noopener noreferrer">
@@ -37,7 +79,7 @@ export default function MarkdownRenderer({ content }: { content: string }) {
           ),
         }}
       >
-        {content}
+        {processedContent}
       </ReactMarkdown>
     </div>
   );
