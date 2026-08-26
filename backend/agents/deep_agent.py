@@ -266,16 +266,15 @@ async def create_chat_agent(checkpointer=None, store=None, user_id=None, locale=
 
     uid = user_id or "anonymous"
 
-    def _make_backend(rt):
-        return CompositeBackend(
-            default=FilesystemBackend(root_dir="/tmp/agent_fs"),
-            routes={
-                "/memories/": StoreBackend(
-                    store=get_redis_file_store(),
-                    namespace=lambda _rt: (uid,),
-                ),
-            },
-        )
+    backend = CompositeBackend(
+        default=FilesystemBackend(root_dir="/tmp/agent_fs"),
+        routes={
+            "/memories/": StoreBackend(
+                store=get_redis_file_store(),
+                namespace=lambda _rt: (uid,),
+            ),
+        },
+    )
 
     agent = create_deep_agent(
         model=model,
@@ -290,7 +289,7 @@ async def create_chat_agent(checkpointer=None, store=None, user_id=None, locale=
                 paths=["/workspace/**", "/memories/**"],
             ),
         ],
-        backend=_make_backend,
+        backend=backend,
         middleware=[
             ModelCallLimitMiddleware(run_limit=40, exit_behavior="end"),
         ],
