@@ -2,7 +2,7 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Send, Square, RotateCcw, Globe, Search, ShieldAlert, ListChecks, Loader2, PanelLeft, ChevronDown, ChevronLeft, ChevronRight, Clock, Sparkles, Copy, Check, MapPin, Plane, Calendar, Compass, Pencil, X } from 'lucide-react';
+import { Send, Square, RotateCcw, Globe, Search, ShieldAlert, ListChecks, Loader2, PanelLeft, ChevronDown, ChevronLeft, ChevronRight, Clock, Sparkles, Copy, Check, Pencil, X } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useLocale } from '@/lib/useLocale';
 import { streamChat, cancelStream, regenerateStream, editStream } from '@/lib/chat-api';
@@ -13,6 +13,7 @@ import { useThrottledValue } from '@/lib/useThrottledValue';
 import { queueMessage, replayQueuedMessages, type QueuedMessage } from '@/lib/message-queue';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import MarkdownRenderer from '@/components/MarkdownRenderer';
+import SuggestionPrompts from '@/components/SuggestionPrompts';
 import ItineraryCard from '@/components/ItineraryCard';
 import OfflineBanner from '@/components/OfflineBanner';
 import ThinkingBlock from '@/components/ThinkingBlock';
@@ -1187,67 +1188,14 @@ export default function ChatPage() {
         <div className="absolute inset-0 bg-gradient-to-b from-primary/[0.015] via-transparent to-primary/[0.01] pointer-events-none" />
 
         {messages.length === 0 && !loading ? (
-          /* ─── Centered empty state (ChatGPT-style) ─── */
-          <div className="flex-1 flex flex-col items-center justify-center px-4 relative">
-            <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.4 }}
-              className="flex flex-col items-center w-full max-w-2xl"
-            >
-              <div className="p-3.5 rounded-2xl bg-gradient-to-br from-indigo-500/10 to-violet-500/10 border border-indigo-500/15 mb-5">
-                <Sparkles className="w-8 h-8 text-primary" />
-              </div>
-              <h1 className="text-2xl font-semibold text-foreground mb-2">{t('greeting')}</h1>
-              <p className="text-sm text-muted-foreground max-w-lg text-center mb-8">{t('subtitle')}</p>
-
-              {/* Suggestion chips */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full mb-8">
-                {[
-                  { icon: MapPin, text: t('suggestion1') },
-                  { icon: Plane, text: t('suggestion2') },
-                  { icon: Calendar, text: t('suggestion3') },
-                  { icon: Compass, text: t('suggestion4') },
-                ].map((s, i) => (
-                  <button
-                    key={i}
-                    onClick={() => handleSend(s.text)}
-                    className="flex items-center gap-3 rounded-xl border border-border bg-card p-4 hover:border-primary/30 hover:shadow-sm transition-all text-left cursor-pointer"
-                  >
-                    <s.icon className="w-4 h-4 text-primary shrink-0" />
-                    <span className="text-sm text-foreground/80">{s.text}</span>
-                  </button>
-                ))}
-              </div>
-
-              {/* Centered input bar */}
-              <div className="w-full">
-                <div className="flex items-center gap-2 rounded-2xl border border-border bg-card shadow-sm px-4 py-3 focus-within:border-primary/40 focus-within:shadow-md transition-all">
-                  <textarea
-                    ref={inputRef}
-                    value={input}
-                    onChange={(e) => setInput(e.target.value)}
-                    onKeyDown={handleKeyDown}
-                    placeholder={t('placeholder')}
-                    rows={1}
-                    aria-label={t('messageInput')}
-                    className="flex-1 bg-transparent border-0 text-sm text-foreground placeholder:text-muted-foreground/50 resize-none outline-none focus:ring-0 transition-colors max-h-32 leading-6"
-                  />
-                  <button
-                    onClick={() => handleSend()}
-                    disabled={!input.trim()}
-                    className="shrink-0 p-2 rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground transition-all disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
-                    aria-label={t('send')}
-                  >
-                    <Send className="w-4 h-4" />
-                  </button>
-                </div>
-                <p className="text-[10px] text-muted-foreground/40 mt-2 text-center">
-                  {t('enterToSend')}
-                </p>
-              </div>
-            </motion.div>
-          </div>
+          <SuggestionPrompts
+            onSend={handleSend}
+            input={input}
+            setInput={setInput}
+            inputRef={inputRef}
+            handleKeyDown={handleKeyDown}
+            t={t}
+          />
         ) : (
           /* ─── Normal chat layout ─── */
           <>
