@@ -14,6 +14,7 @@ import { queueMessage, replayQueuedMessages, type QueuedMessage } from '@/lib/me
 import ErrorBoundary from '@/components/ErrorBoundary';
 import MarkdownRenderer from '@/components/MarkdownRenderer';
 import SuggestionPrompts from '@/components/SuggestionPrompts';
+import CopyButton, { buildCopyContent } from '@/components/CopyButton';
 import ItineraryCard from '@/components/ItineraryCard';
 import OfflineBanner from '@/components/OfflineBanner';
 import ThinkingBlock from '@/components/ThinkingBlock';
@@ -43,29 +44,6 @@ const TOOL_ICONS: Record<string, React.ReactNode> = {
   multi_plan_generator: <Globe className="w-3 h-3" />,
   quality_scorer: <ListChecks className="w-3 h-3" />,
 };
-
-function CopyButton({ content }: { content: string }) {
-  const [copied, setCopied] = useState(false);
-  const t = useTranslations('chat');
-  return (
-    <button
-      onClick={() => {
-        navigator.clipboard.writeText(content);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
-      }}
-      className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-      aria-label={t('copy')}
-      title={t('copy')}
-    >
-      {copied ? (
-        <Check className="w-3.5 h-3.5 text-emerald-600" />
-      ) : (
-        <Copy className="w-3.5 h-3.5" />
-      )}
-    </button>
-  );
-}
 
 export default function ChatPage() {
   const t = useTranslations('chat');
@@ -1358,7 +1336,7 @@ export default function ChatPage() {
                   {/* Copy + Regenerate + Branch navigation buttons */}
                   {msg.content && (
                     <div className="flex items-center gap-1 px-1 mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <CopyButton content={msg.content} />
+                      <CopyButton content={buildCopyContent(msg.content, msg.itinerary, msg.comparison)} />
                       {isLastAssistant && prevUserMsg && (
                         <>
                           <button
