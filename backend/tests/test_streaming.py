@@ -990,3 +990,84 @@ class TestConversationModeGate:
         comp = "<comparison>{\"plans\": [...]}</comparison>"
         assert not _ITINERARY_TAG_RE.search(comp)
         assert _COMPARISON_TAG_RE.search(comp)
+
+
+class TestSubagentProgress:
+    """Tests for the new subagent_progress SSE event and parent_run_id nesting."""
+
+    def test_subagent_progress_event_emitted(self):
+        """Synthetic subagent_progress events should pass through as SSE."""
+        event = {"event": "subagent_progress", "data": {"run_id": "task-1", "description": "Searching for hotels in Tokyo..."}}
+        payloads = _parse_chat_event(event, {})
+        assert len(payloads) == 1
+        assert payloads[0]["event"] == "subagent_progress"
+        data = json_data(payloads[0])
+        assert data["run_id"] == "task-1"
+        assert data["description"] == "Searching for hotels in Tokyo..."
+
+    def test_tool_start_with_parent_run_id(self):
+        """A tool_start inside a subagent should include parent_run_id."""
+        subagent_run_ids = {"task-run-1"}
+        event = _ev(
+            "on_tool_start",
+            name="internet_search",
+            run_id="search-1",
+            data={"input": {"query": "hotels Tokyo"}},
+            parent_ids=["task-run-1"],
+        )
+        payloads = _parse_chat_event(event, {}, subagent_run_ids)
+        assert len(payloads) == 1
+        assert payloads[0]["event"] == "tool_start"
+        data = json_data(payloads[0])
+        assert data["name"] == "internet_search"
+        assert data["run_id"] == "search-1"
+        assert data["parent_run_id"] == "task-run-1"
+
+    def test_tool_end_with_parent_run_id(self):
+        """A tool_end inside a subagent should include parent_run_id."""
+        subagent_run_ids = {"task-run-1"}
+        event = _ev(
+            "on_tool_end",
+            name="internet_search",
+            run_id="search-1",
+            data={"output": "results..."},
+            parent_ids=["task-run-1"],
+        )
+        payloads = _parse_chat_event(event, {}, subagent_run_ids)
+        assert len(payloads) == 1
+        assert payloads[0]["event"] == "tool_end"
+        data = json_data(payloads[0])
+        assert data["name"] == "internet_search"
+        assert data["parent_run_id"] == "task-run-1"
+
+    def test_non_subagent_tool_has_no_parent_run_id(self):
+        """A top-level tool_start (no subagent parent) should NOT have parent_run_id."""
+        event = _ev(
+            "on_tool_start",
+            name="internet_search",
+            run_id="search-top",
+            data={"input": {"query": "test"}},
+            parent_ids=[],
+        )
+        payloads = _parse_chat_event(event, {})
+        assert len(payloads) == 1
+        data = json_data(payloads[0])
+        assert "parent_run_id" not in data
+
+    def test_throttling_progress_events(self):
+        """_ModelStream._maybe_yield_progress should throttle to 1 per 2 seconds."""
+        from agents.deep_agent import _ModelStream
+        import time
+
+        stream = _ModelStream.__new__(_ModelStream)
+        stream._last_progress_time = {}
+
+        # First call should pass
+        assert stream._maybe_yield_progress("run-1", "desc1") is True
+        # Immediate second call should be throttled
+        assert stream._maybe_yield_progress("run-1", "desc2") is False
+        # Different run_id should pass
+        assert stream._maybe_yield_progress("run-2", "desc3") is True
+        # After 2+ seconds, original run_id should pass again
+        stream._last_progress_time["run-1"] = time.monotonic() - 2.1
+        assert stream._maybe_yield_progress("run-1", "desc4") is True
