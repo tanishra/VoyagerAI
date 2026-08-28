@@ -106,7 +106,11 @@
     "toolInput": "Entrée",
     "toolOutput": "Sortie",
     "toolError": "Erreur",
-    "tokensLabel": "jetons"
+    "tokensLabel": "jetons",
+    "activityPanel": "Activité",
+    "activityRunning": "{count, plural, one {# outil en cours} other {# outils en cours}}",
+    "activityCompleted": "{count, plural, one {# appel terminé} other {# appels terminés}}",
+    "tokensUsed": "{input} entrée · {output} sortie"
   },
   "status": {
     "researching": "Recherche",
