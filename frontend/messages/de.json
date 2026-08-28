@@ -106,7 +106,11 @@
     "toolInput": "Eingabe",
     "toolOutput": "Ausgabe",
     "toolError": "Fehler",
-    "tokensLabel": "Token"
+    "tokensLabel": "Token",
+    "activityPanel": "Aktivität",
+    "activityRunning": "{count, plural, one {# Tool läuft} other {# Tools laufen}}",
+    "activityCompleted": "{count, plural, one {# Tool-Aufruf abgeschlossen} other {# Tool-Aufrufe abgeschlossen}}",
+    "tokensUsed": "{input} rein · {output} raus"
   },
   "status": {
     "researching": "Recherchieren",
