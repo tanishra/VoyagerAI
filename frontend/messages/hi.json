@@ -106,7 +106,11 @@
     "toolInput": "इनपुट",
     "toolOutput": "आउटपुट",
     "toolError": "त्रुटि",
-    "tokensLabel": "टोकन"
+    "tokensLabel": "टोकन",
+    "activityPanel": "गतिविधि",
+    "activityRunning": "{count, plural, one {# टूल चल रहा है} other {# टूल चल रहे हैं}}",
+    "activityCompleted": "{count, plural, one {# कॉल पूरा} other {# कॉल पूरे}}",
+    "tokensUsed": "{input} इन · {output} आउट"
   },
   "status": {
     "researching": "शोध कर रहे हैं",
