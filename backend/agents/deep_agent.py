@@ -142,6 +142,8 @@ class _ModelStream:
             "total_output_tokens": 0,
         }
         self._tool_call_index: dict[str, int] = {}
+        self._task_run_ids: set[str] = set()
+        self._last_progress_time: dict[str, float] = {}
 
     async def events(self, inputs, cancel_event=None):
         async for event in self._agent.astream_events(
@@ -190,16 +192,34 @@ class _ModelStream:
                 name = event.get("name", "")
                 tool_input = edata.get("input") if isinstance(edata, dict) else None
                 display_name = name
+                parent_ids = event.get("parent_ids") or []
+                parent_task_id = None
                 if name == "task" and isinstance(tool_input, dict):
                     display_name = tool_input.get("subagent_type", name)
+                    self._task_run_ids.add(run_id)
+                    desc = self._extract_progress_description(name, tool_input)
+                    if desc and self._maybe_yield_progress(run_id, desc):
+                        yield {"event": "subagent_progress", "data": {"run_id": run_id, "description": desc}}
+                else:
+                    for pid in parent_ids:
+                        if pid in self._task_run_ids:
+                            parent_task_id = pid
+                            break
+                    if parent_task_id:
+                        desc = self._extract_progress_description(name, tool_input)
+                        if desc and self._maybe_yield_progress(parent_task_id, desc):
+                            yield {"event": "subagent_progress", "data": {"run_id": parent_task_id, "description": desc}}
                 idx = len(self.activity["tool_calls"])
                 self._tool_call_index[run_id] = idx
-                self.activity["tool_calls"].append({
+                entry = {
                     "run_id": run_id,
                     "name": display_name,
                     "input": _truncate_for_activity(tool_input),
                     "status": "running",
-                })
+                }
+                if parent_task_id:
+                    entry["parent_run_id"] = parent_task_id
+                self.activity["tool_calls"].append(entry)
 
             elif etype == "on_tool_end":
                 output = edata.get("output") if isinstance(edata, dict) else edata
@@ -233,6 +253,37 @@ class _ModelStream:
                         self.activity["total_output_tokens"] += outp
 
             yield event
+
+    def _extract_progress_description(self, name: str, tool_input) -> str | None:
+        """Extract a human-readable progress description from a tool call."""
+        if not isinstance(tool_input, dict):
+            return None
+        if name == "task":
+            desc = tool_input.get("description", "")
+            if desc:
+                return desc[:120]
+            subagent_type = tool_input.get("subagent_type", "")
+            return f"Running {subagent_type}..."[:120] if subagent_type else None
+        query = tool_input.get("query", "") or tool_input.get("search_query", "") or tool_input.get("q", "")
+        if query:
+            return f"Searching: {query}"[:120]
+        url = tool_input.get("url", "")
+        if url:
+            return f"Fetching: {url}"[:120]
+        command = tool_input.get("command", "")
+        if command:
+            return f"Running: {command}"[:120]
+        return None
+
+    def _maybe_yield_progress(self, run_id: str, description: str) -> bool:
+        """Check throttle and return True if a progress event should be emitted."""
+        import time
+        now = time.monotonic()
+        last = self._last_progress_time.get(run_id, 0)
+        if now - last >= 2.0:
+            self._last_progress_time[run_id] = now
+            return True
+        return False
 
     def last_text(self) -> str:
         for run_id in reversed(self._order):
