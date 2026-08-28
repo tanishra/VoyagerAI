@@ -106,7 +106,11 @@
     "toolInput": "入力",
     "toolOutput": "出力",
     "toolError": "エラー",
-    "tokensLabel": "トークン"
+    "tokensLabel": "トークン",
+    "activityPanel": "アクティビティ",
+    "activityRunning": "{count}個のツール実行中",
+    "activityCompleted": "{count}個の呼び出し完了",
+    "tokensUsed": "{input} 入力 · {output} 出力"
   },
   "status": {
     "researching": "調査中",
