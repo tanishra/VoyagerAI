@@ -72,6 +72,7 @@ export interface ToolCallEntry {
   error?: string;
   started_at?: number;
   ended_at?: number;
+  parent_run_id?: string;
 }
 
 export interface UsageEntry {
@@ -118,10 +119,11 @@ export interface ChatStreamCallbacks {
   onAbort?: () => void;
   onCancelled?: () => void;
   onThinking?: (text: string) => void;
-  onToolStart?: (tool: { name: string; input?: string; run_id: string }) => void;
-  onToolEnd?: (tool: { name: string; output?: string; run_id: string }) => void;
-  onToolError?: (tool: { name: string; error?: string; run_id: string }) => void;
+  onToolStart?: (tool: { name: string; input?: string; run_id: string; parent_run_id?: string }) => void;
+  onToolEnd?: (tool: { name: string; output?: string; run_id: string; parent_run_id?: string }) => void;
+  onToolError?: (tool: { name: string; error?: string; run_id: string; parent_run_id?: string }) => void;
   onUsage?: (usage: UsageEntry) => void;
+  onSubagentProgress?: (data: { run_id: string; description: string }) => void;
   signal?: AbortSignal;
   errorMessages?: {
     serverResponse?: (status: number, detail: string) => string;
