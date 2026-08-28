@@ -20,6 +20,7 @@ import OfflineBanner from '@/components/OfflineBanner';
 import ThinkingBlock from '@/components/ThinkingBlock';
 import ToolCallCard from '@/components/ToolCallCard';
 import SubagentTimeline from '@/components/SubagentTimeline';
+import ActivityPanel from '@/components/ActivityPanel';
 import ComparisonView from './ComparisonView';
 import ThreadSidebar from './ThreadSidebar';
 import type { ChatMessage, ComparisonData, Itinerary, ActivityData, BranchInfo } from '@/lib/types';
@@ -59,6 +60,7 @@ export default function ChatPage() {
   const [streamingComparison, setStreamingComparison] = useState<ComparisonData | null>(null);
   const [streamingActivity, setStreamingActivity] = useState<ActivityData | null>(null);
   const [activeWorkers, setActiveWorkers] = useState<string[]>([]);
+  const [progressMap, setProgressMap] = useState<Record<string, string>>({});
   const [threadId, setThreadId] = useState<string | null>(() => {
     if (typeof window !== 'undefined') {
       return localStorage.getItem(THREAD_STORAGE_KEY);
@@ -189,6 +191,7 @@ export default function ChatPage() {
     setStreamingActivity(null);
     streamingActivityRef.current = null;
     setActiveWorkers([]);
+    setProgressMap({});
   };
 
   const handleSelectThread = async (selectedThreadId: string) => {
@@ -231,6 +234,7 @@ export default function ChatPage() {
     setStreamingActivity(null);
     streamingActivityRef.current = null;
     setActiveWorkers([]);
+    setProgressMap({});
     setLoadingHistory(false);
   };
 
@@ -266,6 +270,7 @@ export default function ChatPage() {
     setStreamingActivity(null);
     streamingActivityRef.current = null;
     setActiveWorkers([]);
+    setProgressMap({});
 
     const userMessage: ChatMessage = {
       id: `user-${Date.now()}`,
@@ -362,6 +367,7 @@ export default function ChatPage() {
                 input: tool.input,
                 status: 'running' as const,
                 started_at: Date.now(),
+                parent_run_id: tool.parent_run_id,
               }],
               usage: prev?.usage ?? [],
               total_input_tokens: prev?.total_input_tokens ?? 0,
@@ -402,6 +408,9 @@ export default function ChatPage() {
               total_input_tokens: (prev?.total_input_tokens ?? 0) + usage.input_tokens,
               total_output_tokens: (prev?.total_output_tokens ?? 0) + usage.output_tokens,
             }));
+          },
+          onSubagentProgress: (data) => {
+            setProgressMap((prev) => ({ ...prev, [data.run_id]: data.description }));
           },
           onError: (msg) => {
             streamFailed = true;
@@ -476,6 +485,7 @@ export default function ChatPage() {
       setLoading(false);
       abortRef.current = null;
       setActiveWorkers([]);
+    setProgressMap({});
       sendingRef.current = false;
       listThreads().then((res) => {
         setThreads(res.threads);
@@ -495,6 +505,7 @@ export default function ChatPage() {
     setStreamingActivity(null);
     streamingActivityRef.current = null;
     setActiveWorkers([]);
+    setProgressMap({});
 
     const controller = new AbortController();
     abortRef.current = controller;
@@ -555,6 +566,7 @@ export default function ChatPage() {
                 input: tool.input,
                 status: 'running' as const,
                 started_at: Date.now(),
+                parent_run_id: tool.parent_run_id,
               }],
               usage: streamingActivityRef.current?.usage ?? [],
               total_input_tokens: streamingActivityRef.current?.total_input_tokens ?? 0,
@@ -603,6 +615,9 @@ export default function ChatPage() {
             };
             streamingActivityRef.current = next;
             setStreamingActivity(next);
+          },
+          onSubagentProgress: (data) => {
+            setProgressMap((prev) => ({ ...prev, [data.run_id]: data.description }));
           },
           onError: (msg) => {
             streamFailed = true;
@@ -655,6 +670,7 @@ export default function ChatPage() {
       setLoading(false);
       abortRef.current = null;
       setActiveWorkers([]);
+    setProgressMap({});
       setStreamingText('');
       setStreamingItinerary(null);
       setStreamingComparison(null);
@@ -714,6 +730,7 @@ export default function ChatPage() {
     setStreamingActivity(null);
     streamingActivityRef.current = null;
     setActiveWorkers([]);
+    setProgressMap({});
 
     const controller = new AbortController();
     abortRef.current = controller;
@@ -776,6 +793,7 @@ export default function ChatPage() {
                 input: tool.input,
                 status: 'running' as const,
                 started_at: Date.now(),
+                parent_run_id: tool.parent_run_id,
               }],
               usage: prev?.usage ?? [],
               total_input_tokens: prev?.total_input_tokens ?? 0,
@@ -816,6 +834,9 @@ export default function ChatPage() {
               total_input_tokens: (prev?.total_input_tokens ?? 0) + usage.input_tokens,
               total_output_tokens: (prev?.total_output_tokens ?? 0) + usage.output_tokens,
             }));
+          },
+          onSubagentProgress: (data) => {
+            setProgressMap((prev) => ({ ...prev, [data.run_id]: data.description }));
           },
           onError: (msg) => {
             streamFailed = true;
@@ -870,6 +891,7 @@ export default function ChatPage() {
       setLoading(false);
       abortRef.current = null;
       setActiveWorkers([]);
+    setProgressMap({});
       setStreamingText('');
       setStreamingItinerary(null);
       setStreamingComparison(null);
@@ -971,7 +993,7 @@ export default function ChatPage() {
               },
               onToolStart: (tool) => {
                 const prev = streamingActivityRef.current;
-                const next = { thinking: prev?.thinking ?? [], tool_calls: [...(prev?.tool_calls ?? []), { run_id: tool.run_id, name: tool.name, input: tool.input, status: 'running' as const, started_at: Date.now() }], usage: prev?.usage ?? [], total_input_tokens: prev?.total_input_tokens ?? 0, total_output_tokens: prev?.total_output_tokens ?? 0 };
+                const next = { thinking: prev?.thinking ?? [], tool_calls: [...(prev?.tool_calls ?? []), { run_id: tool.run_id, name: tool.name, input: tool.input, status: 'running' as const, started_at: Date.now(), parent_run_id: tool.parent_run_id }], usage: prev?.usage ?? [], total_input_tokens: prev?.total_input_tokens ?? 0, total_output_tokens: prev?.total_output_tokens ?? 0 };
                 streamingActivityRef.current = next;
                 setStreamingActivity(next);
               },
@@ -992,6 +1014,9 @@ export default function ChatPage() {
                 const next = { thinking: prev?.thinking ?? [], tool_calls: prev?.tool_calls ?? [], usage: [...(prev?.usage ?? []), usage], total_input_tokens: (prev?.total_input_tokens ?? 0) + usage.input_tokens, total_output_tokens: (prev?.total_output_tokens ?? 0) + usage.output_tokens };
                 streamingActivityRef.current = next;
                 setStreamingActivity(next);
+              },
+              onSubagentProgress: (data) => {
+                setProgressMap((prev) => ({ ...prev, [data.run_id]: data.description }));
               },
               onError: (msg) => {
                 streamFailed = true;
@@ -1036,10 +1061,12 @@ export default function ChatPage() {
           streamingActivityRef.current = null;
           setLoading(false);
           setActiveWorkers([]);
+    setProgressMap({});
           return true;
         } catch {
           setLoading(false);
           setActiveWorkers([]);
+    setProgressMap({});
           return false;
         }
       });
@@ -1313,16 +1340,12 @@ export default function ChatPage() {
               ) : (
                 <div className="w-full group" tabIndex={0}>
                   <div className="px-1 py-1">
-                    {msg.activity?.thinking && msg.activity.thinking.length > 0 && (
-                      <ThinkingBlock blocks={msg.activity.thinking} />
-                    )}
-                    {msg.activity?.tool_calls && msg.activity.tool_calls.length > 0 && (
-                      <div className="space-y-0">
-                        {msg.activity.tool_calls.map((tc, i) => (
-                          <ToolCallCard key={`${tc.run_id}-${i}`} tool={tc} />
-                        ))}
-                      </div>
-                    )}
+                    <ActivityPanel
+                      activity={msg.activity ?? null}
+                      activeWorkers={[]}
+                      isStreaming={false}
+                      hasText={!!msg.content}
+                    />
                     <MarkdownRenderer content={msg.content} />
                     {msg.wasStopped && (
                       <span className="inline-flex items-center gap-1 mt-1 text-[10px] text-muted-foreground/60">
@@ -1419,26 +1442,17 @@ export default function ChatPage() {
               className="flex justify-start"
             >
               <div className="w-full px-1 py-1">
-                {streamingActivity?.thinking && streamingActivity.thinking.length > 0 && (
-                  <ThinkingBlock blocks={streamingActivity.thinking} isStreaming />
-                )}
-                {streamingActivity?.tool_calls && streamingActivity.tool_calls.length > 0 && (
-                  <SubagentTimeline toolCalls={streamingActivity.tool_calls} />
-                )}
-                {activeWorkers.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5 mb-2">
-                    {activeWorkers.map((tool) => (
-                      <span
-                        key={tool}
-                        className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full bg-primary/10 border border-primary/20 text-[10px] font-medium text-primary"
-                      >
-                        <Loader2 className="w-3 h-3 animate-spin" />
-                        {TOOL_ICONS[tool]}
-                        {tStatus(TOOL_LABEL_KEYS[tool])}
-                      </span>
-                    ))}
-                  </div>
-                )}
+                <ActivityPanel
+                  activity={streamingActivity}
+                  activeWorkers={activeWorkers}
+                  isStreaming={loading || regenerating}
+                  hasText={!!throttledStreamingText}
+                  progressMap={progressMap}
+                  workerIcons={TOOL_ICONS}
+                  workerLabels={Object.fromEntries(
+                    Object.entries(TOOL_LABEL_KEYS).map(([k, v]) => [k, tStatus(v)]),
+                  )}
+                />
                 {throttledStreamingText ? (
                   <>
                     <MarkdownRenderer content={throttledStreamingText} streaming={true} />
