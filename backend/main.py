@@ -158,6 +158,8 @@ def _parse_chat_event(
         return [_sse("cancelled", None)]
     if event_type == "error":
         return [_sse("error", str(event_data))]
+    if event_type == "subagent_progress":
+        return [_sse("subagent_progress", event_data)]
 
     if event_type == "on_chat_model_stream":
         parent_ids = event.get("parent_ids") or []
@@ -190,6 +192,12 @@ def _parse_chat_event(
         name = event.get("name", "")
         tool_input = event_data.get("input") if isinstance(event_data, dict) else None
         run_id = event.get("run_id", "")
+        parent_ids = event.get("parent_ids") or []
+        parent_run_id = None
+        for pid in parent_ids:
+            if pid in subagent_run_ids or pid in active_tasks:
+                parent_run_id = pid
+                break
         payloads: list[dict] = []
         if name == "task" and isinstance(tool_input, dict):
             subagent_type = tool_input.get("subagent_type")
@@ -204,17 +212,26 @@ def _parse_chat_event(
                     "run_id": run_id,
                 }))
         else:
-            payloads.append(_sse("tool_start", {
+            ts_payload = {
                 "name": name,
                 "input": _truncate_tool_data(tool_input) if tool_input else None,
                 "run_id": run_id,
-            }))
+            }
+            if parent_run_id:
+                ts_payload["parent_run_id"] = parent_run_id
+            payloads.append(_sse("tool_start", ts_payload))
         return payloads
 
     if event_type == "on_tool_end":
         run_id = event.get("run_id", "")
         name = event.get("name", "")
         output = event_data.get("output") if isinstance(event_data, dict) else event_data
+        parent_ids = event.get("parent_ids") or []
+        parent_run_id = None
+        for pid in parent_ids:
+            if pid in subagent_run_ids or pid in active_tasks:
+                parent_run_id = pid
+                break
         payloads: list[dict] = []
         if run_id in active_tasks:
             subagent_type = active_tasks.pop(run_id)
@@ -225,17 +242,26 @@ def _parse_chat_event(
                 "run_id": run_id,
             }))
         else:
-            payloads.append(_sse("tool_end", {
+            te_payload = {
                 "name": name,
                 "output": _truncate_tool_data(output),
                 "run_id": run_id,
-            }))
+            }
+            if parent_run_id:
+                te_payload["parent_run_id"] = parent_run_id
+            payloads.append(_sse("tool_end", te_payload))
         return payloads
 
     if event_type == "on_tool_error":
         run_id = event.get("run_id", "")
         name = event.get("name", "")
         error_msg = event_data.get("error") if isinstance(event_data, dict) else str(event_data)
+        parent_ids = event.get("parent_ids") or []
+        parent_run_id = None
+        for pid in parent_ids:
+            if pid in subagent_run_ids or pid in active_tasks:
+                parent_run_id = pid
+                break
         payloads: list[dict] = []
         if run_id in active_tasks:
             subagent_type = active_tasks.pop(run_id)
@@ -246,11 +272,14 @@ def _parse_chat_event(
                 "run_id": run_id,
             }))
         else:
-            payloads.append(_sse("tool_error", {
+            te_payload = {
                 "name": name,
                 "error": str(error_msg)[:500],
                 "run_id": run_id,
-            }))
+            }
+            if parent_run_id:
+                te_payload["parent_run_id"] = parent_run_id
+            payloads.append(_sse("tool_error", te_payload))
         return payloads
 
     if event_type == "on_chat_model_end":
