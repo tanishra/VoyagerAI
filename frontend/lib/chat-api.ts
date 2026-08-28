@@ -10,7 +10,7 @@ export async function streamChat(
   body: { message: string; thread_id?: string; locale?: string },
   callbacks: ChatStreamCallbacks,
 ): Promise<string | undefined> {
-  const { onToken, onItinerary, onComparison, onStatus, onThreadId, onDone, onError, onAbort, onCancelled, signal, errorMessages, onThinking, onToolStart, onToolEnd, onToolError, onUsage } = callbacks;
+  const { onToken, onItinerary, onComparison, onStatus, onThreadId, onDone, onError, onAbort, onCancelled, signal, errorMessages, onThinking, onToolStart, onToolEnd, onToolError, onUsage, onSubagentProgress } = callbacks;
   let resolvedThreadId: string | undefined;
 
   try {
@@ -80,6 +80,7 @@ export async function streamChat(
               onToolEnd,
               onToolError,
               onUsage,
+              onSubagentProgress,
             },
           );
         } catch {
@@ -160,13 +161,14 @@ function handleChatEvent(
     onDone?: () => void;
     onCancelled?: () => void;
     onThinking?: (text: string) => void;
-    onToolStart?: (tool: { name: string; input?: string; run_id: string }) => void;
-    onToolEnd?: (tool: { name: string; output?: string; run_id: string }) => void;
-    onToolError?: (tool: { name: string; error?: string; run_id: string }) => void;
+    onToolStart?: (tool: { name: string; input?: string; run_id: string; parent_run_id?: string }) => void;
+    onToolEnd?: (tool: { name: string; output?: string; run_id: string; parent_run_id?: string }) => void;
+    onToolError?: (tool: { name: string; error?: string; run_id: string; parent_run_id?: string }) => void;
     onUsage?: (usage: UsageEntry) => void;
+    onSubagentProgress?: (data: { run_id: string; description: string }) => void;
   },
 ) {
-  const { onToken, onItinerary, onComparison, onStatus, onThreadId, onError, onDone, onCancelled, onThinking, onToolStart, onToolEnd, onToolError, onUsage } = callbacks;
+  const { onToken, onItinerary, onComparison, onStatus, onThreadId, onError, onDone, onCancelled, onThinking, onToolStart, onToolEnd, onToolError, onUsage, onSubagentProgress } = callbacks;
 
   switch (event) {
     case 'token': {
@@ -212,23 +214,28 @@ function handleChatEvent(
       break;
     }
     case 'tool_start': {
-      const data = parsed.data as { name: string; input?: string; run_id: string };
+      const data = parsed.data as { name: string; input?: string; run_id: string; parent_run_id?: string };
       onToolStart?.(data);
       break;
     }
     case 'tool_end': {
-      const data = parsed.data as { name: string; output?: string; run_id: string };
+      const data = parsed.data as { name: string; output?: string; run_id: string; parent_run_id?: string };
       onToolEnd?.(data);
       break;
     }
     case 'tool_error': {
-      const data = parsed.data as { name: string; error?: string; run_id: string };
+      const data = parsed.data as { name: string; error?: string; run_id: string; parent_run_id?: string };
       onToolError?.(data);
       break;
     }
     case 'usage': {
       const data = parsed.data as UsageEntry;
       onUsage?.(data);
+      break;
+    }
+    case 'subagent_progress': {
+      const data = parsed.data as { run_id: string; description: string };
+      onSubagentProgress?.(data);
       break;
     }
   }
@@ -238,7 +245,7 @@ export async function regenerateStream(
   body: { thread_id: string; locale?: string },
   callbacks: ChatStreamCallbacks,
 ): Promise<string | undefined> {
-  const { onToken, onItinerary, onComparison, onStatus, onThreadId, onDone, onError, onAbort, onCancelled, signal, errorMessages, onThinking, onToolStart, onToolEnd, onToolError, onUsage } = callbacks;
+  const { onToken, onItinerary, onComparison, onStatus, onThreadId, onDone, onError, onAbort, onCancelled, signal, errorMessages, onThinking, onToolStart, onToolEnd, onToolError, onUsage, onSubagentProgress } = callbacks;
   let resolvedThreadId: string | undefined;
 
   try {
@@ -302,7 +309,7 @@ export async function regenerateStream(
             }
           } else {
             handleChatEvent(currentEvent, data, {
-              onToken, onItinerary, onComparison, onStatus, onThreadId, onDone, onError, onCancelled, onThinking, onToolStart, onToolEnd, onToolError, onUsage,
+              onToken, onItinerary, onComparison, onStatus, onThreadId, onDone, onError, onCancelled, onThinking, onToolStart, onToolEnd, onToolError, onUsage, onSubagentProgress,
             });
           }
         }
@@ -341,7 +348,7 @@ export async function editStream(
   body: { thread_id: string; message: string; locale?: string },
   callbacks: ChatStreamCallbacks,
 ): Promise<string | undefined> {
-  const { onToken, onItinerary, onComparison, onStatus, onThreadId, onDone, onError, onAbort, onCancelled, signal, errorMessages, onThinking, onToolStart, onToolEnd, onToolError, onUsage } = callbacks;
+  const { onToken, onItinerary, onComparison, onStatus, onThreadId, onDone, onError, onAbort, onCancelled, signal, errorMessages, onThinking, onToolStart, onToolEnd, onToolError, onUsage, onSubagentProgress } = callbacks;
   let resolvedThreadId: string | undefined;
 
   try {
@@ -405,7 +412,7 @@ export async function editStream(
             }
           } else {
             handleChatEvent(currentEvent, data, {
-              onToken, onItinerary, onComparison, onStatus, onThreadId, onDone, onError, onCancelled, onThinking, onToolStart, onToolEnd, onToolError, onUsage,
+              onToken, onItinerary, onComparison, onStatus, onThreadId, onDone, onError, onCancelled, onThinking, onToolStart, onToolEnd, onToolError, onUsage, onSubagentProgress,
             });
           }
         }
