@@ -324,7 +324,12 @@
     "previous7Days": "過去7日間",
     "older": "それ以前",
     "moreOptions": "その他のオプション",
-    "confirmDeleteText": "削除を確認しますか？"
+    "confirmDeleteText": "削除を確認しますか？",
+    "searchAllMessages": "すべてのメッセージを検索",
+    "searching": "検索中...",
+    "searchResults": "{count}件の結果",
+    "backToConversations": "会話に戻る",
+    "loadMoreResults": "さらに結果を読み込む"
   },
   "common": {
     "loading": "読み込み中...",
