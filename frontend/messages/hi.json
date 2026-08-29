@@ -346,5 +346,28 @@
     "sharedItinerary": "साझा यात्रा कार्यक्रम",
     "poweredBy": "VoyagerAI द्वारा संचालित",
     "loading": "साझा यात्रा कार्यक्रम लोड हो रहा है..."
+  },
+  "admin": {
+    "title": "लागत विश्लेषण",
+    "totalCost": "कुल लागत",
+    "avgCostPerConversation": "औसत लागत / वार्तालाप",
+    "totalConversations": "वार्तालाप",
+    "tokensUsed": "टोकन उपयोग",
+    "dailyCosts": "दैनिक लागत",
+    "subagentBreakdown": "सब-एजेंट अनुसार लागत",
+    "topUsers": "खर्च अनुसार शीर्ष उपयोगकर्ता",
+    "tokenEfficiency": "खराब टोकन दक्षता (>50:1)",
+    "exportCsv": "CSV निर्यात",
+    "periodDay": "दिन",
+    "periodWeek": "सप्ताह",
+    "periodMonth": "माह",
+    "accessDenied": "पहुँच अस्वीकृत। व्यवस्थापक अधिकार आवश्यक।",
+    "backHome": "होम पर वापस",
+    "user": "उपयोगकर्ता",
+    "cost": "लागत",
+    "threadId": "थ्रेड",
+    "efficiencyRatio": "दक्षता",
+    "noData": "कोई डेटा उपलब्ध नहीं",
+    "loadError": "लागत डेटा लोड करने में विफल"
   }
 }
