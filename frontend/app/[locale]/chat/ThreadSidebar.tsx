@@ -1,12 +1,13 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { Plus, Trash2, MessageSquare, Loader2, ChevronDown, Link2, Copy as CopyIcon, Check, X, Sparkles, LogOut, Home, Settings, MoreHorizontal, Search } from 'lucide-react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { Plus, Trash2, MessageSquare, Loader2, ChevronDown, Link2, Copy as CopyIcon, Check, X, Sparkles, LogOut, Home, Settings, MoreHorizontal, Search, ArrowLeft } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
-import type { ThreadMeta } from '@/lib/threads-api';
+import type { ThreadMeta, SearchResult } from '@/lib/threads-api';
+import { searchThreads } from '@/lib/threads-api';
 import { listShares, revokeShare, type ShareLink } from '@/lib/share-api';
 import { type SessionUser, logout } from '@/lib/auth';
 import { useLocale } from '@/lib/useLocale';
@@ -45,6 +46,24 @@ function groupThreadsByDate(threads: ThreadMeta[]): { label: string; threads: Th
   }
 
   return groups.filter(g => g.threads.length > 0);
+}
+
+function highlightMatch(text: string, query: string): React.ReactNode {
+  if (!query.trim()) return text;
+  const lowerText = text.toLowerCase();
+  const lowerQuery = query.toLowerCase();
+  const idx = lowerText.indexOf(lowerQuery);
+  if (idx === -1) return text;
+  const before = text.slice(0, idx);
+  const match = text.slice(idx, idx + query.length);
+  const after = text.slice(idx + query.length);
+  return (
+    <>
+      {before}
+      <mark className="bg-primary/20 text-foreground rounded px-0.5">{match}</mark>
+      {after}
+    </>
+  );
 }
 
 function Avatar({ user, size = 'sm' }: { user: SessionUser; size?: 'sm' | 'md' }) {
@@ -109,6 +128,13 @@ export default function ThreadSidebar({
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [deepSearchActive, setDeepSearchActive] = useState(false);
+  const [deepSearchResults, setDeepSearchResults] = useState<SearchResult[]>([]);
+  const [deepSearching, setDeepSearching] = useState(false);
+  const [deepSearchTotal, setDeepSearchTotal] = useState(0);
+  const [deepSearchHasMore, setDeepSearchHasMore] = useState(false);
+  const [deepSearchOffset, setDeepSearchOffset] = useState(0);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [shares, setShares] = useState<ShareLink[]>([]);
   const [sharesExpanded, setSharesExpanded] = useState(false);
   const [copiedToken, setCopiedToken] = useState<string | null>(null);
@@ -157,6 +183,44 @@ export default function ThreadSidebar({
   const handleLogout = async () => {
     await logout();
     router.push(`/${locale}/login`);
+  };
+
+  const runDeepSearch = useCallback(async (query: string, offset: number = 0) => {
+    if (!query.trim()) {
+      setDeepSearchActive(false);
+      setDeepSearchResults([]);
+      setDeepSearchTotal(0);
+      return;
+    }
+    setDeepSearching(true);
+    try {
+      const res = await searchThreads(query, offset);
+      setDeepSearchResults(prev => offset === 0 ? res.results : [...prev, ...res.results]);
+      setDeepSearchTotal(res.total);
+      setDeepSearchHasMore(res.has_more);
+      setDeepSearchOffset(offset);
+    } catch {
+      // network error — keep existing results
+    } finally {
+      setDeepSearching(false);
+    }
+  }, []);
+
+  const handleDeepSearch = () => {
+    if (!searchQuery.trim()) return;
+    setDeepSearchActive(true);
+    runDeepSearch(searchQuery, 0);
+  };
+
+  const handleClearDeepSearch = () => {
+    setDeepSearchActive(false);
+    setDeepSearchResults([]);
+    setDeepSearchTotal(0);
+    setDeepSearchHasMore(false);
+  };
+
+  const handleLoadMoreResults = () => {
+    runDeepSearch(searchQuery, deepSearchOffset + 20);
   };
 
   const navLinks = [
@@ -283,16 +347,105 @@ export default function ThreadSidebar({
           <input
             type="text"
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              if (deepSearchActive) {
+                if (debounceRef.current) clearTimeout(debounceRef.current);
+                debounceRef.current = setTimeout(() => {
+                  runDeepSearch(e.target.value, 0);
+                }, 300);
+              }
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') handleDeepSearch();
+            }}
             placeholder={t('search')}
             className="w-full pl-8 pr-3 py-1.5 text-xs rounded-lg bg-muted/50 border-0 text-foreground placeholder:text-muted-foreground/50 outline-none focus:bg-muted focus:ring-2 focus:ring-primary/20 transition-all"
           />
         </div>
+        {searchQuery.trim() && !deepSearchActive && (
+          <button
+            onClick={handleDeepSearch}
+            className="mt-1.5 w-full flex items-center justify-center gap-1.5 px-2 py-1 text-[11px] text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-md transition-colors cursor-pointer"
+          >
+            <Search className="w-3 h-3" />
+            {t('searchAllMessages')}
+          </button>
+        )}
+        {deepSearchActive && (
+          <button
+            onClick={handleClearDeepSearch}
+            className="mt-1.5 w-full flex items-center justify-center gap-1.5 px-2 py-1 text-[11px] text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-md transition-colors cursor-pointer"
+          >
+            <ArrowLeft className="w-3 h-3" />
+            {t('backToConversations')}
+          </button>
+        )}
       </div>
 
       {/* Thread list */}
       <div className="flex-1 overflow-y-auto px-2">
-        {threads.length === 0 ? (
+        {deepSearchActive ? (
+          /* Deep search results */
+          <div className="space-y-1">
+            {deepSearching && deepSearchResults.length === 0 ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+              </div>
+            ) : deepSearchResults.length === 0 ? (
+              <p className="text-xs text-muted-foreground text-center py-8 px-4">
+                {t('noResults')}
+              </p>
+            ) : (
+              <>
+                <p className="text-[11px] text-muted-foreground/60 px-3 pt-2 pb-1">
+                  {t('searchResults', { count: deepSearchTotal })}
+                </p>
+                {deepSearchResults.map((result) => (
+                  <div
+                    key={result.thread_id}
+                    onClick={() => onSelect(result.thread_id)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        onSelect(result.thread_id);
+                      }
+                    }}
+                    role="button"
+                    tabIndex={0}
+                    className={`group relative px-3 py-2 rounded-lg cursor-pointer transition-colors focus:outline-none focus:ring-2 focus:ring-primary/40 ${
+                      result.thread_id === activeThreadId ? 'bg-muted' : 'hover:bg-muted/50'
+                    }`}
+                  >
+                    <p className={`text-sm truncate ${result.thread_id === activeThreadId ? 'text-foreground font-medium' : 'text-foreground/80'}`}>
+                      {result.summary || t('untitled')}
+                    </p>
+                    <p className="text-[11px] text-muted-foreground/70 mt-0.5 line-clamp-2">
+                      {highlightMatch(result.snippet, searchQuery)}
+                    </p>
+                    <p className="text-[10px] text-muted-foreground/50 mt-0.5">
+                      {formatRelativeTime(result.updated_at)}
+                    </p>
+                  </div>
+                ))}
+                {deepSearchHasMore && (
+                  <button
+                    onClick={handleLoadMoreResults}
+                    disabled={deepSearching}
+                    className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 mt-2 rounded-lg hover:bg-muted text-muted-foreground text-xs font-medium transition-colors cursor-pointer disabled:opacity-50"
+                  >
+                    {deepSearching ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <ChevronDown className="w-3.5 h-3.5" />
+                    )}
+                    {t('loadMoreResults')}
+                  </button>
+                )}
+              </>
+            )}
+          </div>
+        ) : threads.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-center px-4">
             <MessageSquare className="w-7 h-7 text-muted-foreground/30 mb-2" />
             <p className="text-xs text-muted-foreground">
