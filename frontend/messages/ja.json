@@ -346,5 +346,28 @@
     "sharedItinerary": "共有旅程",
     "poweredBy": "VoyagerAI によって提供",
     "loading": "共有旅程を読み込み中..."
+  },
+  "admin": {
+    "title": "コスト分析",
+    "totalCost": "総コスト",
+    "avgCostPerConversation": "平均コスト / 会話",
+    "totalConversations": "会話数",
+    "tokensUsed": "トークン使用量",
+    "dailyCosts": "日次コスト",
+    "subagentBreakdown": "サブエージェント別コスト",
+    "topUsers": "支出上位ユーザー",
+    "tokenEfficiency": "トークン効率不良 (>50:1)",
+    "exportCsv": "CSVエクスポート",
+    "periodDay": "日",
+    "periodWeek": "週",
+    "periodMonth": "月",
+    "accessDenied": "アクセス拒否。管理者権限が必要です。",
+    "backHome": "ホームに戻る",
+    "user": "ユーザー",
+    "cost": "コスト",
+    "threadId": "スレッド",
+    "efficiencyRatio": "効率",
+    "noData": "データがありません",
+    "loadError": "コストデータの読み込みに失敗しました"
   }
 }
