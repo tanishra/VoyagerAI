@@ -526,12 +526,14 @@ async def chat_stream(
                 summary = await generate_summary(_msg_safe, stream_text, locale=locale)
                 await thread_store.upsert_thread(
                     user_id, thread_id, summary, status=final_status,
+                    search_text=f"{_msg_safe[:500]} {stream_text[:500]}",
                 )
             except Exception:  # noqa: BLE001 (intentional fallback handler)
                 logger.warning("Failed to save thread metadata", exc_info=True)
                 try:
                     await thread_store.upsert_thread(
                         user_id, thread_id, _msg_safe[:100], status="error" if stream_failed else "idle",
+                        search_text=f"{_msg_safe[:500]} {stream_text[:500]}",
                     )
                 except Exception:  # noqa: BLE001, S110
                     pass
@@ -628,6 +630,7 @@ async def chat_regenerate(
                 summary = await generate_summary("", stream_text, locale=locale)
                 await thread_store.upsert_thread(
                     user_id, thread_id, summary, status=final_status,
+                    search_text=stream_text[:1000],
                 )
             except Exception:  # noqa: BLE001
                 logger.warning("Failed to save thread metadata after regenerate", exc_info=True)
@@ -708,6 +711,7 @@ async def chat_edit(
                 summary = await generate_summary(new_message, stream_text, locale=locale)
                 await thread_store.upsert_thread(
                     user_id, thread_id, summary, status=final_status,
+                    search_text=f"{new_message[:500]} {stream_text[:500]}",
                 )
             except Exception:  # noqa: BLE001
                 logger.warning("Failed to save thread metadata after edit", exc_info=True)
@@ -740,6 +744,35 @@ async def list_threads(
         },
         headers={"Cache-Control": "public, max-age=300"},
     )
+
+
+@app.get(
+    "/threads/search",
+    summary="Search across all user's thread messages",
+    tags=["threads"],
+    dependencies=[Depends(verify_api_key)],
+)
+@limiter.limit("30/minute")
+async def search_threads(
+    request: Request,
+    q: str = "",
+    offset: int = 0,
+    limit: int = 20,
+    user: dict = Depends(get_current_user),
+) -> dict:
+    """Full-text search across all user's thread message content."""
+    if not q.strip():
+        return JSONResponse(content={"results": [], "total": 0, "has_more": False})
+    user_id = user["user_id"]
+    logger.info("GET /threads/search q=%s user=%s offset=%d", q[:50], user_id, offset)
+    results, total = await thread_store.search_threads(
+        user_id, q.strip(), limit=limit, offset=offset
+    )
+    return JSONResponse(content={
+        "results": results,
+        "total": total,
+        "has_more": (offset + limit) < total,
+    })
 
 
 @app.get(
