@@ -15,7 +15,7 @@ import secrets
 import time
 
 from authlib.integrations.starlette_client import OAuth
-from fastapi import HTTPException, Request, status
+from fastapi import Depends, HTTPException, Request, status
 from redis.asyncio import Redis
 from redis.exceptions import RedisError
 
@@ -149,3 +149,30 @@ async def get_current_user(request: Request) -> dict:
         "avatar_url": session.get("avatar_url"),
         "email": session.get("email", session["user_id"]),
     }
+
+
+async def verify_admin(user: dict = Depends(get_current_user)) -> dict:
+    """FastAPI dependency: verify the authenticated user is an admin.
+
+    Checks the user's email against the ADMIN_EMAILS setting (comma-separated).
+    Raises 403 if admin emails are not configured or the user is not an admin.
+    In dev bypass mode, the dev user is always treated as admin.
+    """
+    if settings.AUTH_DEV_BYPASS:
+        return user
+
+    admin_emails = [e.strip().lower() for e in settings.ADMIN_EMAILS.split(",") if e.strip()]
+    if not admin_emails:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access not configured",
+        )
+
+    user_email = (user.get("email") or "").lower()
+    if user_email not in admin_emails:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required",
+        )
+
+    return user
