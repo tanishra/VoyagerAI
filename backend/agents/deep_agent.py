@@ -19,7 +19,10 @@ from agents.activity_store import load_activity, save_activity
 from agents.llm import get_formatter_model, get_orchestrator_model
 from agents.prompts import build_chat_agent_prompt
 from agents.subagents import get_subagents
+from config import settings as _cfg_settings
 from config.settings import settings
+from cost_store import cost_store
+from pricing import calculate_cost
 from geocode_service import geocode
 from langchain.agents.middleware import ModelCallLimitMiddleware
 
@@ -144,6 +147,11 @@ class _ModelStream:
         self._tool_call_index: dict[str, int] = {}
         self._task_run_ids: set[str] = set()
         self._last_progress_time: dict[str, float] = {}
+        self._session_cost: float = 0.0
+        self._budget_reached: bool = False
+        self._budget_warned: bool = False
+        self._subagent_costs: dict[str, dict] = {}
+        self._active_task_names: dict[str, str] = {}
 
     async def events(self, inputs, cancel_event=None):
         async for event in self._agent.astream_events(
@@ -196,7 +204,18 @@ class _ModelStream:
                 parent_task_id = None
                 if name == "task" and isinstance(tool_input, dict):
                     display_name = tool_input.get("subagent_type", name)
+                    # Budget guardrail: check before dispatching a new subagent
+                    if self._check_budget():
+                        logger.warning(
+                            "Budget limit $%.4f reached (spent $%.4f) — skipping subagent %s",
+                            _cfg_settings.SESSION_BUDGET_LIMIT_USD,
+                            self._session_cost,
+                            display_name,
+                        )
+                        self._budget_reached = True
+                        continue
                     self._task_run_ids.add(run_id)
+                    self._active_task_names[run_id] = display_name
                     desc = self._extract_progress_description(name, tool_input)
                     if desc and self._maybe_yield_progress(run_id, desc):
                         yield {"event": "subagent_progress", "data": {"run_id": run_id, "description": desc}}
@@ -251,6 +270,37 @@ class _ModelStream:
                         })
                         self.activity["total_input_tokens"] += inp
                         self.activity["total_output_tokens"] += outp
+                        # Cost tracking
+                        cost = calculate_cost(model_name, inp, outp)
+                        self._session_cost += cost
+                        # Track per-subagent cost
+                        parent_ids = event.get("parent_ids") or []
+                        subagent_name = "orchestrator"
+                        for pid in parent_ids:
+                            if pid in self._active_task_names:
+                                subagent_name = self._active_task_names[pid]
+                                break
+                        if subagent_name not in self._subagent_costs:
+                            self._subagent_costs[subagent_name] = {
+                                "input_tokens": 0,
+                                "output_tokens": 0,
+                                "cost": 0.0,
+                                "model": model_name,
+                            }
+                        self._subagent_costs[subagent_name]["input_tokens"] += inp
+                        self._subagent_costs[subagent_name]["output_tokens"] += outp
+                        self._subagent_costs[subagent_name]["cost"] += cost
+                        # Budget warning at threshold
+                        if not self._budget_warned and self._session_cost >= (
+                            _cfg_settings.SESSION_BUDGET_LIMIT_USD * _cfg_settings.BUDGET_WARNING_THRESHOLD
+                        ):
+                            self._budget_warned = True
+                            logger.warning(
+                                "Session cost $%.4f reached %.0f%% of budget $%.4f",
+                                self._session_cost,
+                                _cfg_settings.BUDGET_WARNING_THRESHOLD * 100,
+                                _cfg_settings.SESSION_BUDGET_LIMIT_USD,
+                            )
 
             yield event
 
@@ -284,6 +334,48 @@ class _ModelStream:
             self._last_progress_time[run_id] = now
             return True
         return False
+
+    def _check_budget(self) -> bool:
+        """Return True if the session budget has been exceeded."""
+        return self._session_cost >= _cfg_settings.SESSION_BUDGET_LIMIT_USD
+
+    def get_cost_summary(self) -> dict:
+        """Return accumulated cost data for persistence."""
+        return {
+            "session_cost": round(self._session_cost, 6),
+            "budget_reached": self._budget_reached,
+            "subagent_costs": {
+                name: {**data, "cost": round(data["cost"], 6)}
+                for name, data in self._subagent_costs.items()
+            },
+            "total_input_tokens": self.activity["total_input_tokens"],
+            "total_output_tokens": self.activity["total_output_tokens"],
+        }
+
+    async def persist_costs(self, thread_id: str, user_id: str) -> None:
+        """Persist cost data to the cost store."""
+        summary = self.get_cost_summary()
+        # Record per-subagent costs
+        for name, data in summary["subagent_costs"].items():
+            await cost_store.record_subagent_cost(
+                thread_id=thread_id,
+                user_id=user_id,
+                subagent_name=name,
+                input_tokens=data["input_tokens"],
+                output_tokens=data["output_tokens"],
+                cost_usd=data["cost"],
+                model_used=data["model"],
+            )
+        # Update session total
+        await cost_store.update_session_total(
+            thread_id=thread_id,
+            user_id=user_id,
+            total_input_tokens=summary["total_input_tokens"],
+            total_output_tokens=summary["total_output_tokens"],
+            total_cost_usd=summary["session_cost"],
+            budget_limit_usd=_cfg_settings.SESSION_BUDGET_LIMIT_USD,
+            budget_reached=summary["budget_reached"],
+        )
 
     def last_text(self) -> str:
         for run_id in reversed(self._order):
@@ -609,6 +701,12 @@ async def stream_chat_agent(
             store = InMemoryStore()
         await save_activity(store, thread_id, stream.activity)
 
+    # Persist cost data
+    try:
+        await stream.persist_costs(thread_id, user_id or "anonymous")
+    except Exception:
+        logger.warning("Failed to persist cost data for thread %s", thread_id, exc_info=True)
+
     stream_text = stream.last_text()
     logger.info("stream finished: last_text len=%d, has_tags=%s", len(stream_text), bool(stream_text and (_ITINERARY_TAG_RE.search(stream_text) or _COMPARISON_TAG_RE.search(stream_text))))
 
@@ -684,6 +782,12 @@ async def stream_chat_agent(
             store = InMemoryStore()
         await save_activity(store, thread_id, stream.activity)
 
+    # Re-persist cost data if retry added more
+    try:
+        await stream.persist_costs(thread_id, user_id or "anonymous")
+    except Exception:
+        logger.warning("Failed to re-persist cost data for thread %s", thread_id, exc_info=True)
+
 
 async def _find_fork_checkpoint(agent, config) -> dict | None:
     """Find the checkpoint before the last assistant response.
@@ -751,6 +855,12 @@ async def regenerate_chat_agent(
         except Exception:
             store = InMemoryStore()
         await save_activity(store, thread_id, stream.activity)
+
+    # Persist cost data
+    try:
+        await stream.persist_costs(thread_id, user_id or "anonymous")
+    except Exception:
+        logger.warning("Failed to persist cost data for thread %s", thread_id, exc_info=True)
 
     stream_text = stream.last_text()
     logger.info("regenerate finished: last_text len=%d, has_tags=%s", len(stream_text), bool(stream_text and (_ITINERARY_TAG_RE.search(stream_text) or _COMPARISON_TAG_RE.search(stream_text))))
@@ -822,6 +932,12 @@ async def regenerate_chat_agent(
             store = InMemoryStore()
         await save_activity(store, thread_id, stream.activity)
 
+    # Re-persist cost data if retry added more
+    try:
+        await stream.persist_costs(thread_id, user_id or "anonymous")
+    except Exception:
+        logger.warning("Failed to re-persist cost data for thread %s", thread_id, exc_info=True)
+
 
 async def _find_edit_fork_checkpoint(agent, config) -> dict | None:
     """Find the parent checkpoint of the last user message.
@@ -891,6 +1007,12 @@ async def edit_chat_agent(
             store = InMemoryStore()
         await save_activity(store, thread_id, stream.activity)
 
+    # Persist cost data
+    try:
+        await stream.persist_costs(thread_id, user_id or "anonymous")
+    except Exception:
+        logger.warning("Failed to persist cost data for thread %s", thread_id, exc_info=True)
+
     stream_text = stream.last_text()
     logger.info("edit finished: last_text len=%d, has_tags=%s", len(stream_text), bool(stream_text and (_ITINERARY_TAG_RE.search(stream_text) or _COMPARISON_TAG_RE.search(stream_text))))
 
@@ -955,3 +1077,9 @@ async def edit_chat_agent(
         except Exception:
             store = InMemoryStore()
         await save_activity(store, thread_id, stream.activity)
+
+    # Re-persist cost data if retry added more
+    try:
+        await stream.persist_costs(thread_id, user_id or "anonymous")
+    except Exception:
+        logger.warning("Failed to re-persist cost data for thread %s", thread_id, exc_info=True)
