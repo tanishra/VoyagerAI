@@ -59,5 +59,18 @@ class Settings(BaseSettings):
     SESSION_SECRET_KEY: str = "dev-only-insecure-key-change-in-production"
     AUTH_DEV_BYPASS: bool = False
 
+    # Cost tracking
+    SESSION_BUDGET_LIMIT_USD: float = 0.50
+    BUDGET_WARNING_THRESHOLD: float = 0.80
+    ADMIN_EMAILS: str = ""  # comma-separated admin emails
+
+    # Model routing tiers
+    MODEL_TIER_CHEAP: str = "gemini/gemini-3.5-flash-lite"
+    MODEL_TIER_STANDARD: str = "gemini/gemini-3.7-flash"
+    MODEL_TIER_PREMIUM: str = "gemini/gemini-2.5-pro"
+
+    # Subagent model overrides (JSON string: {"researcher": "gemini/gemini-2.5-pro", ...})
+    SUBAGENT_MODEL_OVERRIDES: str = ""
+
 
 settings = Settings()
