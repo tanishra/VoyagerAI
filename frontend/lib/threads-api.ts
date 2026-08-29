@@ -15,6 +15,20 @@ export interface ThreadListResponse {
   has_more: boolean;
 }
 
+export interface SearchResult {
+  thread_id: string;
+  summary: string;
+  snippet: string;
+  updated_at: number;
+  message_count: number;
+}
+
+export interface SearchResponse {
+  results: SearchResult[];
+  total: number;
+  has_more: boolean;
+}
+
 export interface ThreadMessage {
   role: 'user' | 'assistant';
   content: string;
@@ -107,5 +121,22 @@ export async function deleteThread(threadId: string): Promise<boolean> {
     return res.ok;
   } catch {
     return false;
+  }
+}
+
+export async function searchThreads(query: string, offset: number = 0): Promise<SearchResponse> {
+  try {
+    const params = new URLSearchParams({ q: query, offset: String(offset) });
+    const res = await fetch(`${API_URL}/threads/search?${params}`, {
+      credentials: 'include',
+    });
+    if (res.status === 401) {
+      window.location.href = '/login';
+      return { results: [], total: 0, has_more: false };
+    }
+    if (!res.ok) return { results: [], total: 0, has_more: false };
+    return await res.json();
+  } catch {
+    return { results: [], total: 0, has_more: false };
   }
 }
