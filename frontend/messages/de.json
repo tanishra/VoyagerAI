@@ -346,5 +346,28 @@
     "sharedItinerary": "Geteilte Reiseroute",
     "poweredBy": "Betrieben von VoyagerAI",
     "loading": "Geteilte Reiseroute wird geladen..."
+  },
+  "admin": {
+    "title": "Kostenanalyse",
+    "totalCost": "Gesamtkosten",
+    "avgCostPerConversation": "Ø Kosten / Gespräch",
+    "totalConversations": "Gespräche",
+    "tokensUsed": "Tokens verwendet",
+    "dailyCosts": "Tägliche Kosten",
+    "subagentBreakdown": "Kosten nach Unteragent",
+    "topUsers": "Top-Nutzer nach Ausgaben",
+    "tokenEfficiency": "Schlechte Token-Effizienz (>50:1)",
+    "exportCsv": "CSV exportieren",
+    "periodDay": "Tag",
+    "periodWeek": "Woche",
+    "periodMonth": "Monat",
+    "accessDenied": "Zugriff verweigert. Administratorrechte erforderlich.",
+    "backHome": "Zurück zur Startseite",
+    "user": "Nutzer",
+    "cost": "Kosten",
+    "threadId": "Thread",
+    "efficiencyRatio": "Effizienz",
+    "noData": "Keine Daten verfügbar",
+    "loadError": "Kostendaten konnten nicht geladen werden"
   }
 }
