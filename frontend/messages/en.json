@@ -346,5 +346,28 @@
     "sharedItinerary": "Shared itinerary",
     "poweredBy": "Powered by VoyagerAI",
     "loading": "Loading shared itinerary..."
+  },
+  "admin": {
+    "title": "Cost Analytics",
+    "totalCost": "Total Cost",
+    "avgCostPerConversation": "Avg Cost / Conversation",
+    "totalConversations": "Conversations",
+    "tokensUsed": "Tokens Used",
+    "dailyCosts": "Daily Costs",
+    "subagentBreakdown": "Cost by Subagent",
+    "topUsers": "Top Users by Spend",
+    "tokenEfficiency": "Poor Token Efficiency (>50:1)",
+    "exportCsv": "Export CSV",
+    "periodDay": "Day",
+    "periodWeek": "Week",
+    "periodMonth": "Month",
+    "accessDenied": "Access denied. Admin privileges required.",
+    "backHome": "Back to home",
+    "user": "User",
+    "cost": "Cost",
+    "threadId": "Thread",
+    "efficiencyRatio": "Efficiency",
+    "noData": "No data available",
+    "loadError": "Failed to load cost data"
   }
 }
