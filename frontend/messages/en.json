@@ -324,7 +324,12 @@
     "previous7Days": "Previous 7 Days",
     "older": "Older",
     "moreOptions": "More options",
-    "confirmDeleteText": "Confirm delete?"
+    "confirmDeleteText": "Confirm delete?",
+    "searchAllMessages": "Search all messages",
+    "searching": "Searching...",
+    "searchResults": "{count} results found",
+    "backToConversations": "Back to conversations",
+    "loadMoreResults": "Load more results"
   },
   "common": {
     "loading": "Loading...",
