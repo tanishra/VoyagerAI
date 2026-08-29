@@ -324,7 +324,12 @@
     "previous7Days": "पिछले 7 दिन",
     "older": "पुराने",
     "moreOptions": "अधिक विकल्प",
-    "confirmDeleteText": "हटाना पुष्टि करें?"
+    "confirmDeleteText": "हटाना पुष्टि करें?",
+    "searchAllMessages": "सभी संदेश खोजें",
+    "searching": "खोज रहा है...",
+    "searchResults": "{count} परिणाम मिले",
+    "backToConversations": "वार्तालाप पर वापस",
+    "loadMoreResults": "अधिक परिणाम लोड करें"
   },
   "common": {
     "loading": "लोड हो रहा है...",
