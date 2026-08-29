@@ -43,11 +43,13 @@ from oauth import (
     delete_session,
     get_current_user,
     oauth,
+    verify_admin,
 )
 from locale_utils import extract_locale, get_error_message
 from sanitize import sanitize_prompt_input
 from share_store import share_store
 from threads import generate_summary, thread_store
+from cost_store import cost_store
 
 ALLOWED_ORIGINS: list[str] = [
     orig.strip()
@@ -307,6 +309,96 @@ async def health() -> dict[str, str]:
         "redis": "connected" if redis_ok else "unavailable",
         "agent": "deepagent",
     }
+
+
+# --- Admin cost analytics endpoints ---
+
+@app.get(
+    "/admin/costs",
+    summary="Get aggregate cost analytics",
+    tags=["admin"],
+    dependencies=[Depends(verify_api_key)],
+)
+@limiter.limit("10/minute")
+async def get_cost_analytics(
+    request: Request,
+    period: str = "week",
+    admin: dict = Depends(verify_admin),
+) -> dict:
+    """Get aggregate cost analytics for a time period.
+
+    Args:
+        period: "day", "week", or "month".
+    """
+    if period not in ("day", "week", "month"):
+        period = "week"
+    stats = await cost_store.get_aggregate_stats(period=period)
+    return JSONResponse(content=stats)
+
+
+@app.get(
+    "/admin/costs/threads/{thread_id}",
+    summary="Get per-subagent cost breakdown for a thread",
+    tags=["admin"],
+    dependencies=[Depends(verify_api_key)],
+)
+@limiter.limit("30/minute")
+async def get_thread_cost_breakdown(
+    thread_id: str,
+    request: Request,
+    admin: dict = Depends(verify_admin),
+) -> dict:
+    """Get per-subagent cost breakdown for a specific conversation."""
+    session_cost = await cost_store.get_session_cost(thread_id)
+    subagent_breakdown = await cost_store.get_subagent_breakdown(thread_id)
+    return JSONResponse(content={
+        "session": session_cost,
+        "subagents": subagent_breakdown,
+    })
+
+
+@app.get(
+    "/admin/costs/export",
+    summary="Export all cost records as CSV",
+    tags=["admin"],
+    dependencies=[Depends(verify_api_key)],
+)
+@limiter.limit("5/minute")
+async def export_costs_csv(
+    request: Request,
+    admin: dict = Depends(verify_admin),
+) -> PlainTextResponse:
+    """Export all cost records as CSV for spreadsheet analysis."""
+    import csv
+    import io
+
+    stats = await cost_store.get_aggregate_stats(period="month")
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["metric", "value"])
+    writer.writerow(["total_cost", stats["total_cost"]])
+    writer.writerow(["total_conversations", stats["total_conversations"]])
+    writer.writerow(["avg_cost_per_conversation", stats["avg_cost_per_conversation"]])
+    writer.writerow(["total_input_tokens", stats["total_input_tokens"]])
+    writer.writerow(["total_output_tokens", stats["total_output_tokens"]])
+    writer.writerow([])
+    writer.writerow(["subagent", "cost", "input_tokens", "output_tokens"])
+    for s in stats["per_subagent"]:
+        writer.writerow([s["name"], s["cost"], s["input_tokens"], s["output_tokens"]])
+    writer.writerow([])
+    writer.writerow(["user_id", "cost"])
+    for u in stats["top_users"]:
+        writer.writerow([u["user_id"], u["cost"]])
+    writer.writerow([])
+    writer.writerow(["thread_id", "user_id", "efficiency_ratio", "cost"])
+    for s in stats["poor_efficiency_sessions"]:
+        writer.writerow([s["thread_id"], s["user_id"], s["efficiency_ratio"], s["cost"]])
+
+    return PlainTextResponse(
+        content=output.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=costs.csv"},
+    )
 
 
 @app.get(
