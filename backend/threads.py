@@ -42,6 +42,7 @@ class ThreadMeta:
     updated_at: float
     status: str = "idle"
     message_count: int = 0
+    search_text: str = ""
 
 
 def _user_tag(user_id: str) -> str:
@@ -109,6 +110,7 @@ class ThreadStore:
         summary: str,
         status: str = "idle",
         message_count: int = 0,
+        search_text: str = "",
     ) -> None:
         """Insert or update a thread's metadata. Updates summary, status, and updated_at."""
         tag = _user_tag(user_id)
@@ -120,8 +122,11 @@ class ThreadStore:
                 existing = await r.hgetall(key)
                 created_at = float(existing.get("created_at", now)) if existing else now
                 prev_count = int(existing.get("message_count", 0)) if existing else 0
+                prev_search = existing.get("search_text", "") if existing else ""
                 # If message_count not provided, preserve existing count
                 count = message_count if message_count > 0 else prev_count
+                # Accumulate search_text if not provided
+                final_search = search_text if search_text else prev_search
                 pipe = r.pipeline()
                 pipe.hset(key, mapping={
                     "thread_id": thread_id,
@@ -130,6 +135,7 @@ class ThreadStore:
                     "updated_at": str(now),
                     "status": status,
                     "message_count": str(count),
+                    "search_text": final_search[:1000],
                 })
                 pipe.zadd(f"threads:{tag}", {thread_id: now})
                 pipe.expire(key, _TTL_SECONDS)
@@ -143,7 +149,9 @@ class ThreadStore:
         existing = user_threads.get(thread_id)
         created_at = existing.created_at if existing else now
         prev_count = existing.message_count if existing else 0
+        prev_search = existing.search_text if existing else ""
         count = message_count if message_count > 0 else prev_count
+        final_search = search_text if search_text else prev_search
         user_threads[thread_id] = ThreadMeta(
             thread_id=thread_id,
             summary=summary[:50],
@@ -151,6 +159,7 @@ class ThreadStore:
             updated_at=now,
             status=status,
             message_count=count,
+            search_text=final_search[:1000],
         )
 
     async def delete_thread(self, user_id: str, thread_id: str) -> bool:
@@ -232,6 +241,81 @@ class ThreadStore:
 
         # In-memory fallback
         return len(self._mem.get(user_id, {}))
+
+    async def search_threads(
+        self, user_id: str, query: str, limit: int = 20, offset: int = 0
+    ) -> tuple[list[dict], int]:
+        """Search across all user's thread messages for a keyword.
+
+        Returns (results, total) where each result is:
+        { thread_id, summary, snippet, updated_at, message_count }
+        """
+        tag = _user_tag(user_id)
+        query_lower = query.lower()
+
+        r = await self._get_redis()
+        if r is not None:
+            try:
+                thread_ids = await r.zrange(f"threads:{tag}", 0, -1)
+                if not thread_ids:
+                    return [], 0
+                pipe = r.pipeline()
+                for tid in thread_ids:
+                    pipe.hgetall(f"threads:{tag}:{tid}")
+                results_raw = await pipe.execute()
+
+                matches = []
+                for tid, data in zip(thread_ids, results_raw, strict=False):
+                    if not data:
+                        continue
+                    search_text = data.get("search_text", "")
+                    idx = search_text.lower().find(query_lower)
+                    if idx >= 0:
+                        start = max(0, idx - 75)
+                        end = min(len(search_text), idx + len(query) + 75)
+                        snippet = (
+                            ("..." if start > 0 else "")
+                            + search_text[start:end]
+                            + ("..." if end < len(search_text) else "")
+                        )
+                        matches.append({
+                            "thread_id": data.get("thread_id", tid),
+                            "summary": data.get("summary", ""),
+                            "snippet": snippet,
+                            "updated_at": float(data.get("updated_at", 0)),
+                            "message_count": int(data.get("message_count", 0)),
+                        })
+
+                matches.sort(key=lambda m: m["updated_at"], reverse=True)
+                total = len(matches)
+                return matches[offset : offset + limit], total
+            except (RedisError, RuntimeError) as exc:
+                logger.warning("ThreadStore search_threads Redis error: %s", exc)
+
+        # In-memory fallback
+        user_threads = self._mem.get(user_id, {})
+        matches = []
+        for meta in user_threads.values():
+            search_text = meta.search_text or ""
+            idx = search_text.lower().find(query_lower)
+            if idx >= 0:
+                start = max(0, idx - 75)
+                end = min(len(search_text), idx + len(query) + 75)
+                snippet = (
+                    ("..." if start > 0 else "")
+                    + search_text[start:end]
+                    + ("..." if end < len(search_text) else "")
+                )
+                matches.append({
+                    "thread_id": meta.thread_id,
+                    "summary": meta.summary,
+                    "snippet": snippet,
+                    "updated_at": meta.updated_at,
+                    "message_count": meta.message_count,
+                })
+        matches.sort(key=lambda m: m["updated_at"], reverse=True)
+        total = len(matches)
+        return matches[offset : offset + limit], total
 
     async def cleanup_expired_threads(self) -> list[str]:
         """Find thread IDs still in sorted sets whose hash metadata has expired.
