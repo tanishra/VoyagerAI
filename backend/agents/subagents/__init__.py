@@ -84,18 +84,17 @@ def wrap_subagent_for_resilience(spec: SubAgent) -> SubAgent:
 
 
 def get_subagents() -> list:
-    model = get_subagent_model()
     internet_tools = get_internet_tools()
 
     raw = [
-        build_researcher(model, internet_tools),
-        build_validator(model),
-        build_enricher(model, internet_tools),
-        build_cost_optimizer(model, internet_tools),
-        build_risk_detector(model, internet_tools),
-        build_constraint_analyzer(model),
-        build_multi_plan_generator(model),
-        build_quality_scorer(model),
+        build_researcher(get_subagent_model("researcher"), internet_tools),
+        build_validator(get_subagent_model("validator")),
+        build_enricher(get_subagent_model("enricher"), internet_tools),
+        build_cost_optimizer(get_subagent_model("cost_optimizer"), internet_tools),
+        build_risk_detector(get_subagent_model("risk_detector"), internet_tools),
+        build_constraint_analyzer(get_subagent_model("constraint_analyzer")),
+        build_multi_plan_generator(get_subagent_model("multi_plan_generator")),
+        build_quality_scorer(get_subagent_model("quality_scorer")),
     ]
 
     return [wrap_subagent_for_resilience(spec) for spec in raw]
