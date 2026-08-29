@@ -346,5 +346,28 @@
     "sharedItinerary": "Itinerario compartido",
     "poweredBy": "Desarrollado por VoyagerAI",
     "loading": "Cargando itinerario compartido..."
+  },
+  "admin": {
+    "title": "Análisis de Costos",
+    "totalCost": "Costo Total",
+    "avgCostPerConversation": "Costo Promedio / Conversación",
+    "totalConversations": "Conversaciones",
+    "tokensUsed": "Tokens Usados",
+    "dailyCosts": "Costos Diarios",
+    "subagentBreakdown": "Costo por Subagente",
+    "topUsers": "Top Usuarios por Gasto",
+    "tokenEfficiency": "Eficiencia de Tokens Pobre (>50:1)",
+    "exportCsv": "Exportar CSV",
+    "periodDay": "Día",
+    "periodWeek": "Semana",
+    "periodMonth": "Mes",
+    "accessDenied": "Acceso denegado. Se requieren privilegios de administrador.",
+    "backHome": "Volver al inicio",
+    "user": "Usuario",
+    "cost": "Costo",
+    "threadId": "Hilo",
+    "efficiencyRatio": "Eficiencia",
+    "noData": "Sin datos disponibles",
+    "loadError": "Error al cargar datos de costos"
   }
 }
