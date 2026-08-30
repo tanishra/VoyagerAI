@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Plus, Trash2, MessageSquare, Loader2, ChevronDown, Link2, Copy as CopyIcon, Check, X, Sparkles, LogOut, Home, Settings, MoreHorizontal, Search, ArrowLeft } from 'lucide-react';
+import { Plus, Trash2, MessageSquare, Loader2, ChevronDown, Link2, Copy as CopyIcon, Check, X, Sparkles, LogOut, Home, Settings, MoreHorizontal, Search, ArrowLeft, Bookmark, BookmarkCheck } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import Image from 'next/image';
@@ -104,6 +104,7 @@ interface ThreadSidebarProps {
   onNewChat: () => void;
   onLoadMore: () => void;
   onClose?: () => void;
+  onTogglePin?: (threadId: string, pinned: boolean) => void;
   user: SessionUser | null;
 }
 
@@ -118,6 +119,7 @@ export default function ThreadSidebar({
   onNewChat,
   onLoadMore,
   onClose,
+  onTogglePin,
   user,
 }: ThreadSidebarProps) {
   const t = useTranslations('threads');
@@ -139,6 +141,7 @@ export default function ThreadSidebar({
   const [sharesExpanded, setSharesExpanded] = useState(false);
   const [copiedToken, setCopiedToken] = useState<string | null>(null);
   const [revokingToken, setRevokingToken] = useState<string | null>(null);
+  const [pinningId, setPinningId] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -178,6 +181,15 @@ export default function ThreadSidebar({
       setConfirmDelete(threadId);
       setTimeout(() => setConfirmDelete(null), 3000);
     }
+  };
+
+  const handleTogglePin = async (e: React.MouseEvent, threadId: string, pinned: boolean) => {
+    e.stopPropagation();
+    if (!onTogglePin) return;
+    setPinningId(threadId);
+    setOpenMenu(null);
+    onTogglePin(threadId, pinned);
+    setPinningId(null);
   };
 
   const handleLogout = async () => {
@@ -289,16 +301,32 @@ export default function ThreadSidebar({
                       {t('confirmDeleteText')}
                     </button>
                   ) : (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setConfirmDelete(thread.thread_id);
-                      }}
-                      className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-red-600 hover:bg-red-500/10 text-left cursor-pointer"
-                    >
-                      <Trash2 className="w-3 h-3" />
-                      {t('delete')}
-                    </button>
+                    <>
+                      {onTogglePin && (
+                        <button
+                          onClick={(e) => handleTogglePin(e, thread.thread_id, !thread.pinned)}
+                          disabled={pinningId === thread.thread_id}
+                          className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-muted text-left cursor-pointer disabled:opacity-50"
+                        >
+                          {thread.pinned ? (
+                            <BookmarkCheck className="w-3 h-3" />
+                          ) : (
+                            <Bookmark className="w-3 h-3" />
+                          )}
+                          {thread.pinned ? t('unpin') : t('pin')}
+                        </button>
+                      )}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setConfirmDelete(thread.thread_id);
+                        }}
+                        className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-red-600 hover:bg-red-500/10 text-left cursor-pointer"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                        {t('delete')}
+                      </button>
+                    </>
                   )}
                 </div>
               </>
@@ -472,18 +500,39 @@ export default function ThreadSidebar({
             );
           })()
         ) : (
-          /* Grouped thread list */
+          /* Grouped thread list with pinned section */
           <>
-            {groupThreadsByDate(threads).map((group) => (
-              <div key={group.label}>
-                <p className="text-[11px] font-medium text-muted-foreground/60 px-3 pt-3 pb-1">
-                  {t(group.label)}
-                </p>
-                <div className="space-y-0.5">
-                  {group.threads.map((thread) => renderThreadItem(thread))}
-                </div>
-              </div>
-            ))}
+            {(() => {
+              const pinnedThreads = threads
+                .filter(t => t.pinned)
+                .sort((a, b) => (b.pinned_at || 0) - (a.pinned_at || 0));
+              const unpinnedThreads = threads.filter(t => !t.pinned);
+
+              return (
+                <>
+                  {pinnedThreads.length > 0 && (
+                    <div>
+                      <p className="text-[11px] font-medium text-muted-foreground/60 px-3 pt-3 pb-1">
+                        {t('pinned')}
+                      </p>
+                      <div className="space-y-0.5">
+                        {pinnedThreads.map((thread) => renderThreadItem(thread))}
+                      </div>
+                    </div>
+                  )}
+                  {groupThreadsByDate(unpinnedThreads).map((group) => (
+                    <div key={group.label}>
+                      <p className="text-[11px] font-medium text-muted-foreground/60 px-3 pt-3 pb-1">
+                        {t(group.label)}
+                      </p>
+                      <div className="space-y-0.5">
+                        {group.threads.map((thread) => renderThreadItem(thread))}
+                      </div>
+                    </div>
+                  ))}
+                </>
+              );
+            })()}
             {hasMore && (
               <button
                 onClick={onLoadMore}
