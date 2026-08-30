@@ -329,7 +329,10 @@
     "searching": "Buscando...",
     "searchResults": "{count} resultados encontrados",
     "backToConversations": "Volver a conversaciones",
-    "loadMoreResults": "Cargar más resultados"
+    "loadMoreResults": "Cargar más resultados",
+    "pin": "Fijar",
+    "unpin": "Desfijar",
+    "pinned": "Fijados"
   },
   "common": {
     "loading": "Cargando...",
