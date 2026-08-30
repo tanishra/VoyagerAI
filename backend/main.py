@@ -34,7 +34,7 @@ from auth import verify_api_key
 from cache import cache_client
 from cancel_registry import cancel_stream, register_cancel, unregister_cancel
 from config import REQUEST_TIMEOUT_SECONDS, logger, settings
-from models import ChatRequest
+from models import ChatRequest, ThreadUpdateRequest
 from oauth import (
     DEV_USER,
     SESSION_COOKIE_NAME,
@@ -972,6 +972,35 @@ async def delete_thread(
 
     logger.info("Deleted thread metadata + checkpoint for user=%s thread=%s", user_id, thread_id)
     return {"status": "ok", "thread_id": thread_id}
+
+
+@app.patch(
+    "/threads/{thread_id}",
+    summary="Update thread metadata (e.g., pin/unpin)",
+    tags=["threads"],
+    dependencies=[Depends(verify_api_key)],
+)
+@limiter.limit("30/minute")
+async def update_thread(
+    thread_id: str,
+    request: Request,
+    body: ThreadUpdateRequest,
+    user: dict = Depends(get_current_user),
+) -> dict:
+    user_id = user["user_id"]
+
+    # Security: verify ownership via prefix check
+    user_tag = hashlib.sha256(user_id.encode()).hexdigest()[:12]
+    if not thread_id.startswith(f"chat:{user_tag}:"):
+        raise HTTPException(status_code=403, detail="Thread does not belong to this user")
+
+    if body.pinned is not None:
+        ok = await thread_store.update_pin_status(user_id, thread_id, body.pinned)
+        if not ok:
+            raise HTTPException(status_code=404, detail="Thread not found")
+        logger.info("PATCH /threads/%s pinned=%s user=%s", thread_id, body.pinned, user_id)
+
+    return JSONResponse(content={"status": "ok", "thread_id": thread_id})
 
 
 @app.get("/auth/login", summary="Google OAuth login", tags=["auth"])
