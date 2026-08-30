@@ -329,7 +329,10 @@
     "searching": "検索中...",
     "searchResults": "{count}件の結果",
     "backToConversations": "会話に戻る",
-    "loadMoreResults": "さらに結果を読み込む"
+    "loadMoreResults": "さらに結果を読み込む",
+    "pin": "ピン留め",
+    "unpin": "ピンを外す",
+    "pinned": "ピン留め済み"
   },
   "common": {
     "loading": "読み込み中...",
