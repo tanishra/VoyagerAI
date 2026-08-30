@@ -6,7 +6,7 @@ import { Send, Square, RotateCcw, Globe, Search, ShieldAlert, ListChecks, Loader
 import { useTranslations } from 'next-intl';
 import { useLocale } from '@/lib/useLocale';
 import { streamChat, cancelStream, regenerateStream, editStream } from '@/lib/chat-api';
-import { listThreads, getThreadHistory, getBranches, deleteThread, type ThreadMeta } from '@/lib/threads-api';
+import { listThreads, getThreadHistory, getBranches, deleteThread, updateThread, type ThreadMeta } from '@/lib/threads-api';
 import { getSession, type SessionUser } from '@/lib/auth';
 import { useOnlineStatus } from '@/lib/useOnlineStatus';
 import { useThrottledValue } from '@/lib/useThrottledValue';
@@ -245,6 +245,17 @@ export default function ChatPage() {
       if (threadIdToDelete === threadId) {
         handleNewChat();
       }
+    }
+  };
+
+  const handleTogglePin = async (threadIdToPin: string, pinned: boolean) => {
+    const ok = await updateThread(threadIdToPin, pinned);
+    if (ok) {
+      setThreads((prev) => prev.map(t =>
+        t.thread_id === threadIdToPin
+          ? { ...t, pinned, pinned_at: pinned ? Date.now() / 1000 : 0 }
+          : t
+      ));
     }
   };
 
@@ -1129,6 +1140,7 @@ export default function ChatPage() {
                 onSelect={handleSelectThread}
                 onDelete={handleDeleteThread}
                 onNewChat={handleNewChat}
+                onTogglePin={handleTogglePin}
                 onClose={() => setShowSidebar(false)}
                 user={currentUser}
                 onLoadMore={async () => {
@@ -1173,6 +1185,7 @@ export default function ChatPage() {
                   onSelect={handleSelectThread}
                   onDelete={handleDeleteThread}
                   onNewChat={handleNewChat}
+                  onTogglePin={handleTogglePin}
                   onClose={() => setSidebarOpen(false)}
                   user={currentUser}
                   onLoadMore={async () => {
