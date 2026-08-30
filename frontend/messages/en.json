@@ -329,7 +329,10 @@
     "searching": "Searching...",
     "searchResults": "{count} results found",
     "backToConversations": "Back to conversations",
-    "loadMoreResults": "Load more results"
+    "loadMoreResults": "Load more results",
+    "pin": "Pin",
+    "unpin": "Unpin",
+    "pinned": "Pinned"
   },
   "common": {
     "loading": "Loading...",
