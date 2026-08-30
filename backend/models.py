@@ -49,3 +49,9 @@ class ChatRequest(BaseModel):
     locale: str | None = Field(
         None, max_length=10, description="User's preferred locale (e.g. 'en', 'es', 'fr')."
     )
+
+
+class ThreadUpdateRequest(BaseModel):
+    pinned: bool | None = Field(
+        None, description="Set to true/false to pin/unpin a thread."
+    )
