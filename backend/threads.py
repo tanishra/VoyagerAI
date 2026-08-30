@@ -43,6 +43,8 @@ class ThreadMeta:
     status: str = "idle"
     message_count: int = 0
     search_text: str = ""
+    pinned: bool = False
+    pinned_at: float = 0.0
 
 
 def _user_tag(user_id: str) -> str:
@@ -71,12 +73,12 @@ class ThreadStore:
     async def list_threads(
         self, user_id: str, limit: int = 20, offset: int = 0
     ) -> list[ThreadMeta]:
-        """Return the user's threads, sorted by updated_at descending, with pagination."""
+        """Return the user's threads, pinned first (by pinned_at desc), then by updated_at desc, with pagination."""
         tag = _user_tag(user_id)
         r = await self._get_redis()
         if r is not None:
             try:
-                thread_ids = await r.zrevrange(f"threads:{tag}", offset, offset + limit - 1)
+                thread_ids = await r.zrange(f"threads:{tag}", 0, -1)
                 if not thread_ids:
                     return []
                 pipe = r.pipeline()
@@ -93,15 +95,26 @@ class ThreadStore:
                             updated_at=float(data.get("updated_at", 0)),
                             status=data.get("status", "idle"),
                             message_count=int(data.get("message_count", 0)),
+                            pinned=data.get("pinned", "0") == "1",
+                            pinned_at=float(data.get("pinned_at", 0)),
                         ))
-                return threads
+                # Sort: pinned first (by pinned_at desc), then unpinned (by updated_at desc)
+                threads.sort(key=lambda t: (
+                    not t.pinned,  # False (pinned) sorts before True (not pinned)
+                    -t.pinned_at if t.pinned else -t.updated_at,
+                ))
+                return threads[offset : offset + limit]
             except (RedisError, RuntimeError) as exc:
                 logger.warning("ThreadStore list_threads Redis error — falling back: %s", exc)
 
         # In-memory fallback
         user_threads = self._mem.get(user_id, {})
-        sorted_threads = sorted(user_threads.values(), key=lambda t: t.updated_at, reverse=True)
-        return sorted_threads[offset : offset + limit]
+        all_threads = list(user_threads.values())
+        all_threads.sort(key=lambda t: (
+            not t.pinned,
+            -t.pinned_at if t.pinned else -t.updated_at,
+        ))
+        return all_threads[offset : offset + limit]
 
     async def upsert_thread(
         self,
@@ -128,6 +141,8 @@ class ThreadStore:
                 # Accumulate search_text if not provided
                 final_search = search_text if search_text else prev_search
                 pipe = r.pipeline()
+                prev_pinned = existing.get("pinned", "0") == "1" if existing else False
+                prev_pinned_at = float(existing.get("pinned_at", 0)) if existing else 0.0
                 pipe.hset(key, mapping={
                     "thread_id": thread_id,
                     "summary": summary[:50],
@@ -136,6 +151,8 @@ class ThreadStore:
                     "status": status,
                     "message_count": str(count),
                     "search_text": final_search[:1000],
+                    "pinned": "1" if prev_pinned else "0",
+                    "pinned_at": str(prev_pinned_at),
                 })
                 pipe.zadd(f"threads:{tag}", {thread_id: now})
                 pipe.expire(key, _TTL_SECONDS)
@@ -150,6 +167,8 @@ class ThreadStore:
         created_at = existing.created_at if existing else now
         prev_count = existing.message_count if existing else 0
         prev_search = existing.search_text if existing else ""
+        prev_pinned = existing.pinned if existing else False
+        prev_pinned_at = existing.pinned_at if existing else 0.0
         count = message_count if message_count > 0 else prev_count
         final_search = search_text if search_text else prev_search
         user_threads[thread_id] = ThreadMeta(
@@ -160,6 +179,8 @@ class ThreadStore:
             status=status,
             message_count=count,
             search_text=final_search[:1000],
+            pinned=prev_pinned,
+            pinned_at=prev_pinned_at,
         )
 
     async def delete_thread(self, user_id: str, thread_id: str) -> bool:
@@ -198,6 +219,8 @@ class ThreadStore:
                     updated_at=float(data.get("updated_at", 0)),
                     status=data.get("status", "idle"),
                     message_count=int(data.get("message_count", 0)),
+                    pinned=data.get("pinned", "0") == "1",
+                    pinned_at=float(data.get("pinned_at", 0)),
                 )
             except (RedisError, RuntimeError) as exc:
                 logger.warning("ThreadStore get_thread Redis error — falling back: %s", exc)
@@ -228,6 +251,38 @@ class ThreadStore:
         user_threads = self._mem.get(user_id, {})
         if thread_id in user_threads:
             user_threads[thread_id].status = status
+
+    async def update_pin_status(
+        self, user_id: str, thread_id: str, pinned: bool
+    ) -> bool:
+        """Set or clear the pinned status of a thread. Returns True if thread exists."""
+        tag = _user_tag(user_id)
+        now = time.time()
+        r = await self._get_redis()
+        if r is not None:
+            try:
+                key = f"threads:{tag}:{thread_id}"
+                exists = await r.exists(key)
+                if not exists:
+                    return False
+                pipe = r.pipeline()
+                pipe.hset(key, mapping={
+                    "pinned": "1" if pinned else "0",
+                    "pinned_at": str(now) if pinned else "0",
+                })
+                pipe.expire(key, _TTL_SECONDS)
+                await pipe.execute()
+                return True
+            except (RedisError, RuntimeError) as exc:
+                logger.warning("ThreadStore update_pin_status Redis error: %s", exc)
+
+        # In-memory fallback
+        user_threads = self._mem.get(user_id, {})
+        if thread_id not in user_threads:
+            return False
+        user_threads[thread_id].pinned = pinned
+        user_threads[thread_id].pinned_at = now if pinned else 0.0
+        return True
 
     async def count_threads(self, user_id: str) -> int:
         """Return the total number of threads for a user."""
