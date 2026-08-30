@@ -329,7 +329,10 @@
     "searching": "खोज रहा है...",
     "searchResults": "{count} परिणाम मिले",
     "backToConversations": "वार्तालाप पर वापस",
-    "loadMoreResults": "अधिक परिणाम लोड करें"
+    "loadMoreResults": "अधिक परिणाम लोड करें",
+    "pin": "पिन करें",
+    "unpin": "पिन हटाएं",
+    "pinned": "पिन किए गए"
   },
   "common": {
     "loading": "लोड हो रहा है...",
