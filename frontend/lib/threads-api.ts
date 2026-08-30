@@ -8,6 +8,8 @@ export interface ThreadMeta {
   updated_at: number;
   status: string;
   message_count: number;
+  pinned?: boolean;
+  pinned_at?: number;
 }
 
 export interface ThreadListResponse {
@@ -138,5 +140,23 @@ export async function searchThreads(query: string, offset: number = 0): Promise<
     return await res.json();
   } catch {
     return { results: [], total: 0, has_more: false };
+  }
+}
+
+export async function updateThread(threadId: string, pinned: boolean): Promise<boolean> {
+  try {
+    const res = await fetch(`${API_URL}/threads/${threadId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ pinned }),
+    });
+    if (res.status === 401) {
+      window.location.href = '/login';
+      return false;
+    }
+    return res.ok;
+  } catch {
+    return false;
   }
 }
