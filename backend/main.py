@@ -6,7 +6,7 @@ import json
 import uuid
 from dataclasses import asdict
 
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request, UploadFile, File as FastAPIFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse, RedirectResponse
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -50,6 +50,7 @@ from sanitize import sanitize_prompt_input
 from share_store import share_store
 from threads import generate_summary, thread_store
 from cost_store import cost_store
+from file_store import file_store
 
 ALLOWED_ORIGINS: list[str] = [
     orig.strip()
@@ -447,6 +448,48 @@ async def put_preferences(request: Request, user: dict = Depends(get_current_use
     return {"status": "ok", "user_id": user_id}
 
 
+MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
+ALLOWED_CONTENT_TYPES = {"image/jpeg", "image/png", "image/webp", "application/pdf"}
+ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".pdf"}
+
+
+@app.post(
+    "/upload",
+    summary="Upload a file (image or PDF) for chat attachments",
+    tags=["upload"],
+    dependencies=[Depends(verify_api_key)],
+)
+@limiter.limit("10/minute")
+async def upload_file(
+    request: Request,
+    file: UploadFile = FastAPIFile(...),
+    user: dict = Depends(get_current_user),
+) -> dict:
+    user_id = user["user_id"]
+
+    # Validate content type
+    ct = file.content_type or ""
+    if ct not in ALLOWED_CONTENT_TYPES:
+        raise HTTPException(status_code=415, detail="Unsupported file type. Use JPG, PNG, WebP, or PDF.")
+
+    # Validate extension as fallback
+    filename = file.filename or "upload"
+    ext = "." + filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    if ext not in ALLOWED_EXTENSIONS:
+        raise HTTPException(status_code=415, detail="Unsupported file extension. Use .jpg, .png, .webp, or .pdf.")
+
+    # Read file data and validate size
+    data = await file.read()
+    if len(data) > MAX_FILE_SIZE:
+        raise HTTPException(status_code=413, detail="File is too large (max 10MB).")
+    if len(data) == 0:
+        raise HTTPException(status_code=400, detail="Empty file.")
+
+    result = await file_store.upload(user_id, filename, ct, data)
+    logger.info("POST /upload — user=%s, file=%s, type=%s, size=%d", user_id, filename, ct, len(data))
+    return result
+
+
 @app.post(
     "/chat/stream",
     summary="Stream chat conversation with the travel agent",
@@ -499,6 +542,7 @@ async def chat_stream(
                 user_id=user_id,
                 locale=locale,
                 cancel_event=cancel_event,
+                attachments=[a.model_dump() for a in chat_req.attachments] if chat_req.attachments else None,
             ):
                 if cancel_event.is_set():
                     was_cancelled = True
