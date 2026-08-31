@@ -36,6 +36,13 @@ class Itinerary(BaseModel):
     packing_essentials: list[str] = Field(default_factory=list)
 
 
+class AttachmentInfo(BaseModel):
+    file_id: str = Field(..., description="Unique file ID from POST /upload.")
+    filename: str = Field(..., max_length=200, description="Original filename.")
+    content_type: str = Field(..., max_length=100, description="MIME type (e.g. image/jpeg).")
+    data_url: str = Field(..., description="Base64 data URL for frontend rendering.")
+
+
 class ChatRequest(BaseModel):
     message: str = Field(
         ..., min_length=1, max_length=2000, description="User chat message."
@@ -48,6 +55,9 @@ class ChatRequest(BaseModel):
     )
     locale: str | None = Field(
         None, max_length=10, description="User's preferred locale (e.g. 'en', 'es', 'fr')."
+    )
+    attachments: list[AttachmentInfo] = Field(
+        default_factory=list, description="File attachments (images, PDFs)."
     )
 
 
