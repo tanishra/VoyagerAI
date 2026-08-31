@@ -2,7 +2,7 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Send, Square, RotateCcw, Globe, Search, ShieldAlert, ListChecks, Loader2, PanelLeft, ChevronDown, ChevronLeft, ChevronRight, Clock, Sparkles, Copy, Check, Pencil, X, Mic } from 'lucide-react';
+import { Send, Square, RotateCcw, Globe, Search, ShieldAlert, ListChecks, Loader2, PanelLeft, ChevronDown, ChevronLeft, ChevronRight, Clock, Sparkles, Copy, Check, Pencil, X, Mic, Paperclip, FileText } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useLocale } from '@/lib/useLocale';
 import { streamChat, cancelStream, regenerateStream, editStream } from '@/lib/chat-api';
@@ -24,7 +24,9 @@ import ActivityPanel from '@/components/ActivityPanel';
 import ComparisonView from './ComparisonView';
 import ThreadSidebar from './ThreadSidebar';
 import VoiceWaveform from '@/components/VoiceWaveform';
+import FilePreview from '@/components/FilePreview';
 import { useVoiceInput } from '@/lib/useVoiceInput';
+import { uploadFile, type UploadedFile } from '@/lib/upload-api';
 import type { ChatMessage, ComparisonData, Itinerary, ActivityData, BranchInfo } from '@/lib/types';
 
 const THREAD_STORAGE_KEY = 'voyagerai_chat_thread_id';
@@ -57,6 +59,11 @@ export default function ChatPage() {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pendingAttachments, setPendingAttachments] = useState<UploadedFile[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [streamingText, setStreamingText] = useState('');
   const [streamingItinerary, setStreamingItinerary] = useState<Itinerary | null>(null);
   const [streamingComparison, setStreamingComparison] = useState<ComparisonData | null>(null);
@@ -261,6 +268,29 @@ export default function ChatPage() {
     }
   };
 
+  const handleFileSelect = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    if (pendingAttachments.length + files.length > 3) {
+      setUploadError(t('tooManyFiles'));
+      return;
+    }
+    setUploading(true);
+    setUploadError(null);
+    for (const file of Array.from(files)) {
+      if (file.size > 10 * 1024 * 1024) {
+        setUploadError(t('fileTooLarge'));
+        continue;
+      }
+      try {
+        const uploaded = await uploadFile(file);
+        setPendingAttachments(prev => [...prev, uploaded]);
+      } catch (err) {
+        setUploadError(err instanceof Error ? err.message : t('uploadFailed'));
+      }
+    }
+    setUploading(false);
+  };
+
   const handleSend = useCallback(async (overrideText?: string) => {
     const text = (overrideText ?? input).trim();
     if (!text || loading || sendingRef.current) return;
@@ -277,6 +307,7 @@ export default function ChatPage() {
     sessionResetRef.current = false;
     setInput('');
     setError(null);
+    setUploadError(null);
     setStreamingText('');
     setStreamingItinerary(null);
     setStreamingComparison(null);
@@ -289,8 +320,11 @@ export default function ChatPage() {
       id: `user-${Date.now()}`,
       role: 'user',
       content: text,
+      attachments: pendingAttachments.length > 0 ? pendingAttachments : undefined,
     };
     setMessages((prev) => [...prev, userMessage]);
+    const sentAttachments = pendingAttachments;
+    setPendingAttachments([]);
 
     // Optimistic thread title — immediately show in sidebar before AI response completes
     if (!threadId) {
@@ -329,7 +363,7 @@ export default function ChatPage() {
 
     try {
       const newThreadId = await streamChat(
-        { message: text, thread_id: threadId ?? undefined, locale },
+        { message: text, thread_id: threadId ?? undefined, locale, attachments: sentAttachments.length > 0 ? sentAttachments : undefined },
         {
           signal: controller.signal,
           onToken: (token) => {
@@ -1292,11 +1326,25 @@ export default function ChatPage() {
         <div
           ref={messagesContainerRef}
           onScroll={handleScroll}
+          onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setIsDragging(true); }}
+          onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setIsDragging(false); }}
+          onDrop={(e) => {
+            e.preventDefault(); e.stopPropagation();
+            setIsDragging(false);
+            if (e.dataTransfer.types.includes('Files') && e.dataTransfer.files.length > 0) {
+              handleFileSelect(e.dataTransfer.files);
+            }
+          }}
           role="log"
           aria-live="polite"
           aria-label={t('chatMessages')}
           className="flex-1 overflow-y-auto py-6 relative"
         >
+          {isDragging && (
+            <div className="absolute inset-0 z-10 bg-primary/5 border-2 border-dashed border-primary/30 rounded-lg flex items-center justify-center pointer-events-none">
+              <p className="text-sm text-primary font-medium">{t('dropFilesHere')}</p>
+            </div>
+          )}
           <div className="max-w-3xl mx-auto w-full px-4 space-y-6">
           <ErrorBoundary
             errorTitle={tCommon('errorTitle')}
@@ -1356,6 +1404,25 @@ export default function ChatPage() {
                   className="max-w-[75%] rounded-2xl px-4 py-3 bg-primary/10 border border-primary/15 text-foreground group relative"
                   tabIndex={0}
                 >
+                  {msg.attachments && msg.attachments.length > 0 && (
+                    <div className="flex flex-wrap gap-2 mb-2">
+                      {msg.attachments.map(att => (
+                        att.content_type.startsWith('image/') ? (
+                          <img
+                            key={att.file_id}
+                            src={att.data_url}
+                            alt={att.filename}
+                            className="max-w-[200px] max-h-[200px] rounded-lg object-cover"
+                          />
+                        ) : (
+                          <div key={att.file_id} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-muted text-xs">
+                            <FileText className="w-4 h-4 shrink-0" />
+                            <span className="truncate max-w-[150px]">{att.filename}</span>
+                          </div>
+                        )
+                      ))}
+                    </div>
+                  )}
                   <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
                   {isLastUser && !loading && !regenerating && (
                     <button
@@ -1535,6 +1602,31 @@ export default function ChatPage() {
         {/* Input bar */}
         <div className="px-4 pb-3 pt-1 relative">
           <div className="max-w-3xl mx-auto w-full">
+            {pendingAttachments.length > 0 && (
+              <div className="flex flex-wrap gap-2 mb-2 px-1">
+                {pendingAttachments.map(att => (
+                  <FilePreview
+                    key={att.file_id}
+                    file={att}
+                    onRemove={() => setPendingAttachments(prev => prev.filter(f => f.file_id !== att.file_id))}
+                  />
+                ))}
+              </div>
+            )}
+            {uploadError && (
+              <p className="text-xs text-destructive mb-2 px-1">{uploadError}</p>
+            )}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".jpg,.jpeg,.png,.webp,.pdf,image/jpeg,image/png,image/webp,application/pdf"
+              multiple
+              className="hidden"
+              onChange={(e) => {
+                handleFileSelect(e.target.files);
+                e.target.value = '';
+              }}
+            />
             <div className="flex items-center gap-2 rounded-2xl border border-border bg-card shadow-sm px-4 py-3 focus-within:border-primary/40 focus-within:shadow-md transition-all">
               <textarea
                 ref={inputRef}
@@ -1548,6 +1640,17 @@ export default function ChatPage() {
                 className="flex-1 bg-transparent border-0 text-sm text-foreground placeholder:text-muted-foreground/50 resize-none outline-none focus:ring-0 transition-colors disabled:opacity-50 max-h-32 leading-6"
               />
               {isRecordingVoice && <VoiceWaveform isActive={isRecordingVoice} />}
+              {uploading && (
+                <Loader2 className="w-4 h-4 animate-spin text-muted-foreground shrink-0" />
+              )}
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={loading || regenerating || isRecordingVoice || uploading || pendingAttachments.length >= 3}
+                className="shrink-0 p-2 rounded-lg bg-muted hover:bg-accent text-foreground transition-all disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+                aria-label={t('attachFile')}
+              >
+                <Paperclip className="w-4 h-4" />
+              </button>
               {(loading || regenerating) && (
                 <button
                   onClick={() => {
