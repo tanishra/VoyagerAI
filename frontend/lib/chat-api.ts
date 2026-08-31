@@ -7,7 +7,7 @@ function parseSSELine(line: string): { event?: string; data?: string } | null {
 }
 
 export async function streamChat(
-  body: { message: string; thread_id?: string; locale?: string },
+  body: { message: string; thread_id?: string; locale?: string; attachments?: import('./upload-api').UploadedFile[] },
   callbacks: ChatStreamCallbacks,
 ): Promise<string | undefined> {
   const { onToken, onItinerary, onComparison, onStatus, onThreadId, onDone, onError, onAbort, onCancelled, signal, errorMessages, onThinking, onToolStart, onToolEnd, onToolError, onUsage, onSubagentProgress } = callbacks;
