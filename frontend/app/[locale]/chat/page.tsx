@@ -2,7 +2,7 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Send, Square, RotateCcw, Globe, Search, ShieldAlert, ListChecks, Loader2, PanelLeft, ChevronDown, ChevronLeft, ChevronRight, Clock, Sparkles, Copy, Check, Pencil, X } from 'lucide-react';
+import { Send, Square, RotateCcw, Globe, Search, ShieldAlert, ListChecks, Loader2, PanelLeft, ChevronDown, ChevronLeft, ChevronRight, Clock, Sparkles, Copy, Check, Pencil, X, Mic } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useLocale } from '@/lib/useLocale';
 import { streamChat, cancelStream, regenerateStream, editStream } from '@/lib/chat-api';
@@ -23,6 +23,8 @@ import SubagentTimeline from '@/components/SubagentTimeline';
 import ActivityPanel from '@/components/ActivityPanel';
 import ComparisonView from './ComparisonView';
 import ThreadSidebar from './ThreadSidebar';
+import VoiceWaveform from '@/components/VoiceWaveform';
+import { useVoiceInput } from '@/lib/useVoiceInput';
 import type { ChatMessage, ComparisonData, Itinerary, ActivityData, BranchInfo } from '@/lib/types';
 
 const THREAD_STORAGE_KEY = 'voyagerai_chat_thread_id';
@@ -1101,7 +1103,27 @@ export default function ChatPage() {
     inputRef.current?.focus();
   }, [t]);
 
+  const { isSupported: voiceSupported, isRecording: isRecordingVoice, start: startRecording, stop: stopRecording, error: voiceError } = useVoiceInput({
+    locale,
+    onTranscript: (text) => {
+      setInput(text);
+      inputRef.current?.focus();
+    },
+  });
+
+  useEffect(() => {
+    if (!isRecordingVoice) return;
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        stopRecording();
+      }
+    };
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [isRecordingVoice, stopRecording]);
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (isRecordingVoice) return;
     if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
       handleSend();
@@ -1519,12 +1541,13 @@ export default function ChatPage() {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder={t('placeholder')}
+                placeholder={isRecordingVoice ? t('listening') : t('placeholder')}
                 rows={1}
-                disabled={loading || regenerating}
+                disabled={loading || regenerating || isRecordingVoice}
                 aria-label={t('messageInput')}
                 className="flex-1 bg-transparent border-0 text-sm text-foreground placeholder:text-muted-foreground/50 resize-none outline-none focus:ring-0 transition-colors disabled:opacity-50 max-h-32 leading-6"
               />
+              {isRecordingVoice && <VoiceWaveform isActive={isRecordingVoice} />}
               {(loading || regenerating) && (
                 <button
                   onClick={() => {
@@ -1538,9 +1561,27 @@ export default function ChatPage() {
                   {t('stop')}
                 </button>
               )}
+              {voiceSupported && (
+                <button
+                  onClick={() => isRecordingVoice ? stopRecording() : startRecording()}
+                  disabled={loading || regenerating}
+                  className={`shrink-0 p-2 rounded-lg transition-all disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer ${
+                    isRecordingVoice
+                      ? 'bg-red-500 hover:bg-red-600 text-white animate-pulse'
+                      : 'bg-muted hover:bg-accent text-foreground'
+                  }`}
+                  aria-label={isRecordingVoice ? t('stopRecording') : t('voiceInput')}
+                >
+                  {isRecordingVoice ? (
+                    <Square className="w-4 h-4 fill-current" />
+                  ) : (
+                    <Mic className="w-4 h-4" />
+                  )}
+                </button>
+              )}
               <button
                 onClick={() => handleSend()}
-                disabled={!input.trim() || loading}
+                disabled={!input.trim() || loading || isRecordingVoice}
                 className="shrink-0 p-2 rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground transition-all disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
                 aria-label={t('send')}
               >
