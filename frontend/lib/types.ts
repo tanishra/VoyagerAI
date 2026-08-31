@@ -106,6 +106,7 @@ export interface ChatMessage {
   editing?: boolean;
   branches?: BranchInfo[];
   activeBranchIndex?: number;
+  attachments?: import('./upload-api').UploadedFile[];
 }
 
 export interface ChatStreamCallbacks {
