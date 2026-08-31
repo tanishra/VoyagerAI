@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json
 import logging
 import os
@@ -27,6 +28,51 @@ from geocode_service import geocode
 from langchain.agents.middleware import ModelCallLimitMiddleware
 
 logger = logging.getLogger("travel_agent.deep_agent")
+
+
+def extract_pdf_text(data_url: str) -> str:
+    """Extract text from all pages of a PDF given as a base64 data URL."""
+    try:
+        import fitz  # PyMuPDF
+
+        _, b64_data = data_url.split(",", 1)
+        pdf_bytes = base64.b64decode(b64_data)
+        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+        text = ""
+        for page in doc:
+            text += page.get_text() or ""
+        doc.close()
+        return text[:50000]
+    except Exception:
+        logger.warning("PDF text extraction failed", exc_info=True)
+        return ""
+
+
+def render_pdf_pages_as_images(data_url: str, max_pages: int = 10) -> list[str]:
+    """Convert each PDF page to a PNG image, return as base64 data URLs.
+
+    Used when text extraction fails (scanned/image-only PDFs).
+    Gemini reads each page via vision input.
+    """
+    try:
+        import fitz  # PyMuPDF
+
+        _, b64_data = data_url.split(",", 1)
+        pdf_bytes = base64.b64decode(b64_data)
+        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+        page_count = min(len(doc), max_pages)
+        images: list[str] = []
+        for i in range(page_count):
+            page = doc[i]
+            pix = page.get_pixmap(dpi=150)
+            png_bytes = pix.tobytes("png")
+            b64 = base64.b64encode(png_bytes).decode("ascii")
+            images.append(f"data:image/png;base64,{b64}")
+        doc.close()
+        return images
+    except Exception:
+        logger.warning("PDF page rendering failed", exc_info=True)
+        return []
 
 _checkpointer = None
 _sqlite_checkpointer = None
@@ -672,6 +718,7 @@ async def stream_chat_agent(
     user_id: str | None = None,
     locale: str | None = None,
     cancel_event=None,
+    attachments: list[dict] | None = None,
 ):
     agent = await create_chat_agent(user_id=user_id, locale=locale)
     config = {
@@ -682,9 +729,47 @@ async def stream_chat_agent(
         "recursion_limit": 100,
     }
 
+    # Build message content — multimodal if attachments present
+    if attachments:
+        content_blocks: list[dict] = [{"type": "text", "text": message}]
+        for att in attachments:
+            ct = att.get("content_type", "")
+            if ct.startswith("image/"):
+                content_blocks.append({
+                    "type": "image_url",
+                    "image_url": {"url": att["data_url"]},
+                })
+            elif ct == "application/pdf":
+                pdf_text = extract_pdf_text(att["data_url"])
+                if pdf_text and len(pdf_text.strip()) > 50:
+                    content_blocks.append({
+                        "type": "text",
+                        "text": f"--- Attached PDF: {att.get('filename', 'document')} ---\n{pdf_text}",
+                    })
+                else:
+                    page_images = render_pdf_pages_as_images(att["data_url"], max_pages=10)
+                    if page_images:
+                        content_blocks.append({
+                            "type": "text",
+                            "text": f"--- Attached PDF: {att.get('filename', 'document')} ({len(page_images)} page(s)) ---",
+                        })
+                        for img_data_url in page_images:
+                            content_blocks.append({
+                                "type": "image_url",
+                                "image_url": {"url": img_data_url},
+                            })
+                    else:
+                        content_blocks.append({
+                            "type": "text",
+                            "text": f"--- Attached PDF: {att.get('filename', 'document')} (could not be processed) ---",
+                        })
+        msg_content: str | list[dict] = content_blocks
+    else:
+        msg_content = message
+
     stream = _ModelStream(agent, config)
     async for event in stream.events(
-        {"messages": [{"role": "user", "content": message}]},
+        {"messages": [{"role": "user", "content": msg_content}]},
         cancel_event=cancel_event,
     ):
         yield event
