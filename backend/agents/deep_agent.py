@@ -20,6 +20,7 @@ from agents.activity_store import load_activity, save_activity
 from agents.llm import get_formatter_model, get_orchestrator_model
 from agents.prompts import build_chat_agent_prompt
 from agents.subagents import get_subagents
+from agents.tools import get_orchestrator_tools, reset_orchestrator_search_count
 from config import settings as _cfg_settings
 from config.settings import settings
 from cost_store import cost_store
@@ -467,7 +468,7 @@ async def create_chat_agent(checkpointer=None, store=None, user_id=None, locale=
 
     agent = create_deep_agent(
         model=model,
-        tools=[],
+        tools=get_orchestrator_tools(),
         subagents=subagents,
         system_prompt=build_chat_agent_prompt(locale),
         checkpointer=checkpointer,
@@ -720,6 +721,7 @@ async def stream_chat_agent(
     cancel_event=None,
     attachments: list[dict] | None = None,
 ):
+    reset_orchestrator_search_count()
     agent = await create_chat_agent(user_id=user_id, locale=locale)
     config = {
         "configurable": {
