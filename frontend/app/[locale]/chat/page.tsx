@@ -94,6 +94,10 @@ export default function ChatPage() {
   const [regenerating, setRegenerating] = useState(false);
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [editContent, setEditContent] = useState('');
+  const [reconnecting, setReconnecting] = useState<{ attempt: number; max: number } | null>(null);
+  const lastSentMessageRef = useRef<{ message: string; attachments?: UploadedFile[] } | null>(null);
+  const lastRegenerateRef = useRef(false);
+  const lastEditRef = useRef<{ threadId: string; message: string } | null>(null);
 
   const throttledStreamingText = useThrottledValue(streamingText, loading || regenerating);
 
@@ -308,6 +312,7 @@ export default function ChatPage() {
     setInput('');
     setError(null);
     setUploadError(null);
+    setReconnecting(null);
     setStreamingText('');
     setStreamingItinerary(null);
     setStreamingComparison(null);
@@ -325,6 +330,8 @@ export default function ChatPage() {
     setMessages((prev) => [...prev, userMessage]);
     const sentAttachments = pendingAttachments;
     setPendingAttachments([]);
+
+    lastSentMessageRef.current = { message: text, attachments: sentAttachments.length > 0 ? sentAttachments : undefined };
 
     // Optimistic thread title — immediately show in sidebar before AI response completes
     if (!threadId) {
@@ -459,16 +466,22 @@ export default function ChatPage() {
           onSubagentProgress: (data) => {
             setProgressMap((prev) => ({ ...prev, [data.run_id]: data.description }));
           },
+          onReconnecting: (attempt, max) => {
+            setReconnecting({ attempt, max });
+          },
           onError: (msg) => {
             streamFailed = true;
             errorMessage = msg;
             setError(msg);
+            setReconnecting(null);
           },
           onAbort: () => {
             aborted = true;
+            setReconnecting(null);
           },
           onCancelled: () => {
             aborted = true;
+            setReconnecting(null);
           },
           errorMessages: {
             serverResponse: (status, detail) => t('errorServerResponse', { status, detail }),
@@ -519,6 +532,7 @@ export default function ChatPage() {
       setStreamingComparison(null);
       setStreamingActivity(null);
       streamingActivityRef.current = null;
+      setReconnecting(null);
 
       if (newThreadId && !sessionResetRef.current) {
         setThreadId(newThreadId);
@@ -540,6 +554,12 @@ export default function ChatPage() {
       });
     }
   }, [input, loading, threadId, isOnline]);
+
+  const handleRetry = useCallback(() => {
+    if (!lastSentMessageRef.current || loading) return;
+    setError(null);
+    handleSend(lastSentMessageRef.current.message);
+  }, [loading, handleSend]);
 
   const handleRegenerate = useCallback(async () => {
     if (!threadId || loading || regenerating) return;
@@ -666,16 +686,22 @@ export default function ChatPage() {
           onSubagentProgress: (data) => {
             setProgressMap((prev) => ({ ...prev, [data.run_id]: data.description }));
           },
+          onReconnecting: (attempt, max) => {
+            setReconnecting({ attempt, max });
+          },
           onError: (msg) => {
             streamFailed = true;
             errorMessage = msg;
             setError(msg);
+            setReconnecting(null);
           },
           onAbort: () => {
             aborted = true;
+            setReconnecting(null);
           },
           onCancelled: () => {
             aborted = true;
+            setReconnecting(null);
           },
           onDone: () => {},
         },
@@ -885,13 +911,17 @@ export default function ChatPage() {
           onSubagentProgress: (data) => {
             setProgressMap((prev) => ({ ...prev, [data.run_id]: data.description }));
           },
+          onReconnecting: (attempt, max) => {
+            setReconnecting({ attempt, max });
+          },
           onError: (msg) => {
             streamFailed = true;
             errorMessage = msg;
             setError(msg);
+            setReconnecting(null);
           },
-          onAbort: () => { aborted = true; },
-          onCancelled: () => { aborted = true; },
+          onAbort: () => { aborted = true; setReconnecting(null); },
+          onCancelled: () => { aborted = true; setReconnecting(null); },
           onDone: () => {},
         },
       );
@@ -1307,6 +1337,23 @@ export default function ChatPage() {
           </button>
         </header>
 
+        {/* Reconnecting Banner */}
+        <AnimatePresence>
+          {reconnecting && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className="p-3 mt-2 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center gap-2"
+            >
+              <Loader2 className="w-4 h-4 animate-spin text-amber-600" />
+              <p className="text-amber-600 text-sm">
+                {t('reconnecting', { attempt: reconnecting.attempt, max: reconnecting.max })}
+              </p>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {/* Error Banner */}
         <AnimatePresence>
           {error && (
@@ -1315,9 +1362,17 @@ export default function ChatPage() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
               role="alert"
-              className="p-3 mt-2 rounded-xl bg-red-500/10 border border-red-500/20 relative"
+              className="p-3 mt-2 rounded-xl bg-red-500/10 border border-red-500/20 relative flex items-center justify-between gap-3"
             >
               <p className="text-red-600 text-sm">{error}</p>
+              {lastSentMessageRef.current && (
+                <button
+                  onClick={handleRetry}
+                  className="text-sm font-medium text-red-600 hover:text-red-700 underline shrink-0 cursor-pointer"
+                >
+                  {t('retry')}
+                </button>
+              )}
             </motion.div>
           )}
         </AnimatePresence>
