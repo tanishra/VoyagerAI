@@ -1,5 +1,30 @@
 import type { BranchInfo, ChatStreamCallbacks, ComparisonData, Itinerary, UsageEntry } from './types';
 
+const MAX_RETRIES = 3;
+const RETRY_DELAYS = [1000, 2000, 4000];
+
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new DOMException('Aborted', 'AbortError'));
+      return;
+    }
+    const timer = setTimeout(resolve, ms);
+    signal?.addEventListener('abort', () => {
+      clearTimeout(timer);
+      reject(new DOMException('Aborted', 'AbortError'));
+    }, { once: true });
+  });
+}
+
+function isAbortError(err: unknown): boolean {
+  return err instanceof DOMException && err.name === 'AbortError';
+}
+
+function isRetryableHttpStatus(status: number): boolean {
+  return status >= 500 || status === 429;
+}
+
 function parseSSELine(line: string): { event?: string; data?: string } | null {
   if (line.startsWith('event: ')) return { event: line.slice(7).trim() };
   if (line.startsWith('data: ')) return { data: line.slice(6).trim() };
@@ -10,126 +35,155 @@ export async function streamChat(
   body: { message: string; thread_id?: string; locale?: string; attachments?: import('./upload-api').UploadedFile[] },
   callbacks: ChatStreamCallbacks,
 ): Promise<string | undefined> {
-  const { onToken, onItinerary, onComparison, onStatus, onThreadId, onDone, onError, onAbort, onCancelled, signal, errorMessages, onThinking, onToolStart, onToolEnd, onToolError, onUsage, onSubagentProgress } = callbacks;
+  const { onToken, onItinerary, onComparison, onStatus, onThreadId, onDone, onError, onAbort, onCancelled, signal, errorMessages, onThinking, onToolStart, onToolEnd, onToolError, onUsage, onSubagentProgress, onReconnecting } = callbacks;
   let resolvedThreadId: string | undefined;
 
-  try {
-    const response = await fetch(
-      `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/chat/stream`,
-      {
+  const url = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/chat/stream`;
+  const headers = {
+    'Content-Type': 'application/json',
+    Accept: 'text/event-stream',
+    ...(body.locale ? { 'Accept-Language': body.locale } : {}),
+  };
+  const bodyStr = JSON.stringify(body);
+
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      const response = await fetch(url, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Accept: 'text/event-stream',
-          ...(body.locale ? { 'Accept-Language': body.locale } : {}),
-        },
-        body: JSON.stringify(body),
+        headers,
+        body: bodyStr,
         signal,
         credentials: 'include',
-      },
-    );
+      });
 
-    if (response.status === 401) {
-      window.location.href = '/login';
-      return undefined;
-    }
-
-    if (!response.ok) {
-      const text = await response.text().catch(() => '');
-      onError?.(errorMessages?.serverResponse?.(response.status, text) ?? `Server responded with ${response.status}: ${text}`);
-      return undefined;
-    }
-
-    const reader = response.body?.getReader();
-    if (!reader) {
-      onError?.(errorMessages?.responseBody ?? 'Response body is not readable');
-      return undefined;
-    }
-
-    const decoder = new TextDecoder();
-    let buffer = '';
-    let sawDone = false;
-
-    let currentEvent = '';
-    let currentData = '';
-
-    const dispatchIfReady = () => {
-      if (currentData) {
-        try {
-          const parsed = JSON.parse(currentData);
-          handleChatEvent(
-            currentEvent,
-            parsed,
-            {
-              onToken,
-              onItinerary,
-              onComparison,
-              onStatus,
-              onThreadId: (tid) => {
-                resolvedThreadId = tid;
-                onThreadId?.(tid);
-              },
-              onError,
-              onDone: () => {
-                sawDone = true;
-                onDone?.();
-              },
-              onCancelled,
-              onThinking,
-              onToolStart,
-              onToolEnd,
-              onToolError,
-              onUsage,
-              onSubagentProgress,
-            },
-          );
-        } catch {
-          onError?.(errorMessages?.parseFailed ?? 'Failed to parse event data');
-        }
+      if (response.status === 401) {
+        window.location.href = '/login';
+        return undefined;
       }
-      currentEvent = '';
-      currentData = '';
-    };
 
-    const processLines = (lines: string[]) => {
-      for (const line of lines) {
-        if (line.trim() === '') {
-          dispatchIfReady();
+      if (!response.ok) {
+        if (attempt < MAX_RETRIES && isRetryableHttpStatus(response.status)) {
+          onReconnecting?.(attempt + 1, MAX_RETRIES);
+          await sleep(RETRY_DELAYS[attempt], signal);
           continue;
         }
-        const parsed = parseSSELine(line);
-        if (parsed?.event) currentEvent = parsed.event;
-        if (parsed?.data) currentData = parsed.data;
+        const text = await response.text().catch(() => '');
+        onError?.(errorMessages?.serverResponse?.(response.status, text) ?? `Server responded with ${response.status}: ${text}`);
+        return resolvedThreadId;
       }
-    };
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
+      const reader = response.body?.getReader();
+      if (!reader) {
+        if (attempt < MAX_RETRIES) {
+          onReconnecting?.(attempt + 1, MAX_RETRIES);
+          await sleep(RETRY_DELAYS[attempt], signal);
+          continue;
+        }
+        onError?.(errorMessages?.responseBody ?? 'Response body is not readable');
+        return resolvedThreadId;
+      }
 
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || '';
-      processLines(lines);
-    }
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let sawDone = false;
+      let currentEvent = '';
+      let currentData = '';
 
-    buffer += decoder.decode();
-    if (buffer.trim()) processLines(buffer.split('\n'));
-    dispatchIfReady();
+      const dispatchIfReady = () => {
+        if (currentData) {
+          try {
+            const parsed = JSON.parse(currentData);
+            handleChatEvent(
+              currentEvent,
+              parsed,
+              {
+                onToken,
+                onItinerary,
+                onComparison,
+                onStatus,
+                onThreadId: (tid) => {
+                  resolvedThreadId = tid;
+                  onThreadId?.(tid);
+                },
+                onError,
+                onDone: () => {
+                  sawDone = true;
+                  onDone?.();
+                },
+                onCancelled,
+                onThinking,
+                onToolStart,
+                onToolEnd,
+                onToolError,
+                onUsage,
+                onSubagentProgress,
+              },
+            );
+          } catch {
+            onError?.(errorMessages?.parseFailed ?? 'Failed to parse event data');
+          }
+        }
+        currentEvent = '';
+        currentData = '';
+      };
 
-    if (!sawDone) {
-      onError?.(errorMessages?.streamEnded ?? 'Stream ended before the agent finished');
+      const processLines = (lines: string[]) => {
+        for (const line of lines) {
+          if (line.trim() === '') {
+            dispatchIfReady();
+            continue;
+          }
+          const parsed = parseSSELine(line);
+          if (parsed?.event) currentEvent = parsed.event;
+          if (parsed?.data) currentData = parsed.data;
+        }
+      };
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+        processLines(lines);
+      }
+
+      buffer += decoder.decode();
+      if (buffer.trim()) processLines(buffer.split('\n'));
+      dispatchIfReady();
+
+      if (!sawDone) {
+        if (attempt < MAX_RETRIES) {
+          onReconnecting?.(attempt + 1, MAX_RETRIES);
+          await sleep(RETRY_DELAYS[attempt], signal);
+          continue;
+        }
+        onError?.(errorMessages?.streamEnded ?? 'Stream ended before the agent finished');
+        return resolvedThreadId;
+      }
+      return resolvedThreadId;
+    } catch (err) {
+      if (isAbortError(err)) {
+        onAbort?.();
+        return resolvedThreadId;
+      }
+      if (attempt < MAX_RETRIES) {
+        onReconnecting?.(attempt + 1, MAX_RETRIES);
+        try {
+          await sleep(RETRY_DELAYS[attempt], signal);
+        } catch (abortErr) {
+          if (isAbortError(abortErr)) {
+            onAbort?.();
+            return resolvedThreadId;
+          }
+        }
+        continue;
+      }
+      onError?.(err instanceof Error ? err.message : String(err));
       return resolvedThreadId;
     }
-    return resolvedThreadId;
-  } catch (err) {
-    if (err instanceof DOMException && err.name === 'AbortError') {
-      onAbort?.();
-      return resolvedThreadId;
-    }
-    onError?.(err instanceof Error ? err.message : String(err));
-    return resolvedThreadId;
   }
+  return resolvedThreadId;
 }
 
 export async function cancelStream(threadId: string): Promise<void> {
@@ -245,84 +299,105 @@ export async function regenerateStream(
   body: { thread_id: string; locale?: string },
   callbacks: ChatStreamCallbacks,
 ): Promise<string | undefined> {
-  const { onToken, onItinerary, onComparison, onStatus, onThreadId, onDone, onError, onAbort, onCancelled, signal, errorMessages, onThinking, onToolStart, onToolEnd, onToolError, onUsage, onSubagentProgress } = callbacks;
+  const { onToken, onItinerary, onComparison, onStatus, onThreadId, onDone, onError, onAbort, onCancelled, signal, errorMessages, onThinking, onToolStart, onToolEnd, onToolError, onUsage, onSubagentProgress, onReconnecting } = callbacks;
   let resolvedThreadId: string | undefined;
 
-  try {
-    const response = await fetch(
-      `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/chat/regenerate`,
-      {
+  const url = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/chat/regenerate`;
+  const headers = {
+    'Content-Type': 'application/json',
+    Accept: 'text/event-stream',
+    ...(body.locale ? { 'Accept-Language': body.locale } : {}),
+  };
+  const bodyStr = JSON.stringify(body);
+
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      const response = await fetch(url, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Accept: 'text/event-stream',
-          ...(body.locale ? { 'Accept-Language': body.locale } : {}),
-        },
-        body: JSON.stringify(body),
+        headers,
+        body: bodyStr,
         signal,
         credentials: 'include',
-      },
-    );
+      });
 
-    if (response.status === 401) {
-      window.location.href = '/login';
-      return undefined;
-    }
+      if (response.status === 401) {
+        window.location.href = '/login';
+        return undefined;
+      }
 
-    if (!response.ok || !response.body) {
-      onError?.(`HTTP ${response.status}`);
-      return undefined;
-    }
-
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-
-      const lines = buffer.split('\n');
-      buffer = lines.pop() ?? '';
-
-      let currentEvent: string | undefined;
-      for (const line of lines) {
-        const parsed = parseSSELine(line);
-        if (!parsed) continue;
-        if (parsed.event) {
-          currentEvent = parsed.event;
+      if (!response.ok || !response.body) {
+        if (attempt < MAX_RETRIES && isRetryableHttpStatus(response.status)) {
+          onReconnecting?.(attempt + 1, MAX_RETRIES);
+          await sleep(RETRY_DELAYS[attempt], signal);
           continue;
         }
-        if (parsed.data && currentEvent) {
-          let data: Record<string, unknown>;
-          try {
-            data = JSON.parse(parsed.data);
-          } catch {
-            data = { data: parsed.data };
+        onError?.(`HTTP ${response.status}`);
+        return undefined;
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        const lines = buffer.split('\n');
+        buffer = lines.pop() ?? '';
+
+        let currentEvent: string | undefined;
+        for (const line of lines) {
+          const parsed = parseSSELine(line);
+          if (!parsed) continue;
+          if (parsed.event) {
+            currentEvent = parsed.event;
+            continue;
           }
-          if (currentEvent === 'thread_id') {
-            const tid = data.thread_id as string;
-            if (tid) {
-              resolvedThreadId = tid;
-              onThreadId?.(tid);
+          if (parsed.data && currentEvent) {
+            let data: Record<string, unknown>;
+            try {
+              data = JSON.parse(parsed.data);
+            } catch {
+              data = { data: parsed.data };
             }
-          } else {
-            handleChatEvent(currentEvent, data, {
-              onToken, onItinerary, onComparison, onStatus, onThreadId, onDone, onError, onCancelled, onThinking, onToolStart, onToolEnd, onToolError, onUsage, onSubagentProgress,
-            });
+            if (currentEvent === 'thread_id') {
+              const tid = data.thread_id as string;
+              if (tid) {
+                resolvedThreadId = tid;
+                onThreadId?.(tid);
+              }
+            } else {
+              handleChatEvent(currentEvent, data, {
+                onToken, onItinerary, onComparison, onStatus, onThreadId, onDone, onError, onCancelled, onThinking, onToolStart, onToolEnd, onToolError, onUsage, onSubagentProgress,
+              });
+            }
           }
         }
       }
-    }
-  } catch (err) {
-    if (err instanceof DOMException && err.name === 'AbortError') {
-      onAbort?.();
-    } else {
+      return resolvedThreadId;
+    } catch (err) {
+      if (isAbortError(err)) {
+        onAbort?.();
+        return resolvedThreadId;
+      }
+      if (attempt < MAX_RETRIES) {
+        onReconnecting?.(attempt + 1, MAX_RETRIES);
+        try {
+          await sleep(RETRY_DELAYS[attempt], signal);
+        } catch (abortErr) {
+          if (isAbortError(abortErr)) {
+            onAbort?.();
+            return resolvedThreadId;
+          }
+        }
+        continue;
+      }
       onError?.(err instanceof Error ? err.message : String(err));
+      return resolvedThreadId;
     }
   }
-
   return resolvedThreadId;
 }
 
@@ -348,83 +423,104 @@ export async function editStream(
   body: { thread_id: string; message: string; locale?: string },
   callbacks: ChatStreamCallbacks,
 ): Promise<string | undefined> {
-  const { onToken, onItinerary, onComparison, onStatus, onThreadId, onDone, onError, onAbort, onCancelled, signal, errorMessages, onThinking, onToolStart, onToolEnd, onToolError, onUsage, onSubagentProgress } = callbacks;
+  const { onToken, onItinerary, onComparison, onStatus, onThreadId, onDone, onError, onAbort, onCancelled, signal, errorMessages, onThinking, onToolStart, onToolEnd, onToolError, onUsage, onSubagentProgress, onReconnecting } = callbacks;
   let resolvedThreadId: string | undefined;
 
-  try {
-    const response = await fetch(
-      `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/chat/edit`,
-      {
+  const url = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/chat/edit`;
+  const headers = {
+    'Content-Type': 'application/json',
+    Accept: 'text/event-stream',
+    ...(body.locale ? { 'Accept-Language': body.locale } : {}),
+  };
+  const bodyStr = JSON.stringify(body);
+
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      const response = await fetch(url, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Accept: 'text/event-stream',
-          ...(body.locale ? { 'Accept-Language': body.locale } : {}),
-        },
-        body: JSON.stringify(body),
+        headers,
+        body: bodyStr,
         signal,
         credentials: 'include',
-      },
-    );
+      });
 
-    if (response.status === 401) {
-      window.location.href = '/login';
-      return undefined;
-    }
+      if (response.status === 401) {
+        window.location.href = '/login';
+        return undefined;
+      }
 
-    if (!response.ok || !response.body) {
-      onError?.(`HTTP ${response.status}`);
-      return undefined;
-    }
-
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-
-      const lines = buffer.split('\n');
-      buffer = lines.pop() ?? '';
-
-      let currentEvent: string | undefined;
-      for (const line of lines) {
-        const parsed = parseSSELine(line);
-        if (!parsed) continue;
-        if (parsed.event) {
-          currentEvent = parsed.event;
+      if (!response.ok || !response.body) {
+        if (attempt < MAX_RETRIES && isRetryableHttpStatus(response.status)) {
+          onReconnecting?.(attempt + 1, MAX_RETRIES);
+          await sleep(RETRY_DELAYS[attempt], signal);
           continue;
         }
-        if (parsed.data && currentEvent) {
-          let data: Record<string, unknown>;
-          try {
-            data = JSON.parse(parsed.data);
-          } catch {
-            data = { data: parsed.data };
+        onError?.(`HTTP ${response.status}`);
+        return undefined;
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        const lines = buffer.split('\n');
+        buffer = lines.pop() ?? '';
+
+        let currentEvent: string | undefined;
+        for (const line of lines) {
+          const parsed = parseSSELine(line);
+          if (!parsed) continue;
+          if (parsed.event) {
+            currentEvent = parsed.event;
+            continue;
           }
-          if (currentEvent === 'thread_id') {
-            const tid = data.thread_id as string;
-            if (tid) {
-              resolvedThreadId = tid;
-              onThreadId?.(tid);
+          if (parsed.data && currentEvent) {
+            let data: Record<string, unknown>;
+            try {
+              data = JSON.parse(parsed.data);
+            } catch {
+              data = { data: parsed.data };
             }
-          } else {
-            handleChatEvent(currentEvent, data, {
-              onToken, onItinerary, onComparison, onStatus, onThreadId, onDone, onError, onCancelled, onThinking, onToolStart, onToolEnd, onToolError, onUsage, onSubagentProgress,
-            });
+            if (currentEvent === 'thread_id') {
+              const tid = data.thread_id as string;
+              if (tid) {
+                resolvedThreadId = tid;
+                onThreadId?.(tid);
+              }
+            } else {
+              handleChatEvent(currentEvent, data, {
+                onToken, onItinerary, onComparison, onStatus, onThreadId, onDone, onError, onCancelled, onThinking, onToolStart, onToolEnd, onToolError, onUsage, onSubagentProgress,
+              });
+            }
           }
         }
       }
-    }
-  } catch (err) {
-    if (err instanceof DOMException && err.name === 'AbortError') {
-      onAbort?.();
-    } else {
+      return resolvedThreadId;
+    } catch (err) {
+      if (isAbortError(err)) {
+        onAbort?.();
+        return resolvedThreadId;
+      }
+      if (attempt < MAX_RETRIES) {
+        onReconnecting?.(attempt + 1, MAX_RETRIES);
+        try {
+          await sleep(RETRY_DELAYS[attempt], signal);
+        } catch (abortErr) {
+          if (isAbortError(abortErr)) {
+            onAbort?.();
+            return resolvedThreadId;
+          }
+        }
+        continue;
+      }
       onError?.(err instanceof Error ? err.message : String(err));
+      return resolvedThreadId;
     }
   }
-
   return resolvedThreadId;
 }
