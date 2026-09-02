@@ -160,7 +160,7 @@ export default function PreferencesPage() {
                 spellCheck={false}
               />
               <div className="p-4 border-t border-border flex items-center justify-between">
-                <span className="text-xs text-muted-foreground">{t('characters', { count: content.length })}</span>
+                <span className={`text-xs ${content.length > 5000 ? 'text-red-500' : 'text-muted-foreground'}`}>{t('characters', { count: content.length, max: 5000 })}</span>
                 <button
                   onClick={handleSave}
                   disabled={saving}
