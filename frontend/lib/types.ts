@@ -125,6 +125,7 @@ export interface ChatStreamCallbacks {
   onToolError?: (tool: { name: string; error?: string; run_id: string; parent_run_id?: string }) => void;
   onUsage?: (usage: UsageEntry) => void;
   onSubagentProgress?: (data: { run_id: string; description: string }) => void;
+  onReconnecting?: (attempt: number, maxAttempts: number) => void;
   signal?: AbortSignal;
   errorMessages?: {
     serverResponse?: (status: number, detail: string) => string;
