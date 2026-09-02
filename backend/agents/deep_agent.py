@@ -470,7 +470,7 @@ async def create_chat_agent(checkpointer=None, store=None, user_id=None, locale=
         model=model,
         tools=get_orchestrator_tools(),
         subagents=subagents,
-        system_prompt=build_chat_agent_prompt(locale),
+        system_prompt=build_chat_agent_prompt(locale, user_id=uid),
         checkpointer=checkpointer,
         store=store,
         permissions=[
