@@ -1,5 +1,17 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { getBranches } from '@/lib/chat-api';
+
+function makeDoneStream(): Response {
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream({
+    start(controller) {
+      controller.enqueue(encoder.encode('event: thread_id\ndata: {"data":{"thread_id":"test-thread"}}\n\n'));
+      controller.enqueue(encoder.encode('event: done\ndata: {"data":null}\n\n'));
+      controller.close();
+    },
+  });
+  return new Response(stream, { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
+}
 
 describe('regenerateStream', () => {
   beforeEach(() => {
@@ -54,10 +66,65 @@ describe('regenerateStream', () => {
   });
 
   it('regenerateStream swallows network errors without throwing', async () => {
+    vi.useFakeTimers();
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('Network error')));
 
     const { regenerateStream } = await import('@/lib/chat-api');
-    await expect(regenerateStream({ thread_id: 'thread-xyz' }, {})).resolves.toBeUndefined();
+    const promise = regenerateStream({ thread_id: 'thread-xyz' }, {});
+    await vi.advanceTimersByTimeAsync(8000);
+    await expect(promise).resolves.toBeUndefined();
+    vi.useRealTimers();
+  });
+});
+
+describe('regenerateStream — retry logic', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('retries on network error and succeeds on second attempt', async () => {
+    const mockFetch = vi.fn()
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockResolvedValueOnce(makeDoneStream());
+    vi.stubGlobal('fetch', mockFetch);
+
+    const onReconnecting = vi.fn();
+    const { regenerateStream } = await import('@/lib/chat-api');
+    const promise = regenerateStream(
+      { thread_id: 'test-thread' },
+      { onReconnecting },
+    );
+
+    await vi.advanceTimersByTimeAsync(1100);
+    await promise;
+
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+    expect(onReconnecting).toHaveBeenCalledTimes(1);
+    expect(onReconnecting).toHaveBeenCalledWith(1, 3);
+  });
+
+  it('does not retry on 401 (redirects to login)', async () => {
+    const mockFetch = vi.fn().mockResolvedValue(
+      new Response('Unauthorized', { status: 401 }),
+    );
+    vi.stubGlobal('fetch', mockFetch);
+    const originalHref = window.location.href;
+    Object.defineProperty(window, 'location', {
+      value: { href: '' },
+      writable: true,
+    });
+
+    const onReconnecting = vi.fn();
+    const { regenerateStream } = await import('@/lib/chat-api');
+    await regenerateStream({ thread_id: 'test-thread' }, { onReconnecting });
+
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    expect(onReconnecting).not.toHaveBeenCalled();
+    window.location.href = originalHref;
   });
 });
 
