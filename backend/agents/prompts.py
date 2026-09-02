@@ -121,13 +121,92 @@ LANGUAGE_INSTRUCTIONS = {
     "ja": "Respond in Japanese (日本語). All itinerary content (activities, tips, warnings, themes, accommodation, transport, visa notes, packing essentials) must be written in Japanese.",
 }
 
+import logging
+import re
 
-def build_chat_agent_prompt(locale: str | None = None) -> str:
-    """Return the chat agent system prompt with an optional language block injected."""
+logger = logging.getLogger("travel_agent.prompts")
+
+_USER_INSTRUCTIONS_MAX = 2000
+_LEARNED_PREFS_MAX = 3000
+
+
+def _parse_preferences(content: str) -> tuple[str, str]:
+    """Split preferences file into (user_instructions, learned_preferences).
+
+    If the file has <user_instructions>...</user_instructions> and
+    <learned_preferences>...</learned_preferences> tags, extract each.
+    If no tags found, treat entire content as learned_preferences (backward compat).
+    """
+    if not content:
+        return ("", "")
+
+    instr_match = re.search(
+        r"<user_instructions>\s*(.*?)\s*</user_instructions>",
+        content,
+        re.DOTALL,
+    )
+    learned_match = re.search(
+        r"<learned_preferences>\s*(.*?)\s*</learned_preferences>",
+        content,
+        re.DOTALL,
+    )
+
+    user_text = instr_match.group(1).strip() if instr_match else ""
+
+    if learned_match:
+        learned_text = learned_match.group(1).strip()
+    elif instr_match:
+        learned_text = content.replace(instr_match.group(0), "").strip()
+    else:
+        learned_text = content.strip()
+
+    return (user_text, learned_text)
+
+
+def _sanitize_instructions(text: str) -> str:
+    """Strip XML-like tags from user instructions to prevent prompt injection.
+
+    Removes anything matching </?[\\w-]+> pattern (e.g. </role>, <system>, </memory>).
+    """
+    return re.sub(r"</?[\w-]+>", "", text).strip()
+
+
+def build_chat_agent_prompt(locale: str | None = None, user_id: str | None = None) -> str:
+    """Return the chat agent system prompt with preferences and language injected.
+
+    If user_id is provided, fetches the user's preferences from the store and
+    injects both <user_instructions> and <learned_preferences> as a
+    <user_context> block directly into the system prompt.
+    """
+    prompt = CHAT_AGENT_SYSTEM_PROMPT
+
+    if user_id:
+        try:
+            from agents.deep_agent import get_redis_file_store
+
+            store = get_redis_file_store()
+            item = store.get((user_id,), "/preferences.md")
+            if item is not None:
+                content = item.value.get("content", "")
+                user_text, learned_text = _parse_preferences(content)
+                if user_text or learned_text:
+                    user_text = _sanitize_instructions(user_text)[:_USER_INSTRUCTIONS_MAX]
+                    learned_text = learned_text[:_LEARNED_PREFS_MAX]
+                    context_block = f"\n<user_context>\n"
+                    if user_text:
+                        context_block += f"<user_instructions>\n{user_text}\n</user_instructions>\n"
+                    if learned_text:
+                        context_block += f"<learned_preferences>\n{learned_text}\n</learned_preferences>\n"
+                    context_block += "</user_context>\n"
+                    prompt += context_block
+        except Exception:
+            logger.warning("Failed to load preferences for user=%s", user_id, exc_info=True)
+
     if locale and locale in LANGUAGE_INSTRUCTIONS and locale != "en":
         lang_block = f"\n<language>\n{LANGUAGE_INSTRUCTIONS[locale]}\n</language>\n"
-        return CHAT_AGENT_SYSTEM_PROMPT + lang_block
-    return CHAT_AGENT_SYSTEM_PROMPT
+        prompt += lang_block
+
+    return prompt
 
 
 CHAT_AGENT_SYSTEM_PROMPT = """<role>
@@ -135,11 +214,14 @@ You are a Travel Planning Assistant powered by AI. Your job is to help users pla
 </role>
 
 <memory>
-When the user asks for a plan or itinerary, use the read_file tool to read /memories/preferences.md to learn about their saved preferences, dietary restrictions, travel style, and constraints. Do NOT read this file for casual conversation or greetings — only when you are about to generate an itinerary.
+Your preferences and user instructions are provided in the <user_context> block below (if any).
+You do NOT need to call read_file to load preferences — they are already in your system prompt.
 
-After generating an itinerary, use the edit_file tool to update /memories/preferences.md with the user's preferences so they are saved for next time. Include information you learned during this conversation.
+After generating an itinerary, use the edit_file tool to update /memories/preferences.md.
+Only update the <learned_preferences> section. NEVER modify the <user_instructions> section —
+that is the user's direct input.
 
-Use the following format in the preferences file:
+Use the following format for <learned_preferences>:
 
 <preferences_format>
 destination_preferences:
@@ -159,7 +241,14 @@ accessibility_needs:
 additional_notes: ""
 </preferences_format>
 
-If the file does not exist yet, create it with write_file. If it already exists, use edit_file to update it.
+If the file does not exist yet, create it with write_file using the full format:
+<user_instructions>
+(user's existing instructions — preserve them, or leave empty if none)
+</user_instructions>
+
+<learned_preferences>
+(your learned preferences)
+</learned_preferences>
 </memory>
 
 <chat_mode>
