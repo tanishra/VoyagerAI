@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import re
 import uuid
 from dataclasses import asdict
 
@@ -402,6 +403,24 @@ async def export_costs_csv(
     )
 
 
+def _sanitize_preferences_sections(content: str) -> str:
+    """Sanitize the <user_instructions> section of preferences content.
+
+    Strips XML-like tags from the user_instructions section only,
+    leaving the rest of the file (including <learned_preferences>) untouched.
+    """
+    if not content:
+        return content
+
+    instr_match = re.search(r"<user_instructions>\s*(.*?)\s*</user_instructions>", content, re.DOTALL)
+    if not instr_match:
+        return content
+
+    raw_instr = instr_match.group(1)
+    sanitized = re.sub(r"</?[\w-]+>", "", raw_instr).strip()
+    return content[:instr_match.start(1)] + sanitized + content[instr_match.end(1):]
+
+
 @app.get(
     "/preferences",
     summary="Get user preferences",
@@ -438,6 +457,7 @@ async def put_preferences(request: Request, user: dict = Depends(get_current_use
     logger.info("PUT /preferences user=%s locale=%s", user_id, locale)
     body = await request.body()
     content = body.decode("utf-8") if body else ""
+    content = _sanitize_preferences_sections(content)
     try:
         store = get_redis_file_store()
         store.put((user_id,), "/preferences.md", {"content": content, "encoding": "utf-8"})
