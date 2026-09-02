@@ -1,4 +1,16 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+
+function makeDoneStream(): Response {
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream({
+    start(controller) {
+      controller.enqueue(encoder.encode('event: thread_id\ndata: {"data":{"thread_id":"test-thread"}}\n\n'));
+      controller.enqueue(encoder.encode('event: done\ndata: {"data":null}\n\n'));
+      controller.close();
+    },
+  });
+  return new Response(stream, { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
+}
 
 describe('editStream', () => {
   beforeEach(() => {
@@ -56,11 +68,64 @@ describe('editStream', () => {
   });
 
   it('swallows network errors without throwing', async () => {
+    vi.useFakeTimers();
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('Network error')));
 
     const { editStream } = await import('@/lib/chat-api');
-    await expect(
-      editStream({ thread_id: 'thread-xyz', message: 'edited' }, {}),
-    ).resolves.toBeUndefined();
+    const promise = editStream({ thread_id: 'thread-xyz', message: 'edited' }, {});
+    await vi.advanceTimersByTimeAsync(8000);
+    await expect(promise).resolves.toBeUndefined();
+    vi.useRealTimers();
+  });
+});
+
+describe('editStream — retry logic', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('retries on network error and succeeds on second attempt', async () => {
+    const mockFetch = vi.fn()
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockResolvedValueOnce(makeDoneStream());
+    vi.stubGlobal('fetch', mockFetch);
+
+    const onReconnecting = vi.fn();
+    const { editStream } = await import('@/lib/chat-api');
+    const promise = editStream(
+      { thread_id: 'test-thread', message: 'edited' },
+      { onReconnecting },
+    );
+
+    await vi.advanceTimersByTimeAsync(1100);
+    await promise;
+
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+    expect(onReconnecting).toHaveBeenCalledTimes(1);
+    expect(onReconnecting).toHaveBeenCalledWith(1, 3);
+  });
+
+  it('does not retry on 401 (redirects to login)', async () => {
+    const mockFetch = vi.fn().mockResolvedValue(
+      new Response('Unauthorized', { status: 401 }),
+    );
+    vi.stubGlobal('fetch', mockFetch);
+    const originalHref = window.location.href;
+    Object.defineProperty(window, 'location', {
+      value: { href: '' },
+      writable: true,
+    });
+
+    const onReconnecting = vi.fn();
+    const { editStream } = await import('@/lib/chat-api');
+    await editStream({ thread_id: 'test-thread', message: 'edited' }, { onReconnecting });
+
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    expect(onReconnecting).not.toHaveBeenCalled();
+    window.location.href = originalHref;
   });
 });
