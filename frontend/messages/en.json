@@ -123,7 +123,13 @@
     "activityPanel": "Activity",
     "activityRunning": "{count, plural, one {# tool running} other {# tools running}}",
     "activityCompleted": "{count, plural, one {# tool call completed} other {# tool calls completed}}",
-    "tokensUsed": "{input} in · {output} out"
+    "tokensUsed": "{input} in · {output} out",
+    "feedbackUp": "Good response",
+    "feedbackDown": "Poor response",
+    "feedbackCommentPlaceholder": "Tell us what went wrong...",
+    "feedbackSubmit": "Submit feedback",
+    "feedbackThanks": "Thanks for your feedback!",
+    "feedbackError": "Failed to submit feedback"
   },
   "status": {
     "researching": "Researching",
@@ -389,6 +395,12 @@
     "threadId": "Thread",
     "efficiencyRatio": "Efficiency",
     "noData": "No data available",
-    "loadError": "Failed to load cost data"
+    "loadError": "Failed to load cost data",
+    "feedbackTitle": "Response Feedback",
+    "feedbackThumbsUp": "Thumbs Up",
+    "feedbackThumbsDown": "Thumbs Down",
+    "feedbackSatisfactionRatio": "Satisfaction Ratio",
+    "feedbackRecentComments": "Recent Comments",
+    "feedbackNoComments": "No feedback comments yet"
   }
 }
