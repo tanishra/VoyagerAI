@@ -35,7 +35,7 @@ from auth import verify_api_key
 from cache import cache_client
 from cancel_registry import cancel_stream, register_cancel, unregister_cancel
 from config import REQUEST_TIMEOUT_SECONDS, logger, settings
-from models import ChatRequest, ThreadUpdateRequest
+from models import ChatRequest, FeedbackRequest, ThreadUpdateRequest
 from oauth import (
     DEV_USER,
     SESSION_COOKIE_NAME,
@@ -51,6 +51,7 @@ from sanitize import sanitize_prompt_input
 from share_store import share_store
 from threads import generate_summary, thread_store
 from cost_store import cost_store
+from feedback_store import feedback_store
 from file_store import file_store
 
 ALLOWED_ORIGINS: list[str] = [
@@ -401,6 +402,57 @@ async def export_costs_csv(
         media_type="text/csv",
         headers={"Content-Disposition": "attachment; filename=costs.csv"},
     )
+
+
+# --- Feedback endpoints ---
+
+@app.post(
+    "/feedback",
+    summary="Submit feedback for a message",
+    tags=["feedback"],
+    dependencies=[Depends(verify_api_key)],
+)
+@limiter.limit("30/minute")
+async def submit_feedback(
+    request: Request,
+    body: FeedbackRequest,
+    user: dict = Depends(get_current_user),
+) -> dict:
+    """Submit or update thumbs up/down feedback for a specific message.
+
+    One rating per user per message — submitting again overwrites the previous rating.
+    """
+    user_id = user["user_id"]
+    result = await feedback_store.submit_feedback(
+        user_id=user_id,
+        message_id=body.message_id,
+        thread_id=body.thread_id,
+        rating=body.rating,
+        comment=body.comment,
+    )
+    logger.info(
+        "Feedback submitted: user=%s message=%s rating=%s",
+        user_id,
+        body.message_id,
+        body.rating,
+    )
+    return result
+
+
+@app.get(
+    "/admin/feedback",
+    summary="Get aggregate feedback stats",
+    tags=["admin"],
+    dependencies=[Depends(verify_api_key)],
+)
+@limiter.limit("10/minute")
+async def get_feedback_stats(
+    request: Request,
+    admin: dict = Depends(verify_admin),
+) -> JSONResponse:
+    """Get aggregate feedback statistics for admin observability."""
+    stats = await feedback_store.get_aggregate_stats()
+    return JSONResponse(content=stats)
 
 
 def _sanitize_preferences_sections(content: str) -> str:
