@@ -104,6 +104,7 @@ export interface ChatMessage {
   activity?: ActivityData;
   wasStopped?: boolean;
   editing?: boolean;
+  feedback?: 'up' | 'down';
   branches?: BranchInfo[];
   activeBranchIndex?: number;
   attachments?: import('./upload-api').UploadedFile[];
