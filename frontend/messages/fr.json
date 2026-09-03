@@ -123,7 +123,13 @@
     "activityPanel": "Activité",
     "activityRunning": "{count, plural, one {# outil en cours} other {# outils en cours}}",
     "activityCompleted": "{count, plural, one {# appel terminé} other {# appels terminés}}",
-    "tokensUsed": "{input} entrée · {output} sortie"
+    "tokensUsed": "{input} entrée · {output} sortie",
+    "feedbackUp": "Bonne réponse",
+    "feedbackDown": "Mauvaise réponse",
+    "feedbackCommentPlaceholder": "Dites-nous ce qui n'a pas fonctionné...",
+    "feedbackSubmit": "Envoyer le commentaire",
+    "feedbackThanks": "Merci pour votre commentaire !",
+    "feedbackError": "Échec de l'envoi du commentaire"
   },
   "status": {
     "researching": "Recherche",
@@ -389,6 +395,12 @@
     "threadId": "Fil",
     "efficiencyRatio": "Efficacité",
     "noData": "Aucune donnée disponible",
-    "loadError": "Échec du chargement des données de coûts"
+    "loadError": "Échec du chargement des données de coûts",
+    "feedbackTitle": "Commentaires sur les Réponses",
+    "feedbackThumbsUp": "J'aime",
+    "feedbackThumbsDown": "Je n'aime pas",
+    "feedbackSatisfactionRatio": "Taux de Satisfaction",
+    "feedbackRecentComments": "Commentaires Récents",
+    "feedbackNoComments": "Aucun commentaire pour le moment"
   }
 }
