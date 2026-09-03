@@ -22,6 +22,7 @@ from agents.tools.internet import (
     quick_web_lookup,
     reset_orchestrator_search_count,
 )
+from research_cache import research_cache
 
 
 # ---------------------------------------------------------------------------
@@ -38,10 +39,15 @@ def _make_result(title: str, url: str, content: str, score: float = 0.9) -> dict
 
 @pytest.fixture(autouse=True)
 def _reset_rate_limit():
-    """Reset rate limiter before each test."""
+    """Reset rate limiter and clear research cache before each test."""
+    import asyncio as _asyncio
+    loop = _asyncio.new_event_loop()
+    loop.run_until_complete(research_cache.invalidate_all())
     reset_orchestrator_search_count()
     yield
+    loop.run_until_complete(research_cache.invalidate_all())
     reset_orchestrator_search_count()
+    loop.close()
 
 
 # ---------------------------------------------------------------------------
