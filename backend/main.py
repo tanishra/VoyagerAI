@@ -52,6 +52,7 @@ from share_store import share_store
 from threads import generate_summary, thread_store
 from cost_store import cost_store
 from feedback_store import feedback_store
+from research_cache import research_cache
 from file_store import file_store
 
 ALLOWED_ORIGINS: list[str] = [
@@ -453,6 +454,23 @@ async def get_feedback_stats(
     """Get aggregate feedback statistics for admin observability."""
     stats = await feedback_store.get_aggregate_stats()
     return JSONResponse(content=stats)
+
+
+@app.delete(
+    "/admin/cache/research",
+    summary="Invalidate all cached research results",
+    tags=["admin"],
+    dependencies=[Depends(verify_api_key)],
+)
+@limiter.limit("5/minute")
+async def invalidate_research_cache(
+    request: Request,
+    admin: dict = Depends(verify_admin),
+) -> dict:
+    """Clear all cached Tavily search results. Admin-only."""
+    count = await research_cache.invalidate_all()
+    logger.info("Research cache invalidated by admin: %d entries cleared", count)
+    return {"status": "ok", "cleared": count}
 
 
 def _sanitize_preferences_sections(content: str) -> str:
