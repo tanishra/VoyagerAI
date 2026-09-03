@@ -72,5 +72,9 @@ class Settings(BaseSettings):
     # Subagent model overrides (JSON string: {"researcher": "gemini/gemini-2.5-pro", ...})
     SUBAGENT_MODEL_OVERRIDES: str = ""
 
+    # Research result caching
+    RESEARCH_CACHE_TTL_HOURS: int = 24
+    RESEARCH_CACHE_ENABLED: bool = True
+
 
 settings = Settings()
