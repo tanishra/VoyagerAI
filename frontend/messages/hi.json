@@ -123,7 +123,13 @@
     "activityPanel": "गतिविधि",
     "activityRunning": "{count, plural, one {# टूल चल रहा है} other {# टूल चल रहे हैं}}",
     "activityCompleted": "{count, plural, one {# कॉल पूरा} other {# कॉल पूरे}}",
-    "tokensUsed": "{input} इन · {output} आउट"
+    "tokensUsed": "{input} इन · {output} आउट",
+    "feedbackUp": "अच्छी प्रतिक्रिया",
+    "feedbackDown": "खराब प्रतिक्रिया",
+    "feedbackCommentPlaceholder": "बताएं क्या गलत हुआ...",
+    "feedbackSubmit": "प्रतिक्रिया भेजें",
+    "feedbackThanks": "आपकी प्रतिक्रिया के लिए धन्यवाद!",
+    "feedbackError": "प्रतिक्रिया भेजने में विफल"
   },
   "status": {
     "researching": "शोध कर रहे हैं",
@@ -389,6 +395,12 @@
     "threadId": "थ्रेड",
     "efficiencyRatio": "दक्षता",
     "noData": "कोई डेटा उपलब्ध नहीं",
-    "loadError": "लागत डेटा लोड करने में विफल"
+    "loadError": "लागत डेटा लोड करने में विफल",
+    "feedbackTitle": "प्रतिक्रिया फीडबैक",
+    "feedbackThumbsUp": "लाइक",
+    "feedbackThumbsDown": "डिसलाइक",
+    "feedbackSatisfactionRatio": "संतुष्टि अनुपात",
+    "feedbackRecentComments": "हाल की टिप्पणियां",
+    "feedbackNoComments": "अभी तक कोई फीडबैक टिप्पणी नहीं"
   }
 }
