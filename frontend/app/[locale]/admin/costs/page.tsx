@@ -9,6 +9,8 @@ import { CostChart } from '@/components/admin/CostChart';
 import { SubagentCostBreakdown } from '@/components/admin/SubagentCostBreakdown';
 import { TopUsersTable } from '@/components/admin/TopUsersTable';
 import { TokenEfficiencyTable } from '@/components/admin/TokenEfficiencyTable';
+import FeedbackSummary from '@/components/admin/FeedbackSummary';
+import { getFeedbackAggregate, type FeedbackAggregate } from '@/lib/feedback-api';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -31,6 +33,7 @@ export default function AdminCostsPage() {
   const [error, setError] = useState<string | null>(null);
   const [period, setPeriod] = useState<'day' | 'week' | 'month'>('week');
   const [accessDenied, setAccessDenied] = useState(false);
+  const [feedbackStats, setFeedbackStats] = useState<FeedbackAggregate | null>(null);
 
   const fetchStats = useCallback(async (p: 'day' | 'week' | 'month') => {
     setLoading(true);
@@ -45,7 +48,6 @@ export default function AdminCostsPage() {
       }
       if (res.status === 401) {
         window.location.href = '/login';
-        return;
       }
       if (!res.ok) throw new Error('Failed to fetch');
       const data = await res.json();
@@ -57,9 +59,19 @@ export default function AdminCostsPage() {
     }
   }, [t]);
 
+  const fetchFeedback = useCallback(async () => {
+    try {
+      const data = await getFeedbackAggregate();
+      setFeedbackStats(data);
+    } catch {
+      // Silently fail — feedback section is supplementary
+    }
+  }, []);
+
   useEffect(() => {
     fetchStats(period);
-  }, [period, fetchStats]);
+    fetchFeedback();
+  }, [period, fetchStats, fetchFeedback]);
 
   function handleExport() {
     window.open(`${API_BASE}/admin/costs/export`, '_blank');
@@ -170,6 +182,9 @@ export default function AdminCostsPage() {
 
             {/* Poor efficiency sessions */}
             <TokenEfficiencyTable data={stats.poor_efficiency_sessions} />
+
+            {/* Feedback summary */}
+            <FeedbackSummary data={feedbackStats} />
           </motion.div>
         ) : null}
       </div>
