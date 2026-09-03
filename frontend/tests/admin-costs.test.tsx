@@ -55,12 +55,27 @@ const mockStats = {
   ],
 };
 
+const mockFeedback = {
+  total_up: 15,
+  total_down: 5,
+  total_ratings: 20,
+  satisfaction_ratio: 0.75,
+  recent_comments: [
+    { comment: 'Wrong prices in itinerary', thread_id: 'thread456def', created_at: 1700000000 },
+    { comment: 'Bad restaurant recs', thread_id: 'thread789ghi', created_at: 1700000100 },
+  ],
+};
+
 describe('AdminCostsPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
   it('shows access denied when API returns 403', async () => {
+    mockFetch.mockResolvedValueOnce({
+      status: 403,
+      ok: false,
+    });
     mockFetch.mockResolvedValueOnce({
       status: 403,
       ok: false,
@@ -79,6 +94,11 @@ describe('AdminCostsPage', () => {
       ok: true,
       json: async () => mockStats,
     });
+    mockFetch.mockResolvedValueOnce({
+      status: 200,
+      ok: true,
+      json: async () => mockFeedback,
+    });
 
     render(<AdminCostsPage />);
 
@@ -94,6 +114,11 @@ describe('AdminCostsPage', () => {
       ok: true,
       json: async () => mockStats,
     });
+    mockFetch.mockResolvedValueOnce({
+      status: 200,
+      ok: true,
+      json: async () => mockFeedback,
+    });
 
     render(<AdminCostsPage />);
 
@@ -107,6 +132,11 @@ describe('AdminCostsPage', () => {
       status: 200,
       ok: true,
       json: async () => mockStats,
+    });
+    mockFetch.mockResolvedValueOnce({
+      status: 200,
+      ok: true,
+      json: async () => mockFeedback,
     });
 
     render(<AdminCostsPage />);
@@ -122,6 +152,11 @@ describe('AdminCostsPage', () => {
       ok: true,
       json: async () => mockStats,
     });
+    mockFetch.mockResolvedValueOnce({
+      status: 200,
+      ok: true,
+      json: async () => mockFeedback,
+    });
 
     render(<AdminCostsPage />);
 
@@ -136,6 +171,11 @@ describe('AdminCostsPage', () => {
       ok: true,
       json: async () => mockStats,
     });
+    mockFetch.mockResolvedValueOnce({
+      status: 200,
+      ok: true,
+      json: async () => mockFeedback,
+    });
 
     render(<AdminCostsPage />);
 
@@ -148,5 +188,27 @@ describe('AdminCostsPage', () => {
       expect.stringContaining('/admin/costs/export'),
       '_blank'
     );
+  });
+
+  it('renders feedback summary section with data', async () => {
+    mockFetch.mockResolvedValueOnce({
+      status: 200,
+      ok: true,
+      json: async () => mockStats,
+    });
+    mockFetch.mockResolvedValueOnce({
+      status: 200,
+      ok: true,
+      json: async () => mockFeedback,
+    });
+
+    render(<AdminCostsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText('admin.feedbackTitle')).toBeDefined();
+      expect(screen.getByText('15')).toBeDefined();
+      expect(screen.getByText('5')).toBeDefined();
+      expect(screen.getByText('75%')).toBeDefined();
+    });
   });
 });
