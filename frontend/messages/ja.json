@@ -123,7 +123,13 @@
     "activityPanel": "アクティビティ",
     "activityRunning": "{count}個のツール実行中",
     "activityCompleted": "{count}個の呼び出し完了",
-    "tokensUsed": "{input} 入力 · {output} 出力"
+    "tokensUsed": "{input} 入力 · {output} 出力",
+    "feedbackUp": "良い応答",
+    "feedbackDown": "悪い応答",
+    "feedbackCommentPlaceholder": "何が悪かったか教えてください...",
+    "feedbackSubmit": "フィードバックを送信",
+    "feedbackThanks": "フィードバックありがとうございます！",
+    "feedbackError": "フィードバックの送信に失敗しました"
   },
   "status": {
     "researching": "調査中",
@@ -389,6 +395,12 @@
     "threadId": "スレッド",
     "efficiencyRatio": "効率",
     "noData": "データがありません",
-    "loadError": "コストデータの読み込みに失敗しました"
+    "loadError": "コストデータの読み込みに失敗しました",
+    "feedbackTitle": "応答フィードバック",
+    "feedbackThumbsUp": "高評価",
+    "feedbackThumbsDown": "低評価",
+    "feedbackSatisfactionRatio": "満足度比率",
+    "feedbackRecentComments": "最近のコメント",
+    "feedbackNoComments": "まだフィードバックコメントはありません"
   }
 }
