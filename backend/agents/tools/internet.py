@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import re
 
@@ -8,6 +9,7 @@ from langchain_core.tools import tool
 from tavily import TavilyClient
 
 from config.settings import settings
+from research_cache import research_cache
 
 logger = logging.getLogger("travel_agent.tools.internet")
 
@@ -29,6 +31,11 @@ _SEARCH_TIMEOUT = 10
 _MAX_RESULTS_CAP = 10
 
 
+def _make_cache_key(query: str, topic: str, max_results: int) -> str:
+    raw = f"{query.strip().lower()}|{topic}|{max_results}"
+    return hashlib.sha256(raw.encode()).hexdigest()
+
+
 def _format_search_results(results: dict) -> str:
     formatted = []
     for r in results.get("results", []):
@@ -41,12 +48,20 @@ def _format_search_results(results: dict) -> str:
 
 
 async def _search_with_retry(query: str, max_results: int = 5, topic: str = "general") -> str:
-    """Internal async search helper with retry, timeout, and formatted output."""
+    """Internal async search helper with retry, timeout, formatted output, and caching."""
+    capped_results = min(max_results, _MAX_RESULTS_CAP)
+
+    if settings.RESEARCH_CACHE_ENABLED:
+        cache_key = _make_cache_key(query, topic, capped_results)
+        cached = await research_cache.get(cache_key)
+        if cached is not None:
+            logger.debug("Research cache HIT for query: %s", query[:100])
+            return cached
+
     tavily = _get_tavily()
     if tavily is None:
         return _UNAVAILABLE_MSG
 
-    capped_results = min(max_results, _MAX_RESULTS_CAP)
     last_error: Exception | None = None
     for attempt in range(_MAX_RETRIES + 1):
         try:
@@ -62,7 +77,13 @@ async def _search_with_retry(query: str, max_results: int = 5, topic: str = "gen
                 ),
                 timeout=_SEARCH_TIMEOUT,
             )
-            return _format_search_results(results)
+            formatted = _format_search_results(results)
+            if settings.RESEARCH_CACHE_ENABLED:
+                cache_key = _make_cache_key(query, topic, capped_results)
+                await research_cache.set(
+                    cache_key, formatted, ttl=settings.RESEARCH_CACHE_TTL_HOURS * 3600
+                )
+            return formatted
 
         except asyncio.TimeoutError:
             logger.warning(
@@ -157,7 +178,14 @@ def _format_concise_results(results: dict) -> str:
 
 
 async def _quick_search(query: str, topic: str = "general") -> str:
-    """Internal async search helper with retry, timeout, and concise formatting."""
+    """Internal async search helper with retry, timeout, concise formatting, and caching."""
+    if settings.RESEARCH_CACHE_ENABLED:
+        cache_key = _make_cache_key(query, topic, 3)
+        cached = await research_cache.get(cache_key)
+        if cached is not None:
+            logger.debug("Research cache HIT for quick lookup: %s", query[:100])
+            return cached
+
     tavily = _get_tavily()
     if tavily is None:
         return _UNAVAILABLE_MSG
@@ -177,7 +205,13 @@ async def _quick_search(query: str, topic: str = "general") -> str:
                 ),
                 timeout=_SEARCH_TIMEOUT,
             )
-            return _format_concise_results(results)
+            formatted = _format_concise_results(results)
+            if settings.RESEARCH_CACHE_ENABLED:
+                cache_key = _make_cache_key(query, topic, 3)
+                await research_cache.set(
+                    cache_key, formatted, ttl=settings.RESEARCH_CACHE_TTL_HOURS * 3600
+                )
+            return formatted
 
         except asyncio.TimeoutError:
             logger.warning(
