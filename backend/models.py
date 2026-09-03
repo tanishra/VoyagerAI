@@ -65,3 +65,12 @@ class ThreadUpdateRequest(BaseModel):
     pinned: bool | None = Field(
         None, description="Set to true/false to pin/unpin a thread."
     )
+
+
+class FeedbackRequest(BaseModel):
+    thread_id: str = Field(..., max_length=200, description="Thread ID.")
+    message_id: str = Field(..., max_length=200, description="Message ID being rated.")
+    rating: str = Field(..., pattern="^(up|down)$", description="Rating: 'up' or 'down'.")
+    comment: str | None = Field(
+        None, max_length=1000, description="Optional feedback comment."
+    )
