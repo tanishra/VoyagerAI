@@ -22,6 +22,7 @@ import ToolCallCard from '@/components/ToolCallCard';
 import SubagentTimeline from '@/components/SubagentTimeline';
 import ActivityPanel from '@/components/ActivityPanel';
 import ComparisonView from './ComparisonView';
+import FeedbackButtons from '@/components/FeedbackButtons';
 import ThreadSidebar from './ThreadSidebar';
 import VoiceWaveform from '@/components/VoiceWaveform';
 import FilePreview from '@/components/FilePreview';
@@ -1517,6 +1518,7 @@ export default function ChatPage() {
                   {msg.content && (
                     <div className="flex items-center gap-1 px-1 mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
                       <CopyButton content={buildCopyContent(msg.content, msg.itinerary, msg.comparison)} />
+                      <FeedbackButtons threadId={threadId ?? ''} messageId={msg.id} />
                       {isLastAssistant && prevUserMsg && (
                         <>
                           <button
