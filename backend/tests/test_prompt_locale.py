@@ -69,3 +69,52 @@ class TestBuildChatAgentPrompt:
         for locale in ("en", "es", "fr", "de", "hi", "ja"):
             assert locale in LANGUAGE_INSTRUCTIONS
             assert len(LANGUAGE_INSTRUCTIONS[locale]) > 0
+
+
+class TestTimezoneInjection:
+    def test_timezone_injects_datetime_block(self):
+        prompt = build_chat_agent_prompt("en", timezone="Asia/Kolkata")
+        assert "<current_datetime>" in prompt
+        assert "Asia/Kolkata" in prompt
+        assert prompt.startswith(CHAT_AGENT_SYSTEM_PROMPT)
+
+    def test_timezone_includes_day_of_week(self):
+        prompt = build_chat_agent_prompt("en", timezone="Asia/Kolkata")
+        dt_block = prompt.split("<current_datetime>")[1].split("</current_datetime>")[0]
+        days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+        assert any(day in dt_block for day in days)
+
+    def test_timezone_includes_time(self):
+        prompt = build_chat_agent_prompt("en", timezone="Asia/Kolkata")
+        dt_block = prompt.split("<current_datetime>")[1].split("</current_datetime>")[0]
+        assert "AM" in dt_block or "PM" in dt_block
+
+    def test_timezone_includes_utc_offset(self):
+        prompt = build_chat_agent_prompt("en", timezone="Asia/Kolkata")
+        dt_block = prompt.split("<current_datetime>")[1].split("</current_datetime>")[0]
+        assert "UTC+" in dt_block or "UTC-" in dt_block
+
+    def test_invalid_timezone_falls_back_silently(self):
+        prompt = build_chat_agent_prompt("en", timezone="Invalid/Zone")
+        assert "<current_datetime>" not in prompt
+        assert prompt == CHAT_AGENT_SYSTEM_PROMPT
+
+    def test_none_timezone_no_injection(self):
+        prompt = build_chat_agent_prompt("en", timezone=None)
+        assert "<current_datetime>" not in prompt
+        assert prompt == CHAT_AGENT_SYSTEM_PROMPT
+
+    def test_timezone_with_locale(self):
+        prompt = build_chat_agent_prompt("es", timezone="Europe/Paris")
+        assert "<current_datetime>" in prompt
+        assert "<language>" in prompt
+        assert "Europe/Paris" in prompt
+        assert "Spanish" in prompt
+
+    def test_timezone_block_before_language_block(self):
+        prompt = build_chat_agent_prompt("fr", timezone="Asia/Tokyo")
+        dt_pos = prompt.find("<current_datetime>")
+        lang_pos = prompt.find("<language>")
+        assert dt_pos != -1
+        assert lang_pos != -1
+        assert dt_pos < lang_pos
