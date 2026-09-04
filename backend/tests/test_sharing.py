@@ -278,3 +278,14 @@ class TestExportEndpoints:
         thread_id = _make_scoped_thread_id()
         resp = client_no_itinerary.get(f"/export/{thread_id}")
         assert resp.status_code == 404
+
+    def test_export_ical(self, client):
+        thread_id = _make_scoped_thread_id()
+        resp = client.get(f"/export/{thread_id}?fmt=ical")
+        assert resp.status_code == 200
+        assert "text/calendar" in resp.headers.get("content-type", "")
+        body = resp.text
+        assert body.startswith("BEGIN:VCALENDAR")
+        assert "BEGIN:VEVENT" in body
+        assert "END:VCALENDAR" in body
+        assert "Eiffel Tower" in body or "Morning Activity" in body or "Check-in" in body
