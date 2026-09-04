@@ -159,6 +159,7 @@
     "printPdf": "प्रिंट / PDF के रूप में सहेजें",
     "downloadJson": "JSON डाउनलोड करें",
     "downloadMarkdown": "Markdown डाउनलोड करें",
+    "addToCalendar": "कैलेंडर में जोड़ें",
     "shareLink": "लिंक साझा करें",
     "linkCopied": "लिंक कॉपी हो गया!",
     "creatingLink": "लिंक बना रहे हैं...",
