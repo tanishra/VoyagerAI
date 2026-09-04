@@ -1,6 +1,6 @@
 'use client';
 
-import { Globe, MoreHorizontal, Printer, FileJson, FileText, Share2, Check, Map as MapIcon, ChevronDown } from 'lucide-react';
+import { Globe, MoreHorizontal, Printer, FileJson, FileText, Share2, Check, Map as MapIcon, ChevronDown, Calendar } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import { useTranslations } from 'next-intl';
 import dynamic from 'next/dynamic';
@@ -55,14 +55,14 @@ export default function ItineraryCard({ itinerary, threadId, printMode = false }
     }
   }
 
-  async function handleExport(format: 'json' | 'markdown') {
+  async function handleExport(format: 'json' | 'markdown' | 'ical') {
     if (!threadId) return;
     try {
       const blob = await exportItinerary(threadId, format);
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      const ext = format === 'json' ? 'json' : 'md';
+      const ext = format === 'json' ? 'json' : format === 'markdown' ? 'md' : 'ics';
       a.download = `${itinerary.destination?.replace(/[^a-zA-Z0-9]/g, '_') || 'itinerary'}.${ext}`;
       document.body.appendChild(a);
       a.click();
@@ -118,6 +118,13 @@ export default function ItineraryCard({ itinerary, threadId, printMode = false }
                 >
                   <FileText className="w-3.5 h-3.5" />
                   {t('downloadMarkdown')}
+                </button>
+                <button
+                  onClick={() => handleExport('ical')}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-foreground hover:bg-muted transition-colors cursor-pointer"
+                >
+                  <Calendar className="w-3.5 h-3.5" />
+                  {t('addToCalendar')}
                 </button>
                 <div className="border-t border-border my-1" />
                 <button
