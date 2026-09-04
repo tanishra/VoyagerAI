@@ -159,6 +159,7 @@
     "printPdf": "印刷 / PDFとして保存",
     "downloadJson": "JSONをダウンロード",
     "downloadMarkdown": "Markdownをダウンロード",
+    "addToCalendar": "カレンダーに追加",
     "shareLink": "リンクを共有",
     "linkCopied": "リンクをコピーしました！",
     "creatingLink": "リンクを作成中...",
