@@ -53,6 +53,7 @@ from threads import generate_summary, thread_store
 from cost_store import cost_store
 from feedback_store import feedback_store
 from research_cache import research_cache
+from ical_generator import generate_ics
 from file_store import file_store
 
 ALLOWED_ORIGINS: list[str] = [
@@ -1376,6 +1377,13 @@ async def export_itinerary(
     if itinerary is None:
         raise HTTPException(status_code=404, detail="No itinerary found in this thread")
     itinerary = await _enrich_itinerary_with_coordinates(itinerary)
+    if fmt == "ical":
+        ics_content = generate_ics(itinerary, thread_id=thread_id)
+        return PlainTextResponse(
+            ics_content,
+            media_type="text/calendar",
+            headers={"Content-Disposition": f'attachment; filename="{itinerary.get("destination", "itinerary").replace(" ", "_")}.ics"'},
+        )
     if fmt == "markdown":
         md = _itinerary_to_markdown(itinerary)
         return PlainTextResponse(
