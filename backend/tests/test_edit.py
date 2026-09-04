@@ -51,7 +51,7 @@ class TestEditEndpoint:
 
         captured_thread_id = []
 
-        async def fake_edit(*, thread_id, new_message, user_id, locale, cancel_event):
+        async def fake_edit(*, thread_id, new_message, user_id, locale, timezone, cancel_event):
             captured_thread_id.append(thread_id)
             yield {"event": "done", "data": None}
 
@@ -75,7 +75,7 @@ class TestEditEndpoint:
         """Edit endpoint returns a valid SSE stream with events."""
         import main as main_module
 
-        async def fake_edit(*, thread_id, new_message, user_id, locale, cancel_event):
+        async def fake_edit(*, thread_id, new_message, user_id, locale, timezone, cancel_event):
             yield {"event": "on_chat_model_stream", "data": {"chunk": "Hi"}}
             yield {"event": "done", "data": None}
 
@@ -95,7 +95,7 @@ class TestEditEndpoint:
         """Cancel event is respected during edit."""
         import main as main_module
 
-        async def fake_edit(*, thread_id, new_message, user_id, locale, cancel_event):
+        async def fake_edit(*, thread_id, new_message, user_id, locale, timezone, cancel_event):
             yield {"event": "on_chat_model_stream", "data": {"chunk": "partial"}}
             if cancel_event:
                 cancel_event.set()
@@ -117,7 +117,7 @@ class TestEditEndpoint:
         """If edit raises, an error SSE event is emitted."""
         import main as main_module
 
-        async def failing_edit(*, thread_id, new_message, user_id, locale, cancel_event):
+        async def failing_edit(*, thread_id, new_message, user_id, locale, timezone, cancel_event):
             raise RuntimeError("boom")
 
         monkeypatch.setattr(main_module, "edit_chat_agent", failing_edit)
@@ -138,7 +138,7 @@ class TestEditEndpoint:
 
         captured_message = []
 
-        async def fake_edit(*, thread_id, new_message, user_id, locale, cancel_event):
+        async def fake_edit(*, thread_id, new_message, user_id, locale, timezone, cancel_event):
             captured_message.append(new_message)
             yield {"event": "done", "data": None}
 
