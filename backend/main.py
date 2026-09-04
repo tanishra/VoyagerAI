@@ -632,6 +632,7 @@ async def chat_stream(
                 thread_id=thread_id,
                 user_id=user_id,
                 locale=locale,
+                timezone=chat_req.timezone,
                 cancel_event=cancel_event,
                 attachments=[a.model_dump() for a in chat_req.attachments] if chat_req.attachments else None,
             ):
@@ -716,6 +717,7 @@ async def chat_regenerate(
     user_id = user["user_id"]
     thread_id = _scoped_chat_thread_id(raw_thread_id, user_id)
     locale = extract_locale(request, body.get("locale"))
+    timezone = body.get("timezone")
 
     logger.info("POST /chat/regenerate — thread_id=%s, user=%s", thread_id, user_id)
 
@@ -739,6 +741,7 @@ async def chat_regenerate(
                 thread_id=thread_id,
                 user_id=user_id,
                 locale=locale,
+                timezone=timezone,
                 cancel_event=cancel_event,
             ):
                 if cancel_event.is_set():
@@ -796,6 +799,7 @@ async def chat_edit(
     user_id = user["user_id"]
     thread_id = _scoped_chat_thread_id(raw_thread_id, user_id)
     locale = extract_locale(request, body.get("locale"))
+    timezone = body.get("timezone")
 
     logger.info("POST /chat/edit — thread_id=%s, user=%s", thread_id, user_id)
 
@@ -820,6 +824,7 @@ async def chat_edit(
                 new_message=new_message,
                 user_id=user_id,
                 locale=locale,
+                timezone=timezone,
                 cancel_event=cancel_event,
             ):
                 if cancel_event.is_set():
