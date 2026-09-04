@@ -64,7 +64,7 @@ export async function listShares(): Promise<ShareLink[]> {
   return res.json();
 }
 
-export async function exportItinerary(threadId: string, format: 'json' | 'markdown'): Promise<Blob> {
+export async function exportItinerary(threadId: string, format: 'json' | 'markdown' | 'ical'): Promise<Blob> {
   const res = await fetch(`${API_URL}/export/${threadId}?fmt=${format}`, {
     credentials: 'include',
   });
