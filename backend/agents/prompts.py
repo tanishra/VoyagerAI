@@ -123,6 +123,8 @@ LANGUAGE_INSTRUCTIONS = {
 
 import logging
 import re
+from datetime import datetime
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 logger = logging.getLogger("travel_agent.prompts")
 
@@ -171,14 +173,43 @@ def _sanitize_instructions(text: str) -> str:
     return re.sub(r"</?[\w-]+>", "", text).strip()
 
 
-def build_chat_agent_prompt(locale: str | None = None, user_id: str | None = None) -> str:
+def build_chat_agent_prompt(
+    locale: str | None = None,
+    user_id: str | None = None,
+    timezone: str | None = None,
+) -> str:
     """Return the chat agent system prompt with preferences and language injected.
 
     If user_id is provided, fetches the user's preferences from the store and
     injects both <user_instructions> and <learned_preferences> as a
     <user_context> block directly into the system prompt.
+
+    If timezone is provided, injects a <current_datetime> block with the user's
+    local date, time, and timezone so the agent can reason about relative dates.
     """
     prompt = CHAT_AGENT_SYSTEM_PROMPT
+
+    # Inject current date/time in user's timezone
+    if timezone:
+        try:
+            tz = ZoneInfo(timezone)
+            now = datetime.now(tz)
+            date_str = now.strftime("%A, %B %d, %Y at %I:%M %p")
+            offset = now.strftime("%z")
+            if offset:
+                offset_formatted = f"UTC{offset[:3]}:{offset[3:]}"
+            else:
+                offset_formatted = "UTC"
+            dt_block = (
+                f"\n<current_datetime>\n"
+                f"Today is {date_str} ({timezone}, {offset_formatted}).\n"
+                f"Use this as the current date and time when the user mentions "
+                f"relative dates like \"next month\", \"this weekend\", or \"tomorrow\".\n"
+                f"</current_datetime>\n"
+            )
+            prompt += dt_block
+        except (ZoneInfoNotFoundError, ValueError, Exception):
+            logger.warning("Invalid timezone '%s' — skipping datetime injection", timezone)
 
     if user_id:
         try:
