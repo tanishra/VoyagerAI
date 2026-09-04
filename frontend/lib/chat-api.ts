@@ -32,7 +32,7 @@ function parseSSELine(line: string): { event?: string; data?: string } | null {
 }
 
 export async function streamChat(
-  body: { message: string; thread_id?: string; locale?: string; attachments?: import('./upload-api').UploadedFile[] },
+  body: { message: string; thread_id?: string; locale?: string; timezone?: string; attachments?: import('./upload-api').UploadedFile[] },
   callbacks: ChatStreamCallbacks,
 ): Promise<string | undefined> {
   const { onToken, onItinerary, onComparison, onStatus, onThreadId, onDone, onError, onAbort, onCancelled, signal, errorMessages, onThinking, onToolStart, onToolEnd, onToolError, onUsage, onSubagentProgress, onReconnecting } = callbacks;
@@ -296,7 +296,7 @@ function handleChatEvent(
 }
 
 export async function regenerateStream(
-  body: { thread_id: string; locale?: string },
+  body: { thread_id: string; locale?: string; timezone?: string },
   callbacks: ChatStreamCallbacks,
 ): Promise<string | undefined> {
   const { onToken, onItinerary, onComparison, onStatus, onThreadId, onDone, onError, onAbort, onCancelled, signal, errorMessages, onThinking, onToolStart, onToolEnd, onToolError, onUsage, onSubagentProgress, onReconnecting } = callbacks;
@@ -420,7 +420,7 @@ export async function getBranches(threadId: string): Promise<BranchInfo[]> {
 }
 
 export async function editStream(
-  body: { thread_id: string; message: string; locale?: string },
+  body: { thread_id: string; message: string; locale?: string; timezone?: string },
   callbacks: ChatStreamCallbacks,
 ): Promise<string | undefined> {
   const { onToken, onItinerary, onComparison, onStatus, onThreadId, onDone, onError, onAbort, onCancelled, signal, errorMessages, onThinking, onToolStart, onToolEnd, onToolError, onUsage, onSubagentProgress, onReconnecting } = callbacks;
