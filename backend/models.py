@@ -56,6 +56,9 @@ class ChatRequest(BaseModel):
     locale: str | None = Field(
         None, max_length=10, description="User's preferred locale (e.g. 'en', 'es', 'fr')."
     )
+    timezone: str | None = Field(
+        None, max_length=50, description="User's IANA timezone (e.g. 'Asia/Kolkata', 'America/New_York')."
+    )
     attachments: list[AttachmentInfo] = Field(
         default_factory=list, description="File attachments (images, PDFs)."
     )
