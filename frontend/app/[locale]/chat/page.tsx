@@ -56,6 +56,7 @@ export default function ChatPage() {
   const tStatus = useTranslations('status');
   const tCommon = useTranslations('common');
   const locale = useLocale();
+  const userTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -371,7 +372,7 @@ export default function ChatPage() {
 
     try {
       const newThreadId = await streamChat(
-        { message: text, thread_id: threadId ?? undefined, locale, attachments: sentAttachments.length > 0 ? sentAttachments : undefined },
+        { message: text, thread_id: threadId ?? undefined, locale, timezone: userTimezone, attachments: sentAttachments.length > 0 ? sentAttachments : undefined },
         {
           signal: controller.signal,
           onToken: (token) => {
@@ -587,7 +588,7 @@ export default function ChatPage() {
 
     try {
       await regenerateStream(
-        { thread_id: threadId, locale },
+        { thread_id: threadId, locale, timezone: userTimezone },
         {
           signal: controller.signal,
           onToken: (token) => {
@@ -824,7 +825,7 @@ export default function ChatPage() {
 
     try {
       await editStream(
-        { thread_id: threadId, message: editContent.trim(), locale },
+        { thread_id: threadId, message: editContent.trim(), locale, timezone: userTimezone },
         {
           signal: controller.signal,
           onToken: (token) => {
@@ -1031,7 +1032,7 @@ export default function ChatPage() {
           let errorMessage = '';
 
           await streamChat(
-            { message: msg.content, thread_id: msg.thread_id ?? undefined, locale },
+            { message: msg.content, thread_id: msg.thread_id ?? undefined, locale, timezone: userTimezone },
             {
               onToken: (token) => {
                 accumulatedText += token;
