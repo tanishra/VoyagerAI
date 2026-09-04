@@ -159,6 +159,7 @@
     "printPdf": "Imprimer / Enregistrer en PDF",
     "downloadJson": "Télécharger JSON",
     "downloadMarkdown": "Télécharger Markdown",
+    "addToCalendar": "Ajouter au calendrier",
     "shareLink": "Partager le lien",
     "linkCopied": "Lien copié !",
     "creatingLink": "Création du lien...",
