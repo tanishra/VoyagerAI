@@ -1323,9 +1323,7 @@ export default function ChatPage() {
             </button>
             {!showSidebar && (
               <div className="flex items-center gap-2">
-                <div className="p-1.5 rounded-lg bg-gradient-to-br from-indigo-500/10 to-violet-500/10 border border-indigo-500/15">
-                  <Sparkles className="w-3.5 h-3.5 text-primary" />
-                </div>
+                <span className="w-1 h-4 bg-primary rounded-full" />
                 <span className="text-sm font-semibold text-foreground">{t('title')}</span>
               </div>
             )}
@@ -1346,10 +1344,10 @@ export default function ChatPage() {
               initial={{ opacity: 0, y: -10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
-              className="p-3 mt-2 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center gap-2"
+              className="p-3 mt-2 rounded-lg bg-accent/50 border border-accent-foreground/20 flex items-center gap-2"
             >
-              <Loader2 className="w-4 h-4 animate-spin text-amber-600" />
-              <p className="text-amber-600 text-sm">
+              <Loader2 className="w-4 h-4 animate-spin text-accent-foreground" />
+              <p className="text-accent-foreground text-sm">
                 {t('reconnecting', { attempt: reconnecting.attempt, max: reconnecting.max })}
               </p>
             </motion.div>
@@ -1364,13 +1362,13 @@ export default function ChatPage() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
               role="alert"
-              className="p-3 mt-2 rounded-xl bg-red-500/10 border border-red-500/20 relative flex items-center justify-between gap-3"
+              className="p-3 mt-2 rounded-lg bg-destructive/10 border border-destructive/20 relative flex items-center justify-between gap-3"
             >
-              <p className="text-red-600 text-sm">{error}</p>
+              <p className="text-destructive text-sm">{error}</p>
               {lastSentMessageRef.current && (
                 <button
                   onClick={handleRetry}
-                  className="text-sm font-medium text-red-600 hover:text-red-700 underline shrink-0 cursor-pointer"
+                  className="text-sm font-medium text-destructive hover:text-destructive/80 underline shrink-0 cursor-pointer"
                 >
                   {t('retry')}
                 </button>
@@ -1408,7 +1406,7 @@ export default function ChatPage() {
             errorDescription={tCommon('errorDescription')}
             tryAgain={tCommon('tryAgain')}
             fallback={
-              <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-600 text-sm">
+              <div className="p-4 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-sm">
                 {t('errorRendering')}
               </div>
             }
@@ -1728,7 +1726,7 @@ export default function ChatPage() {
                   disabled={loading || regenerating}
                   className={`shrink-0 p-2 rounded-lg transition-all disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer ${
                     isRecordingVoice
-                      ? 'bg-red-500 hover:bg-red-600 text-white animate-pulse'
+                      ? 'bg-destructive hover:bg-destructive/90 text-white animate-pulse'
                       : 'bg-muted hover:bg-accent text-foreground'
                   }`}
                   aria-label={isRecordingVoice ? t('stopRecording') : t('voiceInput')}
