@@ -2,14 +2,13 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { Globe, MapPin, Sparkles, Award } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 
 const stats = [
-  { value: 5000, label: 'Trips Planned', icon: Globe, suffix: '+' },
-  { value: 150, label: 'Destinations', icon: MapPin, suffix: '+' },
-  { value: 99, label: 'AI Accuracy', icon: Sparkles, suffix: '%' },
-  { value: 3, label: 'Years Running', icon: Award, suffix: '+' },
+  { value: 5000, label: 'statsTrips', suffix: '+' },
+  { value: 150, label: 'statsDestinations', suffix: '+' },
+  { value: 99, label: 'statsAccuracy', suffix: '%' },
+  { value: 3, label: 'statsYears', suffix: '+' },
 ];
 
 function CountUp({ target, suffix }: { target: number; suffix: string }) {
@@ -49,26 +48,24 @@ function CountUp({ target, suffix }: { target: number; suffix: string }) {
 export default function StatsSection() {
   const t = useTranslations('home');
   return (
-    <section className="py-16 md:py-20 border-t border-border">
-      <div className="max-w-4xl mx-auto px-4">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+    <section className="py-20 md:py-24 border-t border-border">
+      <div className="max-w-4xl mx-auto px-6">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-px bg-border">
           {stats.map((stat, i) => (
             <motion.div
               key={stat.label}
-              initial={{ opacity: 0, y: 20 }}
+              initial={{ opacity: 0, y: 16 }}
               whileInView={{ opacity: 1, y: 0 }}
-              whileHover={{ y: -4 }}
               viewport={{ once: true, margin: '-50px' }}
-              transition={{ duration: 0.5, delay: i * 0.1 }}
-              className="text-center group cursor-default"
+              transition={{ duration: 0.5, delay: i * 0.08 }}
+              className="bg-background py-8 px-4 text-center"
             >
-              <div className="inline-flex p-2.5 rounded-xl bg-muted border border-border mb-3 group-hover:scale-110 group-hover:border-primary/30 transition-all duration-200">
-                <stat.icon className="w-5 h-5 text-primary" />
-              </div>
-              <div className="text-2xl md:text-3xl font-bold text-foreground tabular-nums mb-1">
+              <div className="text-3xl md:text-4xl font-bold text-foreground tabular-nums mb-2">
                 <CountUp target={stat.value} suffix={stat.suffix} />
               </div>
-              <p className="text-xs text-muted-foreground">{t(`stats${['Trips', 'Destinations', 'Accuracy', 'Years'][i]}`)}</p>
+              <p className="text-xs text-muted-foreground tracking-wide">
+                {t(stat.label)}
+              </p>
             </motion.div>
           ))}
         </div>
