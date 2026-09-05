@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Menu, X, Sparkles, ArrowRight, LogOut, ChevronDown } from 'lucide-react';
+import { Menu, X, ArrowRight, LogOut, ChevronDown } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
@@ -107,11 +107,9 @@ export default function Navbar() {
       <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
         <Link
           href={`/${locale}`}
-          className="flex items-center gap-2 font-bold text-lg text-foreground hover:text-primary transition-colors"
+          className="flex items-center gap-2.5 font-bold text-lg text-foreground hover:text-primary transition-colors tracking-tight"
         >
-          <div className="p-1.5 rounded-lg bg-gradient-to-br from-indigo-500/10 to-violet-500/10 border border-indigo-500/15">
-            <Sparkles className="w-4 h-4 text-primary" />
-          </div>
+          <span className="w-1 h-5 bg-primary rounded-full" />
           {t('brand')}
         </Link>
 
@@ -154,7 +152,7 @@ export default function Navbar() {
                   {user.display_name}
                 </span>
                 {isDevUser && (
-                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-600 font-medium">
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-accent text-accent-foreground font-medium">
                     Dev
                   </span>
                 )}
@@ -244,7 +242,7 @@ export default function Navbar() {
                       <p className="text-xs text-muted-foreground truncate">{user.email}</p>
                     </div>
                     {isDevUser && (
-                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-600 font-medium">
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-accent text-accent-foreground font-medium">
                         Dev
                       </span>
                     )}
