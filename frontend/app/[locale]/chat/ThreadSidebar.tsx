@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Plus, Trash2, MessageSquare, Loader2, ChevronDown, Link2, Copy as CopyIcon, Check, X, Sparkles, LogOut, Home, Settings, MoreHorizontal, Search, ArrowLeft, Bookmark, BookmarkCheck } from 'lucide-react';
+import { Plus, Trash2, MessageSquare, Loader2, ChevronDown, Link2, Copy as CopyIcon, Check, X, LogOut, Home, Settings, MoreHorizontal, Search, ArrowLeft, Bookmark, BookmarkCheck } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import Image from 'next/image';
@@ -296,7 +296,7 @@ export default function ThreadSidebar({
                         handleDelete(e, thread.thread_id);
                         setOpenMenu(null);
                       }}
-                      className="w-full px-3 py-1.5 text-xs text-red-600 hover:bg-red-500/10 text-left cursor-pointer"
+                      className="w-full px-3 py-1.5 text-xs text-destructive hover:bg-destructive/10 text-left cursor-pointer"
                     >
                       {t('confirmDeleteText')}
                     </button>
@@ -321,7 +321,7 @@ export default function ThreadSidebar({
                           e.stopPropagation();
                           setConfirmDelete(thread.thread_id);
                         }}
-                        className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-red-600 hover:bg-red-500/10 text-left cursor-pointer"
+                        className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-destructive hover:bg-destructive/10 text-left cursor-pointer"
                       >
                         <Trash2 className="w-3 h-3" />
                         {t('delete')}
@@ -350,9 +350,7 @@ export default function ThreadSidebar({
           href={`/${locale}`}
           className="flex items-center gap-2 font-bold text-sm text-foreground hover:text-primary transition-colors"
         >
-          <div className="p-1.5 rounded-lg bg-gradient-to-br from-indigo-500/10 to-violet-500/10 border border-indigo-500/15">
-            <Sparkles className="w-3.5 h-3.5 text-primary" />
-          </div>
+          <span className="w-1 h-4 bg-primary rounded-full" />
           {tNav('brand')}
         </Link>
       </div>
@@ -592,7 +590,7 @@ export default function ThreadSidebar({
                         title={t('copyLink')}
                       >
                         {copiedToken === share.token ? (
-                          <Check className="w-3 h-3 text-green-500" />
+                          <Check className="w-3 h-3 text-chart-2" />
                         ) : (
                           <CopyIcon className="w-3 h-3" />
                         )}
@@ -600,7 +598,7 @@ export default function ThreadSidebar({
                       <button
                         onClick={(e) => handleRevoke(e, share.token)}
                         disabled={revokingToken === share.token}
-                        className="p-1 rounded text-muted-foreground hover:text-red-600 cursor-pointer disabled:opacity-50"
+                        className="p-1 rounded text-muted-foreground hover:text-destructive cursor-pointer disabled:opacity-50"
                         aria-label={t('revokeShareLink')}
                         title={t('revoke')}
                       >
@@ -657,7 +655,7 @@ export default function ThreadSidebar({
             </div>
             <button
               onClick={handleLogout}
-              className="p-1.5 rounded-lg text-muted-foreground hover:text-red-600 hover:bg-red-500/10 transition-colors cursor-pointer"
+              className="p-1.5 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors cursor-pointer"
               aria-label={tNav('signOut')}
               title={tNav('signOut')}
             >
