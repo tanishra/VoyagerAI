@@ -15,9 +15,9 @@ const TIER_KEYS: Record<string, string> = {
 };
 
 const TIER_CONFIG: Record<string, { icon: typeof Wallet; color: string; border: string; bg: string }> = {
-  budget: { icon: Wallet, color: 'text-emerald-600', border: 'border-emerald-500/20', bg: 'bg-emerald-500/5' },
-  balanced: { icon: Scale, color: 'text-indigo-600', border: 'border-indigo-500/20', bg: 'bg-indigo-500/5' },
-  premium: { icon: Sparkles, color: 'text-amber-600', border: 'border-amber-500/20', bg: 'bg-amber-500/5' },
+  budget: { icon: Wallet, color: 'text-chart-2', border: 'border-chart-2/20', bg: 'bg-chart-2/5' },
+  balanced: { icon: Scale, color: 'text-primary', border: 'border-primary/20', bg: 'bg-primary/5' },
+  premium: { icon: Sparkles, color: 'text-accent-foreground', border: 'border-accent-foreground/20', bg: 'bg-accent/30' },
 };
 
 function PlanCard({ plan, onSelect }: { plan: PlanTier; onSelect: (tier: string) => void }) {
