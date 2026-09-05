@@ -116,10 +116,10 @@ export default function PreferencesPage() {
           <motion.div
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
-            className={`mb-4 p-3 rounded-xl border text-sm flex items-center gap-3 ${
+            className={`mb-4 p-3 rounded-lg border text-sm flex items-center gap-3 ${
               message.type === 'success'
-                ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-600'
-                : 'bg-red-500/10 border-red-500/20 text-red-600'
+                ? 'bg-accent/50 border-accent text-accent-foreground'
+                : 'bg-destructive/10 border-destructive/20 text-destructive'
             }`}
           >
             {message.type === 'success' ? (
