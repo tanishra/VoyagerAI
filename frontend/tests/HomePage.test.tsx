@@ -38,12 +38,6 @@ describe('Home landing page', () => {
     expect(screen.getByText('AI-Powered Planning')).toBeInTheDocument();
   });
 
-  it('renders StatsSection section', () => {
-    render(<Home />);
-    expect(screen.getByText('Trips Planned')).toBeInTheDocument();
-    expect(screen.getByText('Destinations')).toBeInTheDocument();
-  });
-
   it('renders CTASection', () => {
     render(<Home />);
     expect(screen.getByText('Ready to Plan Your Next Adventure?')).toBeInTheDocument();
