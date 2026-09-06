@@ -1,7 +1,6 @@
 import HeroSection from '@/components/HeroSection';
 import HowItWorks from '@/components/HowItWorks';
 import FeatureGrid from '@/components/FeatureGrid';
-import StatsSection from '@/components/StatsSection';
 import CTASection from '@/components/CTASection';
 
 export default function HomePage() {
@@ -11,7 +10,6 @@ export default function HomePage() {
         <HeroSection />
         <HowItWorks />
         <FeatureGrid />
-        <StatsSection />
         <CTASection />
       </div>
     </main>
