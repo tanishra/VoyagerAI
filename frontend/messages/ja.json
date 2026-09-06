@@ -298,9 +298,9 @@
     "statsDestinations": "目的地",
     "statsAccuracy": "AI精度",
     "statsYears": "運営年数",
-    "ctaTitle": "次の冒険を計画する準備はできましたか？",
-    "ctaDesc": "数秒でパーソナライズされたAI生成旅程を取得 — 完全に無料。",
-    "ctaButton": "今すぐ旅行を計画"
+    "ctaTitle": "次はどこへ行きますか？",
+    "ctaDesc": "AIが作成したパーソナライズされた旅程。あなたの準備ができた時に。",
+    "ctaButton": "旅行を計画する"
   },
   "footer": {
     "chat": "チャット",
