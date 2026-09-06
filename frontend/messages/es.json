@@ -298,9 +298,9 @@
     "statsDestinations": "Destinos",
     "statsAccuracy": "Precisión de IA",
     "statsYears": "Años Funcionando",
-    "ctaTitle": "¿Listo para Planificar Tu Próxima Aventura?",
-    "ctaDesc": "Obtén un itinerario personalizado generado por IA en segundos — completamente gratis.",
-    "ctaButton": "Planifica Tu Viaje Ahora"
+    "ctaTitle": "¿A dónde irás próximo?",
+    "ctaDesc": "Un itinerario personalizado, creado por IA. Listo cuando tú lo estés.",
+    "ctaButton": "Planifica Tu Viaje"
   },
   "footer": {
     "chat": "Chat",
