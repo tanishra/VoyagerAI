@@ -298,9 +298,9 @@
     "statsDestinations": "Ziele",
     "statsAccuracy": "KI-Genauigkeit",
     "statsYears": "Jahre aktiv",
-    "ctaTitle": "Bereit, Ihr nächstes Abenteuer zu planen?",
-    "ctaDesc": "Erhalten Sie in Sekunden eine personalisierte, KI-generierte Reiseroute — komplett kostenlos.",
-    "ctaButton": "Reise jetzt planen"
+    "ctaTitle": "Wohin geht es als Nächstes?",
+    "ctaDesc": "Ein personalisierter Reiseplan, erstellt von KI. Bereit, wenn Sie es sind.",
+    "ctaButton": "Reise planen"
   },
   "footer": {
     "chat": "Chat",
