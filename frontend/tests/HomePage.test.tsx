@@ -40,7 +40,7 @@ describe('Home landing page', () => {
 
   it('renders CTASection', () => {
     render(<Home />);
-    expect(screen.getByText('Ready to Plan Your Next Adventure?')).toBeInTheDocument();
-    expect(screen.getByText('Plan Your Trip Now')).toBeInTheDocument();
+    expect(screen.getByText('Where will you go next?')).toBeInTheDocument();
+    expect(screen.getByText('Plan Your Trip')).toBeInTheDocument();
   });
 });
