@@ -298,9 +298,9 @@
     "statsDestinations": "Destinations",
     "statsAccuracy": "AI Accuracy",
     "statsYears": "Years Running",
-    "ctaTitle": "Ready to Plan Your Next Adventure?",
-    "ctaDesc": "Get a personalized, AI-generated itinerary in seconds — completely free.",
-    "ctaButton": "Plan Your Trip Now"
+    "ctaTitle": "Where will you go next?",
+    "ctaDesc": "A personalized itinerary, crafted by AI. Ready when you are.",
+    "ctaButton": "Plan Your Trip"
   },
   "footer": {
     "chat": "Chat",
