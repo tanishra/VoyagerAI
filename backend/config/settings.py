@@ -76,5 +76,11 @@ class Settings(BaseSettings):
     RESEARCH_CACHE_TTL_HOURS: int = 24
     RESEARCH_CACHE_ENABLED: bool = True
 
+    # Image generation (Gemini 2.5 Flash Image)
+    ENABLE_IMAGE_GENERATION: bool = True
+    IMAGE_GENERATION_MODEL: str = "gemini-2.5-flash-image"
+    MAX_IMAGES_PER_THREAD: int = 3
+    IMAGE_GENERATION_COST_USD: float = 0.03
+
 
 settings = Settings()
