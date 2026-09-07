@@ -159,6 +159,10 @@ def _parse_chat_event(
         return [_sse("itinerary", event_data)]
     if event_type == "comparison" and event_data is not None:
         return [_sse("comparison", event_data)]
+    if event_type == "image" and event_data is not None:
+        return [_sse("image", event_data)]
+    if event_type == "chart" and event_data is not None:
+        return [_sse("chart", event_data)]
     if event_type == "done":
         return [_sse("done", None)]
     if event_type == "cancelled":
@@ -956,18 +960,30 @@ async def get_thread_history(
     messages = state.values.get("messages", [])
     result: list[dict] = []
 
-    # Load persisted activity metadata for this thread
-    activity_data = None
+    # Load persisted activity metadata for this thread (per-message)
+    all_activity: dict[str, dict] | None = None
     try:
-        from agents.activity_store import load_activity as _load_activity
+        from agents.activity_store import load_all_activity as _load_all_activity
         from agents.deep_agent import create_redis_store as _create_store
         from langgraph.store.memory import InMemoryStore as _InMemStore
         _store = _create_store() if settings.STORE_BACKEND == "redis" else _InMemStore()
-        activity_data = await _load_activity(_store, thread_id)
+        all_activity = await _load_all_activity(_store, thread_id)
     except Exception:
         pass
 
-    for msg in messages:
+    # Fallback: try legacy latest-only activity
+    legacy_activity = None
+    if all_activity is None:
+        try:
+            from agents.activity_store import load_activity as _load_activity
+            from agents.deep_agent import create_redis_store as _create_store
+            from langgraph.store.memory import InMemoryStore as _InMemStore
+            _store = _create_store() if settings.STORE_BACKEND == "redis" else _InMemStore()
+            legacy_activity = await _load_activity(_store, thread_id)
+        except Exception:
+            pass
+
+    for i, msg in enumerate(messages):
         role = "user" if getattr(msg, "type", "") == "human" else "assistant"
         content = getattr(msg, "content", "")
         if not isinstance(content, str):
@@ -982,14 +998,25 @@ async def get_thread_history(
                     entry["itinerary"] = itinerary
                 if comparison:
                     entry["comparison"] = comparison
-            result.append(entry)
 
-    # Attach activity metadata to the last assistant message
-    if activity_data and result:
-        for entry in reversed(result):
-            if entry.get("role") == "assistant":
-                entry["activity"] = activity_data
-                break
+                # Attach per-message activity
+                msg_activity = None
+                if all_activity is not None:
+                    msg_activity = all_activity.get(str(i))
+                elif legacy_activity is not None and i == len(messages) - 1:
+                    msg_activity = legacy_activity
+
+                if msg_activity:
+                    entry["activity"] = msg_activity
+                    # Extract images and charts from activity metadata
+                    activity_images = msg_activity.get("images", [])
+                    activity_charts = msg_activity.get("charts", [])
+                    if activity_images:
+                        entry["images"] = activity_images
+                    if activity_charts:
+                        entry["charts"] = activity_charts
+
+            result.append(entry)
 
     return JSONResponse(
         content=result,
