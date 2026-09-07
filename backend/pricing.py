@@ -33,6 +33,8 @@ PRICING_TABLE: dict[str, dict[str, float]] = {
 
 DEFAULT_PRICING: dict[str, float] = {"input_per_1k": 0.0003, "output_per_1k": 0.0006}
 
+IMAGE_GENERATION_COST_USD: float = 0.03
+
 
 def calculate_cost(model: str, input_tokens: int, output_tokens: int) -> float:
     """Calculate the estimated USD cost for an LLM call.
