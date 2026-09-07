@@ -95,6 +95,25 @@ export interface BranchInfo {
   preview?: string;
 }
 
+export interface GeneratedImage {
+  data_url: string;
+  alt: string;
+  prompt: string;
+}
+
+export interface ChartDataPoint {
+  label: string;
+  [key: string]: string | number;
+}
+
+export interface GeneratedChart {
+  type: 'chart';
+  chart_type: 'bar' | 'pie';
+  title: string;
+  data: ChartDataPoint[];
+  series_keys: string[];
+}
+
 export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
@@ -108,12 +127,16 @@ export interface ChatMessage {
   branches?: BranchInfo[];
   activeBranchIndex?: number;
   attachments?: import('./upload-api').UploadedFile[];
+  images?: GeneratedImage[];
+  charts?: GeneratedChart[];
 }
 
 export interface ChatStreamCallbacks {
   onToken?: (text: string) => void;
   onItinerary?: (itinerary: Itinerary) => void;
   onComparison?: (data: ComparisonData) => void;
+  onImage?: (image: GeneratedImage) => void;
+  onChart?: (chart: GeneratedChart) => void;
   onStatus?: (status: { tool: string; status: string }) => void;
   onThreadId?: (threadId: string) => void;
   onDone?: () => void;
