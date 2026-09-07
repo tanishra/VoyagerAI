@@ -16,7 +16,8 @@ from langgraph.store.memory import InMemoryStore
 from langgraph.store.redis import RedisConnectionFactory, RedisStore
 from pydantic import BaseModel
 
-from agents.activity_store import load_activity, save_activity
+from agents.activity_store import load_activity, load_all_activity, save_activity
+from agents.tools import is_visual_tool, set_current_thread_id
 from agents.llm import get_formatter_model, get_orchestrator_model
 from agents.prompts import build_chat_agent_prompt
 from agents.subagents import get_subagents
@@ -24,7 +25,7 @@ from agents.tools import get_orchestrator_tools, reset_orchestrator_search_count
 from config import settings as _cfg_settings
 from config.settings import settings
 from cost_store import cost_store
-from pricing import calculate_cost
+from pricing import IMAGE_GENERATION_COST_USD, calculate_cost
 from geocode_service import geocode
 from langchain.agents.middleware import ModelCallLimitMiddleware
 
@@ -190,6 +191,8 @@ class _ModelStream:
             "usage": [],
             "total_input_tokens": 0,
             "total_output_tokens": 0,
+            "images": [],
+            "charts": [],
         }
         self._tool_call_index: dict[str, int] = {}
         self._task_run_ids: set[str] = set()
@@ -199,6 +202,7 @@ class _ModelStream:
         self._budget_warned: bool = False
         self._subagent_costs: dict[str, dict] = {}
         self._active_task_names: dict[str, str] = {}
+        self._image_count: int = 0
 
     async def events(self, inputs, cancel_event=None):
         async for event in self._agent.astream_events(
@@ -289,10 +293,39 @@ class _ModelStream:
 
             elif etype == "on_tool_end":
                 output = edata.get("output") if isinstance(edata, dict) else edata
+                tool_name = event.get("name", "")
                 idx = self._tool_call_index.get(run_id)
                 if idx is not None and idx < len(self.activity["tool_calls"]):
                     self.activity["tool_calls"][idx]["status"] = "done"
-                    self.activity["tool_calls"][idx]["output"] = _truncate_for_activity(output)
+                    # Don't truncate visual tool output — we need the full data
+                    if is_visual_tool(tool_name):
+                        self.activity["tool_calls"][idx]["output"] = _truncate_for_activity(output, max_chars=200)
+                    else:
+                        self.activity["tool_calls"][idx]["output"] = _truncate_for_activity(output)
+
+                # Handle visual tool outputs — emit image/chart SSE events
+                if is_visual_tool(tool_name) and isinstance(output, str):
+                    try:
+                        parsed_output = json.loads(output)
+                    except (json.JSONDecodeError, ValueError):
+                        parsed_output = None
+
+                    if parsed_output and parsed_output.get("type") == "image":
+                        visual_id = parsed_output.get("_visual_id")
+                        if visual_id:
+                            from agents.tools.visuals import get_pending_visual
+                            visual_data = get_pending_visual(visual_id)
+                            if visual_data:
+                                yield {"event": "image", "data": visual_data}
+                                # Store full image data in activity for persistence
+                                self.activity["images"].append(visual_data)
+                                # Track image generation cost
+                                self._session_cost += IMAGE_GENERATION_COST_USD
+                                self._image_count += 1
+                    elif parsed_output and parsed_output.get("type") == "chart":
+                        yield {"event": "chart", "data": parsed_output}
+                        # Store chart data in activity for persistence
+                        self.activity["charts"].append(parsed_output)
 
             elif etype == "on_tool_error":
                 error_msg = edata.get("error") if isinstance(edata, dict) else str(edata)
@@ -723,6 +756,7 @@ async def stream_chat_agent(
     attachments: list[dict] | None = None,
 ):
     reset_orchestrator_search_count()
+    set_current_thread_id(thread_id)
     agent = await create_chat_agent(user_id=user_id, locale=locale, timezone=timezone)
     config = {
         "configurable": {
@@ -781,13 +815,21 @@ async def stream_chat_agent(
         yield {"event": "cancelled", "data": None}
         return
 
-    # Persist activity metadata for this thread
-    if stream.activity["thinking"] or stream.activity["tool_calls"] or stream.activity["usage"]:
+    # Determine message_index for per-message activity persistence
+    try:
+        state = await agent.aget_state(config)
+        msg_count = len(state.values.get("messages", []))
+        message_index = msg_count - 1  # last message is the assistant reply we just generated
+    except Exception:
+        message_index = None
+
+    # Persist activity metadata for this thread (per-message)
+    if stream.activity["thinking"] or stream.activity["tool_calls"] or stream.activity["usage"] or stream.activity["images"] or stream.activity["charts"]:
         try:
             store = create_redis_store() if settings.STORE_BACKEND == "redis" else InMemoryStore()
         except Exception:
             store = InMemoryStore()
-        await save_activity(store, thread_id, stream.activity)
+        await save_activity(store, thread_id, stream.activity, message_index=message_index)
 
     # Persist cost data
     try:
@@ -863,12 +905,12 @@ async def stream_chat_agent(
         yield {"event": "error", "data": str(exc)}
 
     # Re-save activity if retry added more data
-    if stream.activity["thinking"] or stream.activity["tool_calls"] or stream.activity["usage"]:
+    if stream.activity["thinking"] or stream.activity["tool_calls"] or stream.activity["usage"] or stream.activity["images"] or stream.activity["charts"]:
         try:
             store = create_redis_store() if settings.STORE_BACKEND == "redis" else InMemoryStore()
         except Exception:
             store = InMemoryStore()
-        await save_activity(store, thread_id, stream.activity)
+        await save_activity(store, thread_id, stream.activity, message_index=message_index)
 
     # Re-persist cost data if retry added more
     try:
@@ -924,6 +966,8 @@ async def regenerate_chat_agent(
     # Create a pure fork — new checkpoint with same state, ready for fresh execution
     forked_config = await agent.aupdate_state(fork_config, None)
 
+    set_current_thread_id(thread_id)
+
     # Stream from the forked checkpoint — no new user message needed,
     # the fork already has the user's last message in state
     stream = _ModelStream(agent, forked_config)
@@ -938,12 +982,19 @@ async def regenerate_chat_agent(
         return
 
     # Persist activity metadata for this thread
-    if stream.activity["thinking"] or stream.activity["tool_calls"] or stream.activity["usage"]:
+    if stream.activity["thinking"] or stream.activity["tool_calls"] or stream.activity["usage"] or stream.activity["images"] or stream.activity["charts"]:
         try:
             store = create_redis_store() if settings.STORE_BACKEND == "redis" else InMemoryStore()
         except Exception:
             store = InMemoryStore()
-        await save_activity(store, thread_id, stream.activity)
+        # Determine message_index from forked state
+        try:
+            state = await agent.aget_state(forked_config)
+            msg_count = len(state.values.get("messages", []))
+            message_index = msg_count - 1
+        except Exception:
+            message_index = None
+        await save_activity(store, thread_id, stream.activity, message_index=message_index)
 
     # Persist cost data
     try:
@@ -1014,12 +1065,12 @@ async def regenerate_chat_agent(
         yield {"event": "error", "data": str(exc)}
 
     # Re-save activity if retry added more data
-    if stream.activity["thinking"] or stream.activity["tool_calls"] or stream.activity["usage"]:
+    if stream.activity["thinking"] or stream.activity["tool_calls"] or stream.activity["usage"] or stream.activity["images"] or stream.activity["charts"]:
         try:
             store = create_redis_store() if settings.STORE_BACKEND == "redis" else InMemoryStore()
         except Exception:
             store = InMemoryStore()
-        await save_activity(store, thread_id, stream.activity)
+        await save_activity(store, thread_id, stream.activity, message_index=message_index)
 
     # Re-persist cost data if retry added more
     try:
@@ -1079,6 +1130,8 @@ async def edit_chat_agent(
 
     forked_config = await agent.aupdate_state(fork_config, None)
 
+    set_current_thread_id(thread_id)
+
     stream = _ModelStream(agent, forked_config)
     async for event in stream.events(
         {"messages": [{"role": "user", "content": new_message}]},
@@ -1090,12 +1143,18 @@ async def edit_chat_agent(
         yield {"event": "cancelled", "data": None}
         return
 
-    if stream.activity["thinking"] or stream.activity["tool_calls"] or stream.activity["usage"]:
+    if stream.activity["thinking"] or stream.activity["tool_calls"] or stream.activity["usage"] or stream.activity["images"] or stream.activity["charts"]:
         try:
             store = create_redis_store() if settings.STORE_BACKEND == "redis" else InMemoryStore()
         except Exception:
             store = InMemoryStore()
-        await save_activity(store, thread_id, stream.activity)
+        try:
+            state = await agent.aget_state(forked_config)
+            msg_count = len(state.values.get("messages", []))
+            message_index = msg_count - 1
+        except Exception:
+            message_index = None
+        await save_activity(store, thread_id, stream.activity, message_index=message_index)
 
     # Persist cost data
     try:
@@ -1161,12 +1220,12 @@ async def edit_chat_agent(
     except (ValueError, json.JSONDecodeError) as exc:
         yield {"event": "error", "data": str(exc)}
 
-    if stream.activity["thinking"] or stream.activity["tool_calls"] or stream.activity["usage"]:
+    if stream.activity["thinking"] or stream.activity["tool_calls"] or stream.activity["usage"] or stream.activity["images"] or stream.activity["charts"]:
         try:
             store = create_redis_store() if settings.STORE_BACKEND == "redis" else InMemoryStore()
         except Exception:
             store = InMemoryStore()
-        await save_activity(store, thread_id, stream.activity)
+        await save_activity(store, thread_id, stream.activity, message_index=message_index)
 
     # Re-persist cost data if retry added more
     try:
