@@ -1,4 +1,4 @@
-import type { Itinerary, ComparisonData, ActivityData, BranchInfo } from '@/lib/types';
+import type { Itinerary, ComparisonData, ActivityData, BranchInfo, GeneratedImage, GeneratedChart } from '@/lib/types';
 import { putThreads, getAllCachedThreads, putThreadHistory, getCachedThreadHistory, clearOldThreads } from './offline-db';
 
 export interface ThreadMeta {
@@ -37,6 +37,8 @@ export interface ThreadMessage {
   itinerary?: Itinerary;
   comparison?: ComparisonData;
   activity?: ActivityData;
+  images?: GeneratedImage[];
+  charts?: GeneratedChart[];
 }
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
