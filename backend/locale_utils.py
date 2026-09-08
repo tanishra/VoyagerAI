@@ -23,6 +23,22 @@ ERROR_MESSAGES: dict[str, dict[str, str]] = {
         "hi": "एजेंट के समाप्त होने से पहले स्ट्रीम समाप्त हो गई",
         "ja": "エージェントが完了する前にストリームが終了しました",
     },
+    "injection_blocked": {
+        "en": "Your message was blocked because it appears to contain a prompt injection attempt. Please rephrase your request.",
+        "es": "Tu mensaje fue bloqueado porque parece contener un intento de inyección de prompt. Por favor, reformula tu solicitud.",
+        "fr": "Votre message a été bloqué car il semble contenir une tentative d'injection de prompt. Veuillez reformuler votre demande.",
+        "de": "Ihre Nachricht wurde blockiert, da sie offenbar einen Prompt-Injection-Versuch enthält. Bitte formulieren Sie Ihre Anfrage um.",
+        "hi": "आपका संदेश अवरुद्ध कर दिया गया है क्योंकि इसमें प्रॉम्प्ट इंजेक्शन प्रयास है। कृपया अपनी अनुरोध को फिर से तैयार करें।",
+        "ja": "プロンプトインジェクションの試みが含まれているため、メッセージがブロックされました。リクエストを言い換えてください。",
+    },
+    "cooldown_active": {
+        "en": "Your account is temporarily restricted due to repeated policy violations. Please try again later.",
+        "es": "Su cuenta está temporalmente restringida debido a violaciones repetidas de la política. Por favor, inténtelo más tarde.",
+        "fr": "Votre compte est temporairement restreint en raison de violations répétées de la politique. Veuillez réessayer plus tard.",
+        "de": "Ihr Konto ist aufgrund wiederholter Richtlinienverstöße vorübergehend eingeschränkt. Bitte versuchen Sie es später erneut.",
+        "hi": "बार-बार नीति उल्लंघन के कारण आपका खाता अस्थायी रूप से प्रतिबंधित है। कृपया बाद में पुनः प्रयास करें।",
+        "ja": "ポリシー違反の繰り返しにより、アカウントは一時的に制限されています。後でもう一度お試しください。",
+    },
 }
 
 
