@@ -33,6 +33,8 @@
     "downloadImage": "Bild herunterladen",
     "expandImage": "Bild vergrößern",
     "collapseImage": "Bild verkleinern",
+    "injectionBlocked": "Ihre Nachricht wurde blockiert, da sie offenbar einen Prompt-Injection-Versuch enthält. Bitte formulieren Sie Ihre Anfrage um.",
+    "cooldownActive": "Ihr Konto ist aufgrund wiederholter Richtlinienverstöße vorübergehend eingeschränkt. Bitte versuchen Sie es später erneut.",
     "scrollToLatest": "Zur letzten Nachricht scrollen",
     "greeting": "Planen Sie Ihr nächstes Abenteuer",
     "subtitle": "Erzählen Sie mir von der Reise, von der Sie träumen — ich kümmere mich um Reiseroute, Budget und Buchungen.",
