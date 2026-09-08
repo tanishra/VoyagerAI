@@ -33,6 +33,8 @@
     "downloadImage": "Download image",
     "expandImage": "Expand image",
     "collapseImage": "Collapse image",
+    "injectionBlocked": "Your message was blocked because it appears to contain a prompt injection attempt. Please rephrase your request.",
+    "cooldownActive": "Your account is temporarily restricted due to repeated policy violations. Please try again later.",
     "scrollToLatest": "Scroll to latest message",
     "greeting": "Plan your next adventure",
     "subtitle": "Tell me about the trip you're dreaming of — I'll handle the itinerary, budget, and bookings.",
