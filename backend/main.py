@@ -47,7 +47,7 @@ from oauth import (
     verify_admin,
 )
 from locale_utils import extract_locale, get_error_message
-from sanitize import sanitize_prompt_input
+from sanitize import sanitize_prompt_input, sanitize_prompt_input_detailed
 from share_store import share_store
 from threads import generate_summary, thread_store
 from cost_store import cost_store
@@ -55,6 +55,8 @@ from feedback_store import feedback_store
 from research_cache import research_cache
 from ical_generator import generate_ics
 from file_store import file_store
+from guard import classify_injection_risk
+from security_store import security_store
 
 ALLOWED_ORIGINS: list[str] = [
     orig.strip()
@@ -478,6 +480,65 @@ async def invalidate_research_cache(
     return {"status": "ok", "cleared": count}
 
 
+# --- Admin security endpoints (Phase 6.30) ---
+
+@app.get(
+    "/admin/security/flags",
+    summary="Get aggregate security flag stats",
+    tags=["admin"],
+    dependencies=[Depends(verify_api_key)],
+)
+@limiter.limit("10/minute")
+async def get_security_flags(
+    request: Request,
+    period: str = "week",
+    admin: dict = Depends(verify_admin),
+) -> JSONResponse:
+    """Get aggregate prompt injection flag statistics for admin observability.
+
+    Args:
+        period: "day", "week", or "month".
+    """
+    if period not in ("day", "week", "month"):
+        period = "week"
+    stats = await security_store.get_aggregate_stats(period=period)
+    return JSONResponse(content=stats)
+
+
+@app.get(
+    "/admin/security/cooldowns",
+    summary="Get currently active cooldowns",
+    tags=["admin"],
+    dependencies=[Depends(verify_api_key)],
+)
+@limiter.limit("10/minute")
+async def get_active_cooldowns(
+    request: Request,
+    admin: dict = Depends(verify_admin),
+) -> JSONResponse:
+    """Get all currently active injection cooldowns for admin review."""
+    cooldowns = await security_store.get_active_cooldowns()
+    return JSONResponse(content={"cooldowns": cooldowns, "count": len(cooldowns)})
+
+
+@app.delete(
+    "/admin/security/cooldowns/{user_hash}",
+    summary="Manually remove a user's cooldown (admin unblock)",
+    tags=["admin"],
+    dependencies=[Depends(verify_api_key)],
+)
+@limiter.limit("10/minute")
+async def remove_cooldown(
+    request: Request,
+    user_hash: str,
+    admin: dict = Depends(verify_admin),
+) -> dict:
+    """Manually remove a cooldown for a user (in case of false-positive lockout)."""
+    removed = await security_store.remove_cooldown(user_hash)
+    logger.info("Cooldown removed for user_hash=%s by admin (removed=%s)", user_hash, removed)
+    return {"status": "ok" if removed else "not_found", "user_hash": user_hash}
+
+
 def _sanitize_preferences_sections(content: str) -> str:
     """Sanitize the <user_instructions> section of preferences content.
 
@@ -604,6 +665,62 @@ async def chat_stream(
 
     # Determine locale: explicit request field takes priority, then Accept-Language header
     locale = extract_locale(request, chat_req.locale)
+
+    # --- Phase 6.30: Prompt injection defense ---
+    # Step 1: Check cooldown
+    if await security_store.is_in_cooldown(user_id):
+        raise HTTPException(
+            status_code=429,
+            detail=get_error_message("cooldown_active", locale),
+        )
+
+    # Step 2: Detailed sanitization with confidence levels
+    sanitize_result = sanitize_prompt_input_detailed(chat_req.message, "message")
+    _msg_safe = sanitize_result.text
+
+    # Step 3: If high-confidence match, route to guard model
+    if sanitize_result.confidence == "high" and settings.ENABLE_INJECTION_GUARD:
+        guard_verdict = await classify_injection_risk(_msg_safe or "")
+        if guard_verdict.is_malicious:
+            # Record flag and strike
+            await security_store.record_flag(
+                user_id=user_id,
+                category=",".join(sanitize_result.matched_categories),
+                confidence="high",
+                source="message",
+                reasoning=guard_verdict.reasoning,
+                thread_id=thread_id,
+            )
+            strikes = await security_store.record_strike(user_id)
+            if strikes >= settings.INJECTION_STRIKE_THRESHOLD:
+                await security_store.apply_cooldown(user_id)
+                logger.warning(
+                    "User %s hit strike threshold (%d) — cooldown applied",
+                    user_id, strikes,
+                )
+            raise HTTPException(
+                status_code=400,
+                detail=get_error_message("injection_blocked", locale),
+            )
+        else:
+            # Guard says benign — log as reviewed and continue
+            await security_store.record_flag(
+                user_id=user_id,
+                category=",".join(sanitize_result.matched_categories),
+                confidence="low",
+                source="message",
+                reasoning=f"Guard reviewed as benign: {guard_verdict.reasoning}",
+                thread_id=thread_id,
+            )
+    elif sanitize_result.confidence == "low":
+        # Control-token match only — log and continue with sanitized text
+        await security_store.record_flag(
+            user_id=user_id,
+            category="control_token",
+            confidence="low",
+            source="message",
+            thread_id=thread_id,
+        )
 
     logger.info(
         "POST /chat/stream — thread_id=%s, message_len=%d, user=%s, client_msg_id=%s",
