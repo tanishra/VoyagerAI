@@ -82,5 +82,12 @@ class Settings(BaseSettings):
     MAX_IMAGES_PER_THREAD: int = 3
     IMAGE_GENERATION_COST_USD: float = 0.03
 
+    # Prompt injection defense (Phase 6.30)
+    ENABLE_INJECTION_GUARD: bool = True
+    INJECTION_GUARD_MODEL: str = "gemini/gemini-2.5-flash-lite"
+    INJECTION_STRIKE_THRESHOLD: int = 5
+    INJECTION_STRIKE_WINDOW_MINUTES: int = 60
+    INJECTION_COOLDOWN_MINUTES: int = 15
+
 
 settings = Settings()
