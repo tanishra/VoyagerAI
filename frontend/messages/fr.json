@@ -33,6 +33,8 @@
     "downloadImage": "Télécharger l'image",
     "expandImage": "Agrandir l'image",
     "collapseImage": "Réduire l'image",
+    "injectionBlocked": "Votre message a été bloqué car il semble contenir une tentative d'injection de prompt. Veuillez reformuler votre demande.",
+    "cooldownActive": "Votre compte est temporairement restreint en raison de violations répétées de la politique. Veuillez réessayer plus tard.",
     "scrollToLatest": "Faire défiler au dernier message",
     "greeting": "Planifiez votre prochaine aventure",
     "subtitle": "Parlez-moi du voyage dont vous rêvez — je m'occupe de l'itinéraire, du budget et des réservations.",
