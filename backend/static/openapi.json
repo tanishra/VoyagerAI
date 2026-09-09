@@ -1,0 +1,3382 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "VoyagerAI \u2014 Travel Planning AI Agent",
+    "description": "Generates, validates, and enriches multi-day travel itineraries using DeepAgent.\n\n## Authentication\nMost endpoints require an `X-API-Key` header (production mode) and a valid session cookie.\nAdmin endpoints additionally require the user to be in the `ADMIN_EMAILS` allowlist.\n\n## Rate Limiting\nAll endpoints are rate-limited via slowapi. Default limit: 30 requests/hour.\nIndividual endpoints may have tighter limits (shown in each endpoint's documentation).\n\n## SSE Streaming\nChat endpoints (`/chat/stream`, `/chat/regenerate`, `/chat/edit`) return Server-Sent Events.\nSee the Markdown docs in `backend/docs/chat.md` for the full event type reference.",
+    "version": "2.2.0"
+  },
+  "paths": {
+    "/health": {
+      "get": {
+        "tags": [
+          "ops"
+        ],
+        "summary": "Health check",
+        "description": "Check if the backend and Redis are healthy.\n\nReturns the overall service status and Redis connection state.\nNo authentication required \u2014 used by load balancers and monitoring.\n\n**Response fields:**\n- `status`: \"ok\" if Redis is connected, \"degraded\" otherwise\n- `redis`: \"connected\" or \"unavailable\"\n- `agent`: Always \"deepagent\" (identifies the agent framework)",
+        "operationId": "health_health_get",
+        "responses": {
+          "200": {
+            "description": "Service health status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                },
+                "example": {
+                  "status": "ok",
+                  "redis": "connected",
+                  "agent": "deepagent"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Redis unavailable \u2014 service degraded"
+          }
+        }
+      }
+    },
+    "/admin/costs": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Get aggregate cost analytics",
+        "description": "Get aggregate cost analytics for a time period.\n\nReturns total cost, conversation count, token usage, per-day and per-subagent\nbreakdowns, top users by spend, and sessions with poor efficiency ratios.\n\n**Query parameters:**\n- `period`: Time window \u2014 \"day\", \"week\" (default), or \"month\"\n\n**Requires:** Admin privileges (user must be in `ADMIN_EMAILS`).",
+        "operationId": "get_cost_analytics_admin_costs_get",
+        "parameters": [
+          {
+            "name": "period",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "week",
+              "title": "Period"
+            }
+          },
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Aggregate cost analytics for the requested period",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CostAnalyticsResponse"
+                },
+                "example": {
+                  "total_cost": 12.34,
+                  "total_conversations": 42,
+                  "avg_cost_per_conversation": 0.29,
+                  "total_input_tokens": 150000,
+                  "total_output_tokens": 80000,
+                  "per_day": [
+                    {
+                      "date": "2026-09-08",
+                      "cost": 2.5
+                    }
+                  ],
+                  "per_subagent": [
+                    {
+                      "name": "research",
+                      "cost": 5.0,
+                      "input_tokens": 20000,
+                      "output_tokens": 10000
+                    }
+                  ],
+                  "top_users": [
+                    {
+                      "user_id": "user@example.com",
+                      "cost": 3.5
+                    }
+                  ],
+                  "poor_efficiency_sessions": []
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key"
+          },
+          "403": {
+            "description": "User is not in ADMIN_EMAILS allowlist"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/costs/threads/{thread_id}": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Get per-subagent cost breakdown for a thread",
+        "description": "Get per-subagent cost breakdown for a specific conversation.\n\n**Path parameters:**\n- `thread_id`: The thread ID to inspect\n\n**Requires:** Admin privileges.",
+        "operationId": "get_thread_cost_breakdown_admin_costs_threads__thread_id__get",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          },
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Per-session and per-subagent cost breakdown",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThreadCostBreakdownResponse"
+                },
+                "example": {
+                  "session": {
+                    "thread_id": "chat:abc123:def456",
+                    "total_cost_usd": 0.15,
+                    "total_input_tokens": 5000,
+                    "total_output_tokens": 2000
+                  },
+                  "subagents": {
+                    "research": {
+                      "cost": 0.08,
+                      "input_tokens": 3000,
+                      "output_tokens": 1000
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key"
+          },
+          "403": {
+            "description": "User is not in ADMIN_EMAILS allowlist"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/costs/export": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Export all cost records as CSV",
+        "description": "Export all cost records as CSV for spreadsheet analysis.\n\nReturns a CSV file with sections for aggregate metrics, per-subagent costs,\ntop users, and poor-efficiency sessions.\n\n**Response:** `text/csv` with `Content-Disposition: attachment; filename=costs.csv`\n\n**Requires:** Admin privileges.",
+        "operationId": "export_costs_csv_admin_costs_export_get",
+        "parameters": [
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "CSV file with cost analytics",
+            "content": {
+              "application/json": {
+                "schema": {}
+              },
+              "text/csv": {
+                "example": "metric,value\ntotal_cost,12.34\ntotal_conversations,42\n"
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key"
+          },
+          "403": {
+            "description": "User is not in ADMIN_EMAILS allowlist"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/feedback": {
+      "post": {
+        "tags": [
+          "feedback"
+        ],
+        "summary": "Submit feedback for a message",
+        "description": "Submit or update thumbs up/down feedback for a specific message.\n\nOne rating per user per message \u2014 submitting again overwrites the previous rating.\n\n**Request body:** `FeedbackRequest` with `thread_id`, `message_id`, `rating` ('up' or 'down'),\nand optional `comment` (max 1000 chars).",
+        "operationId": "submit_feedback_feedback_post",
+        "parameters": [
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FeedbackRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Feedback submitted successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeedbackSubmitResponse"
+                },
+                "example": {
+                  "status": "ok",
+                  "rating": "up"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/feedback": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Get aggregate feedback stats",
+        "description": "Get aggregate feedback statistics for admin observability.\n\nReturns total up/down counts, satisfaction ratio, and last 20 thumbs-down comments.\n\n**Requires:** Admin privileges.",
+        "operationId": "get_feedback_stats_admin_feedback_get",
+        "parameters": [
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Aggregate feedback statistics",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeedbackStatsResponse"
+                },
+                "example": {
+                  "total_up": 120,
+                  "total_down": 15,
+                  "total_ratings": 135,
+                  "satisfaction_ratio": 0.889,
+                  "recent_comments": []
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key"
+          },
+          "403": {
+            "description": "User is not in ADMIN_EMAILS allowlist"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/cache/research": {
+      "delete": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Invalidate all cached research results",
+        "description": "Clear all cached Tavily search results.\n\nForces fresh research on subsequent chat requests.\n\n**Requires:** Admin privileges.",
+        "operationId": "invalidate_research_cache_admin_cache_research_delete",
+        "parameters": [
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Cache invalidated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CacheInvalidateResponse"
+                },
+                "example": {
+                  "status": "ok",
+                  "cleared": 42
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key"
+          },
+          "403": {
+            "description": "User is not in ADMIN_EMAILS allowlist"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/security/flags": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Get aggregate security flag stats",
+        "description": "Get aggregate prompt injection flag statistics for admin observability.\n\n**Query parameters:**\n- `period`: Time window \u2014 \"day\", \"week\" (default), or \"month\"\n\n**Requires:** Admin privileges.",
+        "operationId": "get_security_flags_admin_security_flags_get",
+        "parameters": [
+          {
+            "name": "period",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "week",
+              "title": "Period"
+            }
+          },
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Aggregate security flag statistics",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SecurityFlagsResponse"
+                },
+                "example": {
+                  "total_flags": 5,
+                  "by_category": {
+                    "instruction_override": 3,
+                    "extraction_attempt": 2
+                  },
+                  "by_source": {
+                    "message": 4,
+                    "pdf": 1
+                  },
+                  "by_confidence": {
+                    "high": 3,
+                    "low": 2
+                  },
+                  "unique_users": 2,
+                  "active_cooldowns": 1,
+                  "recent_flags": []
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key"
+          },
+          "403": {
+            "description": "User is not in ADMIN_EMAILS allowlist"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/security/cooldowns": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Get currently active cooldowns",
+        "description": "Get all currently active injection cooldowns for admin review.\n\n**Requires:** Admin privileges.",
+        "operationId": "get_active_cooldowns_admin_security_cooldowns_get",
+        "parameters": [
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of active cooldowns",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CooldownListResponse"
+                },
+                "example": {
+                  "cooldowns": [
+                    {
+                      "user_hash": "abc123def456",
+                      "until": 1735689600,
+                      "remaining_seconds": 3600
+                    }
+                  ],
+                  "count": 1
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key"
+          },
+          "403": {
+            "description": "User is not in ADMIN_EMAILS allowlist"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/security/cooldowns/{user_hash}": {
+      "delete": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Manually remove a user's cooldown (admin unblock)",
+        "description": "Manually remove a cooldown for a user (in case of false-positive lockout).\n\n**Path parameters:**\n- `user_hash`: The hashed user ID (12-char SHA256 prefix) to unblock\n\n**Requires:** Admin privileges.",
+        "operationId": "remove_cooldown_admin_security_cooldowns__user_hash__delete",
+        "parameters": [
+          {
+            "name": "user_hash",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "User Hash"
+            }
+          },
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Cooldown removed or not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CooldownRemoveResponse"
+                },
+                "example": {
+                  "status": "ok",
+                  "user_hash": "abc123def456"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key"
+          },
+          "403": {
+            "description": "User is not in ADMIN_EMAILS allowlist"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/preferences": {
+      "get": {
+        "tags": [
+          "preferences"
+        ],
+        "summary": "Get user preferences",
+        "description": "Get the current user's preferences as Markdown text.\n\nReturns the raw `preferences.md` content stored for the user.\nEmpty string if no preferences have been saved.\n\n**Response:** `text/plain` \u2014 Markdown content of `preferences.md`.",
+        "operationId": "get_preferences_preferences_get",
+        "parameters": [
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "User preferences as Markdown text",
+            "content": {
+              "application/json": {
+                "schema": {}
+              },
+              "text/plain": {
+                "example": "<user_instructions>\nI prefer budget travel.\n</user_instructions>"
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key"
+          },
+          "503": {
+            "description": "Preferences store unavailable"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "preferences"
+        ],
+        "summary": "Save user preferences",
+        "description": "Save user preferences as Markdown text.\n\n**Request body:** Raw Markdown text (not JSON). The body is stored as `preferences.md`.\nXML-like tags in the `<user_instructions>` section are stripped for safety.",
+        "operationId": "put_preferences_preferences_put",
+        "parameters": [
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Preferences saved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreferencesSaveResponse"
+                },
+                "example": {
+                  "status": "ok",
+                  "user_id": "user@example.com"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key"
+          },
+          "503": {
+            "description": "Preferences store unavailable"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/upload": {
+      "post": {
+        "tags": [
+          "upload"
+        ],
+        "summary": "Upload a file (image or PDF) for chat attachments",
+        "description": "Upload a file (image or PDF) for use as a chat attachment.\n\n**Request body:** `multipart/form-data` with a `file` field.\nSupported types: JPG, PNG, WebP, PDF. Max size: 10MB.\n\nFiles are stored in Redis with a 1-hour TTL and auto-expire.",
+        "operationId": "upload_file_upload_post",
+        "parameters": [
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_file_upload_post"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "File uploaded successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadResponse"
+                },
+                "example": {
+                  "file_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+                  "data_url": "data:image/jpeg;base64,/9j/4AAQ...",
+                  "filename": "photo.jpg",
+                  "content_type": "image/jpeg",
+                  "size": 102400
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Empty file"
+          },
+          "401": {
+            "description": "Missing or invalid API key"
+          },
+          "413": {
+            "description": "File too large (max 10MB)"
+          },
+          "415": {
+            "description": "Unsupported file type or extension"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/chat/stream": {
+      "post": {
+        "tags": [
+          "chat"
+        ],
+        "summary": "Stream chat conversation with the travel agent",
+        "description": "Stream a chat conversation with the AI travel agent.\n\nReturns a Server-Sent Events (SSE) stream with token-by-token LLM output,\nsubagent status updates, itinerary/comparison data, images, charts, and usage stats.\n\n**Request body:** `ChatRequest` with `message` (required), optional `thread_id`,\n`locale`, `timezone`, `attachments`, and `client_message_id`.\n\n**SSE event types:** `thread_id`, `status`, `token`, `itinerary`, `comparison`,\n`image`, `chart`, `usage`, `tool_error`, `subagent_progress`, `cancelled`, `error`, `done`.",
+        "operationId": "chat_stream_chat_stream_post",
+        "parameters": [
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Server-Sent Events stream of chat tokens and events",
+            "content": {
+              "application/json": {
+                "schema": {}
+              },
+              "text/event-stream": {
+                "example": "event: thread_id\ndata: {\"event\": \"thread_id\", \"data\": {\"thread_id\": \"chat:abc123:def456\"}}\n\nevent: token\ndata: {\"event\": \"token\", \"data\": \"Hello\"}\n"
+              }
+            }
+          },
+          "400": {
+            "description": "Prompt injection detected \u2014 request blocked"
+          },
+          "401": {
+            "description": "Missing or invalid API key"
+          },
+          "429": {
+            "description": "Rate limit exceeded or user in cooldown"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/chat/cancel": {
+      "post": {
+        "tags": [
+          "chat"
+        ],
+        "summary": "Cancel an active chat stream",
+        "description": "Cancel an active chat stream for a given thread.\n\n**Request body:** `{\"thread_id\": \"...\"}` \u2014 the thread ID to cancel.\n\nReturns `cancelled: true` if a stream was found and cancelled, `false` otherwise.",
+        "operationId": "chat_cancel_chat_cancel_post",
+        "parameters": [
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true,
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Cancellation status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatCancelResponse"
+                },
+                "example": {
+                  "cancelled": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing thread_id in request body"
+          },
+          "401": {
+            "description": "Missing or invalid API key"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/chat/regenerate": {
+      "post": {
+        "tags": [
+          "chat"
+        ],
+        "summary": "Regenerate the last assistant response",
+        "description": "Regenerate the last assistant response for a thread.\n\nReturns a Server-Sent Events (SSE) stream \u2014 same event types as `/chat/stream`.\n\n**Request body:** `{\"thread_id\": \"...\", \"locale\": \"en\", \"timezone\": \"Asia/Kolkata\"}`",
+        "operationId": "chat_regenerate_chat_regenerate_post",
+        "parameters": [
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true,
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Server-Sent Events stream of regenerated chat tokens",
+            "content": {
+              "application/json": {
+                "schema": {}
+              },
+              "text/event-stream": {
+                "example": "event: thread_id\ndata: {\"event\": \"thread_id\", \"data\": {\"thread_id\": \"chat:abc123:def456\"}}\n"
+              }
+            }
+          },
+          "400": {
+            "description": "Missing thread_id"
+          },
+          "401": {
+            "description": "Missing or invalid API key"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/chat/edit": {
+      "post": {
+        "tags": [
+          "chat"
+        ],
+        "summary": "Edit the last user message and regenerate the assistant response",
+        "description": "Edit the last user message and regenerate the assistant response.\n\nReplaces the last user message with the new text and regenerates the response.\nReturns a Server-Sent Events (SSE) stream \u2014 same event types as `/chat/stream`.\n\n**Request body:** `{\"thread_id\": \"...\", \"message\": \"new text\", \"locale\": \"en\", \"timezone\": \"Asia/Kolkata\"}`",
+        "operationId": "chat_edit_chat_edit_post",
+        "parameters": [
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true,
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Server-Sent Events stream of edited chat tokens",
+            "content": {
+              "application/json": {
+                "schema": {}
+              },
+              "text/event-stream": {
+                "example": "event: thread_id\ndata: {\"event\": \"thread_id\", \"data\": {\"thread_id\": \"chat:abc123:def456\"}}\n"
+              }
+            }
+          },
+          "400": {
+            "description": "Missing thread_id or message"
+          },
+          "401": {
+            "description": "Missing or invalid API key"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/threads": {
+      "get": {
+        "tags": [
+          "threads"
+        ],
+        "summary": "List user's recent threads",
+        "description": "List the user's recent conversation threads.\n\nThreads are sorted: pinned first (by pinned_at desc), then by updated_at desc.\n\n**Query parameters:**\n- `offset`: Pagination offset (default 0)\n- `limit`: Page size (default 20)",
+        "operationId": "list_threads_threads_get",
+        "parameters": [
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "title": "Offset"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 20,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of threads with pagination info",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThreadListResponse"
+                },
+                "example": {
+                  "threads": [
+                    {
+                      "thread_id": "chat:abc123:def456",
+                      "summary": "Paris trip plan",
+                      "created_at": 1735689600,
+                      "updated_at": 1735693200,
+                      "status": "idle",
+                      "message_count": 4,
+                      "pinned": false,
+                      "pinned_at": 0
+                    }
+                  ],
+                  "has_more": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/threads/search": {
+      "get": {
+        "tags": [
+          "threads"
+        ],
+        "summary": "Search across all user's thread messages",
+        "description": "Full-text search across all user's thread message content.\n\n**Query parameters:**\n- `q`: Search query string\n- `offset`: Pagination offset (default 0)\n- `limit`: Page size (default 20)",
+        "operationId": "search_threads_threads_search_get",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Q"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "title": "Offset"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 20,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Search results with pagination info",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThreadSearchResponse"
+                },
+                "example": {
+                  "results": [
+                    {
+                      "thread_id": "chat:abc123:def456",
+                      "summary": "Paris trip",
+                      "snippet": "...Eiffel Tower...",
+                      "created_at": 1735689600
+                    }
+                  ],
+                  "total": 1,
+                  "has_more": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/threads/{thread_id}/history": {
+      "get": {
+        "tags": [
+          "threads"
+        ],
+        "summary": "Get thread message history",
+        "description": "Get the full message history for a thread.\n\n**Path parameters:**\n- `thread_id`: The thread ID to fetch history for\n\n**Query parameters:**\n- `checkpoint_id`: Optional checkpoint ID to fetch a specific version\n\nAssistant messages may include `itinerary`, `comparison`, `activity`, `images`, and `charts` fields.",
+        "operationId": "get_thread_history_threads__thread_id__history_get",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          },
+          {
+            "name": "checkpoint_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Checkpoint Id"
+            }
+          },
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of messages in the thread",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ThreadMessage"
+                  },
+                  "title": "Response Get Thread History Threads  Thread Id  History Get"
+                },
+                "example": [
+                  {
+                    "role": "user",
+                    "content": "Plan a trip to Paris"
+                  },
+                  {
+                    "role": "assistant",
+                    "content": "Here's a 3-day Paris itinerary...",
+                    "itinerary": {
+                      "destination": "Paris"
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key"
+          },
+          "403": {
+            "description": "Thread does not belong to this user"
+          },
+          "404": {
+            "description": "Thread not found or empty"
+          },
+          "503": {
+            "description": "Failed to load thread history"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/threads/{thread_id}/branches": {
+      "get": {
+        "tags": [
+          "threads"
+        ],
+        "summary": "List branches for the last assistant response",
+        "description": "List all branches (alternative responses) from the last assistant response's fork point.\n\n**Path parameters:**\n- `thread_id`: The thread ID to inspect\n\nReturns checkpoints that share the same parent (fork point), with `is_current` flag\nand a 200-char preview of each branch's last message.",
+        "operationId": "get_thread_branches_threads__thread_id__branches_get",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          },
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of branches from the fork point",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThreadBranchesResponse"
+                },
+                "example": {
+                  "branches": [
+                    {
+                      "checkpoint_id": "abc-123",
+                      "is_current": true,
+                      "preview": "Here's a 3-day Paris itinerary..."
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key"
+          },
+          "403": {
+            "description": "Thread does not belong to this user"
+          },
+          "503": {
+            "description": "Failed to load branches"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/threads/{thread_id}": {
+      "delete": {
+        "tags": [
+          "threads"
+        ],
+        "summary": "Delete a thread",
+        "description": "Delete a thread and its underlying checkpoint state.\n\n**Path parameters:**\n- `thread_id`: The thread ID to delete\n\nRemoves both the thread metadata and the langgraph checkpointer state.",
+        "operationId": "delete_thread_threads__thread_id__delete",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          },
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Thread deleted successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThreadDeleteResponse"
+                },
+                "example": {
+                  "status": "ok",
+                  "thread_id": "chat:abc123:def456"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key"
+          },
+          "403": {
+            "description": "Thread does not belong to this user"
+          },
+          "404": {
+            "description": "Thread not found"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "threads"
+        ],
+        "summary": "Update thread metadata (e.g., pin/unpin)",
+        "description": "Update thread metadata (e.g., pin or unpin a thread).\n\n**Path parameters:**\n- `thread_id`: The thread ID to update\n\n**Request body:** `ThreadUpdateRequest` with optional `pinned` boolean.",
+        "operationId": "update_thread_threads__thread_id__patch",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          },
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ThreadUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Thread updated successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThreadUpdateResponse"
+                },
+                "example": {
+                  "status": "ok",
+                  "thread_id": "chat:abc123:def456"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key"
+          },
+          "403": {
+            "description": "Thread does not belong to this user"
+          },
+          "404": {
+            "description": "Thread not found"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/login": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Google OAuth login",
+        "description": "Redirect to Google OAuth consent screen.\n\nIn development mode (`AUTH_DEV_BYPASS=true`), creates a dev session and\nredirects to the frontend callback directly.\n\n**Returns:** 302 redirect \u2014 no JSON response.",
+        "operationId": "auth_login_auth_login_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "302": {
+            "description": "Redirect to Google OAuth consent screen (or dev-bypass callback)"
+          }
+        }
+      }
+    },
+    "/auth/callback": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "OAuth callback handler",
+        "description": "Handle Google OAuth callback \u2014 exchange code for user info, create session.\n\nSets a session cookie and redirects to the frontend callback URL.\n\n**Returns:** 302 redirect with `Set-Cookie` header.",
+        "operationId": "auth_callback_auth_callback_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "302": {
+            "description": "Redirect to frontend with session cookie set"
+          },
+          "400": {
+            "description": "No email in Google response"
+          }
+        }
+      }
+    },
+    "/auth/logout": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Logout",
+        "description": "Clear session cookie and delete session from Redis.\n\nNo authentication required \u2014 always returns 200.",
+        "operationId": "auth_logout_auth_logout_post",
+        "responses": {
+          "200": {
+            "description": "Logged out successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthLogoutResponse"
+                },
+                "example": {
+                  "status": "ok"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/me": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Get current user",
+        "description": "Return current user info from session.\n\nRequires a valid session cookie.",
+        "operationId": "auth_me_auth_me_get",
+        "responses": {
+          "200": {
+            "description": "Current user info",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthMeResponse"
+                },
+                "example": {
+                  "user_id": "user@example.com",
+                  "display_name": "Jane Doe",
+                  "avatar_url": "https://lh3.googleusercontent.com/...",
+                  "email": "user@example.com"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated"
+          }
+        }
+      }
+    },
+    "/share/{thread_id}": {
+      "post": {
+        "tags": [
+          "share"
+        ],
+        "summary": "Create a shareable link for an itinerary",
+        "description": "Create a shareable link for an itinerary.\n\n**Path parameters:**\n- `thread_id`: The thread containing the itinerary to share\n\nThe itinerary is enriched with coordinates and stored with a token.\nShare links expire after `SHARE_TTL_DAYS` (default 7 days).",
+        "operationId": "create_share_link_share__thread_id__post",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          },
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Share link created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShareCreateResponse"
+                },
+                "example": {
+                  "share_url": "http://localhost:3000/en/share/abc123def456",
+                  "expires_at": 1736294400,
+                  "destination": "Paris"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key"
+          },
+          "404": {
+            "description": "No itinerary found in this thread"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/share/{token}": {
+      "get": {
+        "tags": [
+          "share"
+        ],
+        "summary": "Get shared itinerary (public, no auth)",
+        "description": "Get a shared itinerary by token.\n\n**Public endpoint \u2014 no authentication required.**\n\n**Path parameters:**\n- `token`: The share token from the URL",
+        "operationId": "get_shared_itinerary_share__token__get",
+        "parameters": [
+          {
+            "name": "token",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Shared itinerary data",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShareGetResponse"
+                },
+                "example": {
+                  "itinerary": {
+                    "destination": "Paris",
+                    "total_days": 3,
+                    "estimated_total_cost_usd": 1500
+                  },
+                  "destination": "Paris",
+                  "created_at": 1735689600,
+                  "expires_at": 1736294400
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Share link not found or expired"
+          },
+          "500": {
+            "description": "Corrupted share data"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "share"
+        ],
+        "summary": "Revoke a share link",
+        "description": "Revoke a share link.\n\n**Path parameters:**\n- `token`: The share token to revoke\n\nOnly the original creator can revoke a share link.",
+        "operationId": "revoke_share_link_share__token__delete",
+        "parameters": [
+          {
+            "name": "token",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Token"
+            }
+          },
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Share link revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShareRevokeResponse"
+                },
+                "example": {
+                  "status": "ok"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key"
+          },
+          "404": {
+            "description": "Share link not found"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/shares": {
+      "get": {
+        "tags": [
+          "share"
+        ],
+        "summary": "List user's active share links",
+        "description": "List all active share links for the current user.\n\nExpired shares are automatically filtered out.",
+        "operationId": "list_shares_shares_get",
+        "parameters": [
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of active share links",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ShareListItem"
+                  },
+                  "title": "Response List Shares Shares Get"
+                },
+                "example": [
+                  {
+                    "token": "abc123def456",
+                    "thread_id": "chat:abc123:def456",
+                    "destination": "Paris",
+                    "created_at": 1735689600,
+                    "expires_at": 1736294400,
+                    "share_url": "http://localhost:3000/share/abc123def456"
+                  }
+                ]
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/export/{thread_id}": {
+      "get": {
+        "tags": [
+          "export"
+        ],
+        "summary": "Export itinerary as JSON, Markdown, or iCal",
+        "description": "Export an itinerary in JSON, Markdown, or iCal format.\n\n**Path parameters:**\n- `thread_id`: The thread containing the itinerary\n\n**Query parameters:**\n- `fmt`: Export format \u2014 \"json\" (default), \"markdown\", or \"ical\"\n\nReturns a file download with appropriate `Content-Type` and `Content-Disposition` headers.",
+        "operationId": "export_itinerary_export__thread_id__get",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          },
+          {
+            "name": "fmt",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "json",
+              "title": "Fmt"
+            }
+          },
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Exported itinerary file",
+            "content": {
+              "application/json": {
+                "schema": {},
+                "example": {
+                  "destination": "Paris",
+                  "total_days": 3
+                }
+              },
+              "text/markdown": {
+                "example": "# Paris\n\n**Duration:** 3 days"
+              },
+              "text/calendar": {
+                "example": "BEGIN:VCALENDAR\nVERSION:2.0\n..."
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key"
+          },
+          "404": {
+            "description": "No itinerary found in this thread"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AttachmentInfo": {
+        "properties": {
+          "file_id": {
+            "type": "string",
+            "title": "File Id",
+            "description": "Unique file ID from POST /upload."
+          },
+          "filename": {
+            "type": "string",
+            "maxLength": 200,
+            "title": "Filename",
+            "description": "Original filename."
+          },
+          "content_type": {
+            "type": "string",
+            "maxLength": 100,
+            "title": "Content Type",
+            "description": "MIME type (e.g. image/jpeg)."
+          },
+          "data_url": {
+            "type": "string",
+            "title": "Data Url",
+            "description": "Base64 data URL for frontend rendering."
+          }
+        },
+        "type": "object",
+        "required": [
+          "file_id",
+          "filename",
+          "content_type",
+          "data_url"
+        ],
+        "title": "AttachmentInfo"
+      },
+      "AuthLogoutResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "Always \"ok\"."
+          }
+        },
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "title": "AuthLogoutResponse"
+      },
+      "AuthMeResponse": {
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "title": "User Id",
+            "description": "User identifier (email)."
+          },
+          "display_name": {
+            "type": "string",
+            "title": "Display Name",
+            "description": "User's display name."
+          },
+          "avatar_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avatar Url",
+            "description": "URL to user's avatar image."
+          },
+          "email": {
+            "type": "string",
+            "title": "Email",
+            "description": "User's email address."
+          }
+        },
+        "type": "object",
+        "required": [
+          "user_id",
+          "display_name",
+          "email"
+        ],
+        "title": "AuthMeResponse"
+      },
+      "Body_upload_file_upload_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "File"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_upload_file_upload_post"
+      },
+      "BranchInfo": {
+        "properties": {
+          "checkpoint_id": {
+            "type": "string",
+            "title": "Checkpoint Id",
+            "description": "Checkpoint ID for this branch."
+          },
+          "is_current": {
+            "type": "boolean",
+            "title": "Is Current",
+            "description": "True if this is the currently active branch."
+          },
+          "preview": {
+            "type": "string",
+            "title": "Preview",
+            "description": "First 200 characters of the branch's last message."
+          }
+        },
+        "type": "object",
+        "required": [
+          "checkpoint_id",
+          "is_current",
+          "preview"
+        ],
+        "title": "BranchInfo"
+      },
+      "CacheInvalidateResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "Always \"ok\"."
+          },
+          "cleared": {
+            "type": "integer",
+            "title": "Cleared",
+            "description": "Number of cache entries cleared."
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "cleared"
+        ],
+        "title": "CacheInvalidateResponse"
+      },
+      "ChatCancelResponse": {
+        "properties": {
+          "cancelled": {
+            "type": "boolean",
+            "title": "Cancelled",
+            "description": "True if the stream was cancelled, False if no active stream found."
+          }
+        },
+        "type": "object",
+        "required": [
+          "cancelled"
+        ],
+        "title": "ChatCancelResponse"
+      },
+      "ChatRequest": {
+        "properties": {
+          "message": {
+            "type": "string",
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Message",
+            "description": "User chat message."
+          },
+          "thread_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thread Id",
+            "description": "Thread ID for resuming a previous conversation."
+          },
+          "client_message_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Message Id",
+            "description": "Client-generated UUID for offline message dedup."
+          },
+          "locale": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 10
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Locale",
+            "description": "User's preferred locale (e.g. 'en', 'es', 'fr')."
+          },
+          "timezone": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 50
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timezone",
+            "description": "User's IANA timezone (e.g. 'Asia/Kolkata', 'America/New_York')."
+          },
+          "attachments": {
+            "items": {
+              "$ref": "#/components/schemas/AttachmentInfo"
+            },
+            "type": "array",
+            "title": "Attachments",
+            "description": "File attachments (images, PDFs)."
+          }
+        },
+        "type": "object",
+        "required": [
+          "message"
+        ],
+        "title": "ChatRequest"
+      },
+      "CooldownItem": {
+        "properties": {
+          "user_hash": {
+            "type": "string",
+            "title": "User Hash",
+            "description": "Hashed user ID (12-char SHA256 prefix)."
+          },
+          "until": {
+            "type": "number",
+            "title": "Until",
+            "description": "Unix timestamp when cooldown expires."
+          },
+          "remaining_seconds": {
+            "type": "integer",
+            "title": "Remaining Seconds",
+            "description": "Seconds remaining in cooldown."
+          }
+        },
+        "type": "object",
+        "required": [
+          "user_hash",
+          "until",
+          "remaining_seconds"
+        ],
+        "title": "CooldownItem"
+      },
+      "CooldownListResponse": {
+        "properties": {
+          "cooldowns": {
+            "items": {
+              "$ref": "#/components/schemas/CooldownItem"
+            },
+            "type": "array",
+            "title": "Cooldowns",
+            "description": "Active cooldowns."
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count",
+            "description": "Number of active cooldowns."
+          }
+        },
+        "type": "object",
+        "required": [
+          "count"
+        ],
+        "title": "CooldownListResponse"
+      },
+      "CooldownRemoveResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "\"ok\" if removed, \"not_found\" if no cooldown existed."
+          },
+          "user_hash": {
+            "type": "string",
+            "title": "User Hash",
+            "description": "Hashed user ID that was targeted."
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "user_hash"
+        ],
+        "title": "CooldownRemoveResponse"
+      },
+      "CostAnalyticsResponse": {
+        "properties": {
+          "total_cost": {
+            "type": "number",
+            "title": "Total Cost",
+            "description": "Total cost across all sessions (USD)."
+          },
+          "total_conversations": {
+            "type": "integer",
+            "title": "Total Conversations",
+            "description": "Number of conversations in the period."
+          },
+          "avg_cost_per_conversation": {
+            "type": "number",
+            "title": "Avg Cost Per Conversation",
+            "description": "Average cost per conversation (USD)."
+          },
+          "total_input_tokens": {
+            "type": "integer",
+            "title": "Total Input Tokens",
+            "description": "Total input tokens consumed."
+          },
+          "total_output_tokens": {
+            "type": "integer",
+            "title": "Total Output Tokens",
+            "description": "Total output tokens consumed."
+          },
+          "per_day": {
+            "items": {
+              "$ref": "#/components/schemas/PerDayItem"
+            },
+            "type": "array",
+            "title": "Per Day",
+            "description": "Cost breakdown by day."
+          },
+          "per_subagent": {
+            "items": {
+              "$ref": "#/components/schemas/PerSubagentItem"
+            },
+            "type": "array",
+            "title": "Per Subagent",
+            "description": "Cost breakdown by subagent."
+          },
+          "top_users": {
+            "items": {
+              "$ref": "#/components/schemas/TopUserItem"
+            },
+            "type": "array",
+            "title": "Top Users",
+            "description": "Top 10 users by spend."
+          },
+          "poor_efficiency_sessions": {
+            "items": {
+              "$ref": "#/components/schemas/PoorEfficiencyItem"
+            },
+            "type": "array",
+            "title": "Poor Efficiency Sessions",
+            "description": "Sessions with >50:1 efficiency ratio."
+          }
+        },
+        "type": "object",
+        "required": [
+          "total_cost",
+          "total_conversations",
+          "avg_cost_per_conversation",
+          "total_input_tokens",
+          "total_output_tokens"
+        ],
+        "title": "CostAnalyticsResponse"
+      },
+      "FeedbackCommentItem": {
+        "properties": {
+          "comment": {
+            "type": "string",
+            "title": "Comment",
+            "description": "Feedback comment text."
+          },
+          "thread_id": {
+            "type": "string",
+            "title": "Thread Id",
+            "description": "Thread ID the feedback belongs to."
+          },
+          "created_at": {
+            "type": "number",
+            "title": "Created At",
+            "description": "Unix timestamp of feedback creation."
+          }
+        },
+        "type": "object",
+        "required": [
+          "comment",
+          "thread_id",
+          "created_at"
+        ],
+        "title": "FeedbackCommentItem"
+      },
+      "FeedbackRequest": {
+        "properties": {
+          "thread_id": {
+            "type": "string",
+            "maxLength": 200,
+            "title": "Thread Id",
+            "description": "Thread ID."
+          },
+          "message_id": {
+            "type": "string",
+            "maxLength": 200,
+            "title": "Message Id",
+            "description": "Message ID being rated."
+          },
+          "rating": {
+            "type": "string",
+            "pattern": "^(up|down)$",
+            "title": "Rating",
+            "description": "Rating: 'up' or 'down'."
+          },
+          "comment": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 1000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comment",
+            "description": "Optional feedback comment."
+          }
+        },
+        "type": "object",
+        "required": [
+          "thread_id",
+          "message_id",
+          "rating"
+        ],
+        "title": "FeedbackRequest"
+      },
+      "FeedbackStatsResponse": {
+        "properties": {
+          "total_up": {
+            "type": "integer",
+            "title": "Total Up",
+            "description": "Number of thumbs-up ratings."
+          },
+          "total_down": {
+            "type": "integer",
+            "title": "Total Down",
+            "description": "Number of thumbs-down ratings."
+          },
+          "total_ratings": {
+            "type": "integer",
+            "title": "Total Ratings",
+            "description": "Total number of ratings."
+          },
+          "satisfaction_ratio": {
+            "type": "number",
+            "title": "Satisfaction Ratio",
+            "description": "Ratio of up ratings to total (0.0\u20131.0)."
+          },
+          "recent_comments": {
+            "items": {
+              "$ref": "#/components/schemas/FeedbackCommentItem"
+            },
+            "type": "array",
+            "title": "Recent Comments",
+            "description": "Last 20 thumbs-down comments."
+          }
+        },
+        "type": "object",
+        "required": [
+          "total_up",
+          "total_down",
+          "total_ratings",
+          "satisfaction_ratio"
+        ],
+        "title": "FeedbackStatsResponse"
+      },
+      "FeedbackSubmitResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "Always \"ok\"."
+          },
+          "rating": {
+            "type": "string",
+            "title": "Rating",
+            "description": "The rating that was submitted ('up' or 'down')."
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "rating"
+        ],
+        "title": "FeedbackSubmitResponse"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "HealthResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "\"ok\" if Redis is connected, \"degraded\" otherwise."
+          },
+          "redis": {
+            "type": "string",
+            "title": "Redis",
+            "description": "\"connected\" or \"unavailable\"."
+          },
+          "agent": {
+            "type": "string",
+            "title": "Agent",
+            "description": "Always \"deepagent\" (identifies the agent framework)."
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "redis",
+          "agent"
+        ],
+        "title": "HealthResponse"
+      },
+      "PerDayItem": {
+        "properties": {
+          "date": {
+            "type": "string",
+            "title": "Date",
+            "description": "Date in YYYY-MM-DD format."
+          },
+          "cost": {
+            "type": "number",
+            "title": "Cost",
+            "description": "Total cost on that date (USD)."
+          }
+        },
+        "type": "object",
+        "required": [
+          "date",
+          "cost"
+        ],
+        "title": "PerDayItem"
+      },
+      "PerSubagentItem": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "description": "Subagent name (e.g. 'research', 'weather')."
+          },
+          "cost": {
+            "type": "number",
+            "title": "Cost",
+            "description": "Total cost for this subagent (USD)."
+          },
+          "input_tokens": {
+            "type": "integer",
+            "title": "Input Tokens",
+            "description": "Total input tokens consumed."
+          },
+          "output_tokens": {
+            "type": "integer",
+            "title": "Output Tokens",
+            "description": "Total output tokens consumed."
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "cost",
+          "input_tokens",
+          "output_tokens"
+        ],
+        "title": "PerSubagentItem"
+      },
+      "PoorEfficiencyItem": {
+        "properties": {
+          "thread_id": {
+            "type": "string",
+            "title": "Thread Id",
+            "description": "Thread ID with poor efficiency."
+          },
+          "user_id": {
+            "type": "string",
+            "title": "User Id",
+            "description": "User ID for this thread."
+          },
+          "efficiency_ratio": {
+            "type": "number",
+            "title": "Efficiency Ratio",
+            "description": "Token-to-cost ratio (>50 is poor)."
+          },
+          "cost": {
+            "type": "number",
+            "title": "Cost",
+            "description": "Total cost for this thread (USD)."
+          }
+        },
+        "type": "object",
+        "required": [
+          "thread_id",
+          "user_id",
+          "efficiency_ratio",
+          "cost"
+        ],
+        "title": "PoorEfficiencyItem"
+      },
+      "PreferencesSaveResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "\"ok\" or \"error\"."
+          },
+          "user_id": {
+            "type": "string",
+            "title": "User Id",
+            "description": "User ID."
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error",
+            "description": "Error message if status is 'error'."
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "user_id"
+        ],
+        "title": "PreferencesSaveResponse"
+      },
+      "SecurityFlagsResponse": {
+        "properties": {
+          "total_flags": {
+            "type": "integer",
+            "title": "Total Flags",
+            "description": "Total injection flags in the period."
+          },
+          "by_category": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "By Category",
+            "description": "Flags grouped by category (instruction_override, extraction_attempt, etc.)."
+          },
+          "by_source": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "By Source",
+            "description": "Flags grouped by source (message, pdf, web)."
+          },
+          "by_confidence": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "By Confidence",
+            "description": "Flags grouped by confidence level (low, high)."
+          },
+          "unique_users": {
+            "type": "integer",
+            "title": "Unique Users",
+            "description": "Number of unique users flagged."
+          },
+          "active_cooldowns": {
+            "type": "integer",
+            "title": "Active Cooldowns",
+            "description": "Number of currently active cooldowns."
+          },
+          "recent_flags": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Recent Flags",
+            "description": "Recent flag entries with details."
+          }
+        },
+        "type": "object",
+        "required": [
+          "total_flags",
+          "unique_users",
+          "active_cooldowns"
+        ],
+        "title": "SecurityFlagsResponse"
+      },
+      "ShareCreateResponse": {
+        "properties": {
+          "share_url": {
+            "type": "string",
+            "title": "Share Url",
+            "description": "Full URL to view the shared itinerary."
+          },
+          "expires_at": {
+            "type": "number",
+            "title": "Expires At",
+            "description": "Unix timestamp when the share link expires."
+          },
+          "destination": {
+            "type": "string",
+            "title": "Destination",
+            "description": "Destination name for the itinerary."
+          }
+        },
+        "type": "object",
+        "required": [
+          "share_url",
+          "expires_at",
+          "destination"
+        ],
+        "title": "ShareCreateResponse"
+      },
+      "ShareGetResponse": {
+        "properties": {
+          "itinerary": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Itinerary",
+            "description": "Full itinerary data (Itinerary model as JSON)."
+          },
+          "destination": {
+            "type": "string",
+            "title": "Destination",
+            "description": "Destination name."
+          },
+          "created_at": {
+            "type": "number",
+            "title": "Created At",
+            "description": "Unix timestamp of share creation."
+          },
+          "expires_at": {
+            "type": "number",
+            "title": "Expires At",
+            "description": "Unix timestamp when share expires."
+          }
+        },
+        "type": "object",
+        "required": [
+          "itinerary",
+          "destination",
+          "created_at",
+          "expires_at"
+        ],
+        "title": "ShareGetResponse"
+      },
+      "ShareListItem": {
+        "properties": {
+          "token": {
+            "type": "string",
+            "title": "Token",
+            "description": "Share token (used in URL)."
+          },
+          "thread_id": {
+            "type": "string",
+            "title": "Thread Id",
+            "description": "Thread ID the share belongs to."
+          },
+          "destination": {
+            "type": "string",
+            "title": "Destination",
+            "description": "Destination name."
+          },
+          "created_at": {
+            "type": "number",
+            "title": "Created At",
+            "description": "Unix timestamp of share creation."
+          },
+          "expires_at": {
+            "type": "number",
+            "title": "Expires At",
+            "description": "Unix timestamp when share expires."
+          },
+          "share_url": {
+            "type": "string",
+            "title": "Share Url",
+            "description": "Full URL to view the shared itinerary."
+          }
+        },
+        "type": "object",
+        "required": [
+          "token",
+          "thread_id",
+          "destination",
+          "created_at",
+          "expires_at",
+          "share_url"
+        ],
+        "title": "ShareListItem"
+      },
+      "ShareRevokeResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "Always \"ok\"."
+          }
+        },
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "title": "ShareRevokeResponse"
+      },
+      "ThreadBranchesResponse": {
+        "properties": {
+          "branches": {
+            "items": {
+              "$ref": "#/components/schemas/BranchInfo"
+            },
+            "type": "array",
+            "title": "Branches",
+            "description": "List of branches from the fork point."
+          }
+        },
+        "type": "object",
+        "title": "ThreadBranchesResponse"
+      },
+      "ThreadCostBreakdownResponse": {
+        "properties": {
+          "session": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Session",
+            "description": "Per-session cost data (thread_id, user_id, tokens, cost, etc.)."
+          },
+          "subagents": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Subagents",
+            "description": "Per-subagent cost breakdown for this thread."
+          }
+        },
+        "type": "object",
+        "required": [
+          "session",
+          "subagents"
+        ],
+        "title": "ThreadCostBreakdownResponse"
+      },
+      "ThreadDeleteResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "Always \"ok\"."
+          },
+          "thread_id": {
+            "type": "string",
+            "title": "Thread Id",
+            "description": "ID of the deleted thread."
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "thread_id"
+        ],
+        "title": "ThreadDeleteResponse"
+      },
+      "ThreadInfo": {
+        "properties": {
+          "thread_id": {
+            "type": "string",
+            "title": "Thread Id",
+            "description": "Unique thread identifier."
+          },
+          "summary": {
+            "type": "string",
+            "title": "Summary",
+            "description": "AI-generated summary of the conversation."
+          },
+          "created_at": {
+            "type": "number",
+            "title": "Created At",
+            "description": "Unix timestamp of thread creation."
+          },
+          "updated_at": {
+            "type": "number",
+            "title": "Updated At",
+            "description": "Unix timestamp of last update."
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "Thread status: \"idle\", \"busy\", or \"error\"."
+          },
+          "message_count": {
+            "type": "integer",
+            "title": "Message Count",
+            "description": "Number of messages in the thread."
+          },
+          "search_text": {
+            "type": "string",
+            "title": "Search Text",
+            "description": "Searchable text content.",
+            "default": ""
+          },
+          "pinned": {
+            "type": "boolean",
+            "title": "Pinned",
+            "description": "Whether the thread is pinned.",
+            "default": false
+          },
+          "pinned_at": {
+            "type": "number",
+            "title": "Pinned At",
+            "description": "Unix timestamp when pinned.",
+            "default": 0.0
+          }
+        },
+        "type": "object",
+        "required": [
+          "thread_id",
+          "summary",
+          "created_at",
+          "updated_at",
+          "status",
+          "message_count"
+        ],
+        "title": "ThreadInfo"
+      },
+      "ThreadListResponse": {
+        "properties": {
+          "threads": {
+            "items": {
+              "$ref": "#/components/schemas/ThreadInfo"
+            },
+            "type": "array",
+            "title": "Threads",
+            "description": "List of threads."
+          },
+          "has_more": {
+            "type": "boolean",
+            "title": "Has More",
+            "description": "True if more threads are available via pagination."
+          }
+        },
+        "type": "object",
+        "required": [
+          "has_more"
+        ],
+        "title": "ThreadListResponse"
+      },
+      "ThreadMessage": {
+        "properties": {
+          "role": {
+            "type": "string",
+            "title": "Role",
+            "description": "Message role: \"user\" or \"assistant\"."
+          },
+          "content": {
+            "type": "string",
+            "title": "Content",
+            "description": "Message text content."
+          },
+          "itinerary": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Itinerary",
+            "description": "Structured itinerary data (assistant messages only)."
+          },
+          "comparison": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comparison",
+            "description": "Comparison data (assistant messages only)."
+          },
+          "activity": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Activity",
+            "description": "Activity metadata (maps, charts, images)."
+          },
+          "images": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Images",
+            "description": "List of image URLs from activity metadata."
+          },
+          "charts": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Charts",
+            "description": "List of chart data from activity metadata."
+          }
+        },
+        "type": "object",
+        "required": [
+          "role",
+          "content"
+        ],
+        "title": "ThreadMessage"
+      },
+      "ThreadSearchResponse": {
+        "properties": {
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/ThreadSearchResult"
+            },
+            "type": "array",
+            "title": "Results",
+            "description": "Search results."
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total",
+            "description": "Total number of matching results."
+          },
+          "has_more": {
+            "type": "boolean",
+            "title": "Has More",
+            "description": "True if more results are available."
+          }
+        },
+        "type": "object",
+        "required": [
+          "total",
+          "has_more"
+        ],
+        "title": "ThreadSearchResponse"
+      },
+      "ThreadSearchResult": {
+        "properties": {
+          "thread_id": {
+            "type": "string",
+            "title": "Thread Id",
+            "description": "Thread ID."
+          },
+          "summary": {
+            "type": "string",
+            "title": "Summary",
+            "description": "Thread summary."
+          },
+          "snippet": {
+            "type": "string",
+            "title": "Snippet",
+            "description": "Matching text snippet."
+          },
+          "created_at": {
+            "type": "number",
+            "title": "Created At",
+            "description": "Unix timestamp of thread creation."
+          }
+        },
+        "type": "object",
+        "required": [
+          "thread_id",
+          "summary",
+          "snippet",
+          "created_at"
+        ],
+        "title": "ThreadSearchResult"
+      },
+      "ThreadUpdateRequest": {
+        "properties": {
+          "pinned": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pinned",
+            "description": "Set to true/false to pin/unpin a thread."
+          }
+        },
+        "type": "object",
+        "title": "ThreadUpdateRequest"
+      },
+      "ThreadUpdateResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "Always \"ok\"."
+          },
+          "thread_id": {
+            "type": "string",
+            "title": "Thread Id",
+            "description": "ID of the updated thread."
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "thread_id"
+        ],
+        "title": "ThreadUpdateResponse"
+      },
+      "TopUserItem": {
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "title": "User Id",
+            "description": "User identifier (email or hashed ID)."
+          },
+          "cost": {
+            "type": "number",
+            "title": "Cost",
+            "description": "Total cost for this user (USD)."
+          }
+        },
+        "type": "object",
+        "required": [
+          "user_id",
+          "cost"
+        ],
+        "title": "TopUserItem"
+      },
+      "UploadResponse": {
+        "properties": {
+          "file_id": {
+            "type": "string",
+            "title": "File Id",
+            "description": "Unique file ID (UUID)."
+          },
+          "data_url": {
+            "type": "string",
+            "title": "Data Url",
+            "description": "Base64 data URL for frontend rendering."
+          },
+          "filename": {
+            "type": "string",
+            "title": "Filename",
+            "description": "Original filename."
+          },
+          "content_type": {
+            "type": "string",
+            "title": "Content Type",
+            "description": "MIME type (e.g. image/jpeg)."
+          },
+          "size": {
+            "type": "integer",
+            "title": "Size",
+            "description": "File size in bytes."
+          }
+        },
+        "type": "object",
+        "required": [
+          "file_id",
+          "data_url",
+          "filename",
+          "content_type",
+          "size"
+        ],
+        "title": "UploadResponse"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    }
+  }
+}
