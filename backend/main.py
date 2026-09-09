@@ -9,7 +9,8 @@ from dataclasses import asdict
 
 from fastapi import Depends, FastAPI, HTTPException, Request, UploadFile, File as FastAPIFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, PlainTextResponse, RedirectResponse
+from fastapi.openapi.docs import get_swagger_ui_html, get_redoc_html
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
@@ -35,7 +36,35 @@ from auth import verify_api_key
 from cache import cache_client
 from cancel_registry import cancel_stream, register_cancel, unregister_cancel
 from config import REQUEST_TIMEOUT_SECONDS, logger, settings
-from models import ChatRequest, FeedbackRequest, ThreadUpdateRequest
+from models import (
+    AuthLogoutResponse,
+    AuthMeResponse,
+    CacheInvalidateResponse,
+    ChatCancelResponse,
+    ChatRequest,
+    CooldownListResponse,
+    CooldownRemoveResponse,
+    CostAnalyticsResponse,
+    FeedbackRequest,
+    FeedbackStatsResponse,
+    FeedbackSubmitResponse,
+    HealthResponse,
+    PreferencesSaveResponse,
+    SecurityFlagsResponse,
+    ShareCreateResponse,
+    ShareGetResponse,
+    ShareListItem,
+    ShareRevokeResponse,
+    ThreadBranchesResponse,
+    ThreadCostBreakdownResponse,
+    ThreadDeleteResponse,
+    ThreadListResponse,
+    ThreadMessage,
+    ThreadSearchResponse,
+    ThreadUpdateRequest,
+    ThreadUpdateResponse,
+    UploadResponse,
+)
 from oauth import (
     DEV_USER,
     SESSION_COOKIE_NAME,
@@ -70,9 +99,23 @@ if settings.AUTH_MODE == "production" and not ALLOWED_ORIGINS:
     )
 
 app = FastAPI(
-    title="Travel Planning AI Agent",
+    title="VoyagerAI — Travel Planning AI Agent",
     version="2.2.0",
-    description="Generates, validates, and enriches multi-day travel itineraries using DeepAgent.",
+    description=(
+        "Generates, validates, and enriches multi-day travel itineraries using DeepAgent.\n\n"
+        "## Authentication\n"
+        "Most endpoints require an `X-API-Key` header (production mode) and a valid session cookie.\n"
+        "Admin endpoints additionally require the user to be in the `ADMIN_EMAILS` allowlist.\n\n"
+        "## Rate Limiting\n"
+        "All endpoints are rate-limited via slowapi. Default limit: 30 requests/hour.\n"
+        "Individual endpoints may have tighter limits (shown in each endpoint's documentation).\n\n"
+        "## SSE Streaming\n"
+        "Chat endpoints (`/chat/stream`, `/chat/regenerate`, `/chat/edit`) return Server-Sent Events.\n"
+        "See the Markdown docs in `backend/docs/chat.md` for the full event type reference."
+    ),
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
 )
 
 app.add_middleware(
@@ -98,6 +141,29 @@ app.add_middleware(TimeoutMiddleware)
 limiter = Limiter(key_func=get_remote_address, default_limits=["30/hour"])
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# --- Docs endpoints: open in dev, admin-protected in production ---
+_docs_deps: list = [] if settings.AUTH_MODE == "development" else [
+    Depends(verify_api_key), Depends(verify_admin),
+]
+
+
+@app.get("/docs", include_in_schema=False, dependencies=_docs_deps)
+async def custom_swagger_ui_html() -> HTMLResponse:
+    """Swagger UI for interactive API exploration."""
+    return get_swagger_ui_html(openapi_url="/openapi.json", title="VoyagerAI API Docs")
+
+
+@app.get("/redoc", include_in_schema=False, dependencies=_docs_deps)
+async def custom_redoc_html() -> HTMLResponse:
+    """ReDoc UI for readable API documentation."""
+    return get_redoc_html(openapi_url="/openapi.json", title="VoyagerAI API Docs")
+
+
+@app.get("/openapi.json", include_in_schema=False, dependencies=_docs_deps)
+async def get_openapi_schema() -> dict:
+    """OpenAPI 3.1 schema for the VoyagerAI backend API."""
+    return app.openapi()
 
 
 def _scoped_chat_thread_id(client_thread_id: str | None, user_id: str) -> str:
@@ -312,8 +378,32 @@ def _parse_chat_event(
     return []
 
 
-@app.get("/health", summary="Health check", tags=["ops"])
-async def health() -> dict[str, str]:
+@app.get(
+    "/health",
+    summary="Health check",
+    tags=["ops"],
+    response_model=HealthResponse,
+    responses={
+        200: {
+            "description": "Service health status",
+            "content": {"application/json": {"example": {
+                "status": "ok", "redis": "connected", "agent": "deepagent",
+            }}},
+        },
+        503: {"description": "Redis unavailable — service degraded"},
+    },
+)
+async def health() -> HealthResponse:
+    """Check if the backend and Redis are healthy.
+
+    Returns the overall service status and Redis connection state.
+    No authentication required — used by load balancers and monitoring.
+
+    **Response fields:**
+    - `status`: "ok" if Redis is connected, "degraded" otherwise
+    - `redis`: "connected" or "unavailable"
+    - `agent`: Always "deepagent" (identifies the agent framework)
+    """
     redis_ok = await cache_client.ping()
     return {
         "status": "ok" if redis_ok else "degraded",
@@ -329,17 +419,41 @@ async def health() -> dict[str, str]:
     summary="Get aggregate cost analytics",
     tags=["admin"],
     dependencies=[Depends(verify_api_key)],
+    response_model=CostAnalyticsResponse,
+    responses={
+        200: {
+            "description": "Aggregate cost analytics for the requested period",
+            "content": {"application/json": {"example": {
+                "total_cost": 12.34,
+                "total_conversations": 42,
+                "avg_cost_per_conversation": 0.29,
+                "total_input_tokens": 150000,
+                "total_output_tokens": 80000,
+                "per_day": [{"date": "2026-09-08", "cost": 2.5}],
+                "per_subagent": [{"name": "research", "cost": 5.0, "input_tokens": 20000, "output_tokens": 10000}],
+                "top_users": [{"user_id": "user@example.com", "cost": 3.5}],
+                "poor_efficiency_sessions": [],
+            }}},
+        },
+        401: {"description": "Missing or invalid API key"},
+        403: {"description": "User is not in ADMIN_EMAILS allowlist"},
+    },
 )
 @limiter.limit("10/minute")
 async def get_cost_analytics(
     request: Request,
     period: str = "week",
     admin: dict = Depends(verify_admin),
-) -> dict:
+) -> CostAnalyticsResponse:
     """Get aggregate cost analytics for a time period.
 
-    Args:
-        period: "day", "week", or "month".
+    Returns total cost, conversation count, token usage, per-day and per-subagent
+    breakdowns, top users by spend, and sessions with poor efficiency ratios.
+
+    **Query parameters:**
+    - `period`: Time window — "day", "week" (default), or "month"
+
+    **Requires:** Admin privileges (user must be in `ADMIN_EMAILS`).
     """
     if period not in ("day", "week", "month"):
         period = "week"
@@ -352,14 +466,32 @@ async def get_cost_analytics(
     summary="Get per-subagent cost breakdown for a thread",
     tags=["admin"],
     dependencies=[Depends(verify_api_key)],
+    response_model=ThreadCostBreakdownResponse,
+    responses={
+        200: {
+            "description": "Per-session and per-subagent cost breakdown",
+            "content": {"application/json": {"example": {
+                "session": {"thread_id": "chat:abc123:def456", "total_cost_usd": 0.15, "total_input_tokens": 5000, "total_output_tokens": 2000},
+                "subagents": {"research": {"cost": 0.08, "input_tokens": 3000, "output_tokens": 1000}},
+            }}},
+        },
+        401: {"description": "Missing or invalid API key"},
+        403: {"description": "User is not in ADMIN_EMAILS allowlist"},
+    },
 )
 @limiter.limit("30/minute")
 async def get_thread_cost_breakdown(
     thread_id: str,
     request: Request,
     admin: dict = Depends(verify_admin),
-) -> dict:
-    """Get per-subagent cost breakdown for a specific conversation."""
+) -> ThreadCostBreakdownResponse:
+    """Get per-subagent cost breakdown for a specific conversation.
+
+    **Path parameters:**
+    - `thread_id`: The thread ID to inspect
+
+    **Requires:** Admin privileges.
+    """
     session_cost = await cost_store.get_session_cost(thread_id)
     subagent_breakdown = await cost_store.get_subagent_breakdown(thread_id)
     return JSONResponse(content={
@@ -373,13 +505,30 @@ async def get_thread_cost_breakdown(
     summary="Export all cost records as CSV",
     tags=["admin"],
     dependencies=[Depends(verify_api_key)],
+    response_model=None,
+    responses={
+        200: {
+            "description": "CSV file with cost analytics",
+            "content": {"text/csv": {"example": "metric,value\ntotal_cost,12.34\ntotal_conversations,42\n"}},
+        },
+        401: {"description": "Missing or invalid API key"},
+        403: {"description": "User is not in ADMIN_EMAILS allowlist"},
+    },
 )
 @limiter.limit("5/minute")
 async def export_costs_csv(
     request: Request,
     admin: dict = Depends(verify_admin),
 ) -> PlainTextResponse:
-    """Export all cost records as CSV for spreadsheet analysis."""
+    """Export all cost records as CSV for spreadsheet analysis.
+
+    Returns a CSV file with sections for aggregate metrics, per-subagent costs,
+    top users, and poor-efficiency sessions.
+
+    **Response:** `text/csv` with `Content-Disposition: attachment; filename=costs.csv`
+
+    **Requires:** Admin privileges.
+    """
     import csv
     import io
 
@@ -419,16 +568,27 @@ async def export_costs_csv(
     summary="Submit feedback for a message",
     tags=["feedback"],
     dependencies=[Depends(verify_api_key)],
+    response_model=FeedbackSubmitResponse,
+    responses={
+        200: {
+            "description": "Feedback submitted successfully",
+            "content": {"application/json": {"example": {"status": "ok", "rating": "up"}}},
+        },
+        401: {"description": "Missing or invalid API key"},
+    },
 )
 @limiter.limit("30/minute")
 async def submit_feedback(
     request: Request,
     body: FeedbackRequest,
     user: dict = Depends(get_current_user),
-) -> dict:
+) -> FeedbackSubmitResponse:
     """Submit or update thumbs up/down feedback for a specific message.
 
     One rating per user per message — submitting again overwrites the previous rating.
+
+    **Request body:** `FeedbackRequest` with `thread_id`, `message_id`, `rating` ('up' or 'down'),
+    and optional `comment` (max 1000 chars).
     """
     user_id = user["user_id"]
     result = await feedback_store.submit_feedback(
@@ -452,13 +612,30 @@ async def submit_feedback(
     summary="Get aggregate feedback stats",
     tags=["admin"],
     dependencies=[Depends(verify_api_key)],
+    response_model=FeedbackStatsResponse,
+    responses={
+        200: {
+            "description": "Aggregate feedback statistics",
+            "content": {"application/json": {"example": {
+                "total_up": 120, "total_down": 15, "total_ratings": 135,
+                "satisfaction_ratio": 0.889, "recent_comments": [],
+            }}},
+        },
+        401: {"description": "Missing or invalid API key"},
+        403: {"description": "User is not in ADMIN_EMAILS allowlist"},
+    },
 )
 @limiter.limit("10/minute")
 async def get_feedback_stats(
     request: Request,
     admin: dict = Depends(verify_admin),
-) -> JSONResponse:
-    """Get aggregate feedback statistics for admin observability."""
+) -> FeedbackStatsResponse:
+    """Get aggregate feedback statistics for admin observability.
+
+    Returns total up/down counts, satisfaction ratio, and last 20 thumbs-down comments.
+
+    **Requires:** Admin privileges.
+    """
     stats = await feedback_store.get_aggregate_stats()
     return JSONResponse(content=stats)
 
@@ -468,13 +645,27 @@ async def get_feedback_stats(
     summary="Invalidate all cached research results",
     tags=["admin"],
     dependencies=[Depends(verify_api_key)],
+    response_model=CacheInvalidateResponse,
+    responses={
+        200: {
+            "description": "Cache invalidated",
+            "content": {"application/json": {"example": {"status": "ok", "cleared": 42}}},
+        },
+        401: {"description": "Missing or invalid API key"},
+        403: {"description": "User is not in ADMIN_EMAILS allowlist"},
+    },
 )
 @limiter.limit("5/minute")
 async def invalidate_research_cache(
     request: Request,
     admin: dict = Depends(verify_admin),
-) -> dict:
-    """Clear all cached Tavily search results. Admin-only."""
+) -> CacheInvalidateResponse:
+    """Clear all cached Tavily search results.
+
+    Forces fresh research on subsequent chat requests.
+
+    **Requires:** Admin privileges.
+    """
     count = await research_cache.invalidate_all()
     logger.info("Research cache invalidated by admin: %d entries cleared", count)
     return {"status": "ok", "cleared": count}
@@ -487,17 +678,36 @@ async def invalidate_research_cache(
     summary="Get aggregate security flag stats",
     tags=["admin"],
     dependencies=[Depends(verify_api_key)],
+    response_model=SecurityFlagsResponse,
+    responses={
+        200: {
+            "description": "Aggregate security flag statistics",
+            "content": {"application/json": {"example": {
+                "total_flags": 5,
+                "by_category": {"instruction_override": 3, "extraction_attempt": 2},
+                "by_source": {"message": 4, "pdf": 1},
+                "by_confidence": {"high": 3, "low": 2},
+                "unique_users": 2,
+                "active_cooldowns": 1,
+                "recent_flags": [],
+            }}},
+        },
+        401: {"description": "Missing or invalid API key"},
+        403: {"description": "User is not in ADMIN_EMAILS allowlist"},
+    },
 )
 @limiter.limit("10/minute")
 async def get_security_flags(
     request: Request,
     period: str = "week",
     admin: dict = Depends(verify_admin),
-) -> JSONResponse:
+) -> SecurityFlagsResponse:
     """Get aggregate prompt injection flag statistics for admin observability.
 
-    Args:
-        period: "day", "week", or "month".
+    **Query parameters:**
+    - `period`: Time window — "day", "week" (default), or "month"
+
+    **Requires:** Admin privileges.
     """
     if period not in ("day", "week", "month"):
         period = "week"
@@ -510,13 +720,28 @@ async def get_security_flags(
     summary="Get currently active cooldowns",
     tags=["admin"],
     dependencies=[Depends(verify_api_key)],
+    response_model=CooldownListResponse,
+    responses={
+        200: {
+            "description": "List of active cooldowns",
+            "content": {"application/json": {"example": {
+                "cooldowns": [{"user_hash": "abc123def456", "until": 1735689600, "remaining_seconds": 3600}],
+                "count": 1,
+            }}},
+        },
+        401: {"description": "Missing or invalid API key"},
+        403: {"description": "User is not in ADMIN_EMAILS allowlist"},
+    },
 )
 @limiter.limit("10/minute")
 async def get_active_cooldowns(
     request: Request,
     admin: dict = Depends(verify_admin),
-) -> JSONResponse:
-    """Get all currently active injection cooldowns for admin review."""
+) -> CooldownListResponse:
+    """Get all currently active injection cooldowns for admin review.
+
+    **Requires:** Admin privileges.
+    """
     cooldowns = await security_store.get_active_cooldowns()
     return JSONResponse(content={"cooldowns": cooldowns, "count": len(cooldowns)})
 
@@ -526,14 +751,29 @@ async def get_active_cooldowns(
     summary="Manually remove a user's cooldown (admin unblock)",
     tags=["admin"],
     dependencies=[Depends(verify_api_key)],
+    response_model=CooldownRemoveResponse,
+    responses={
+        200: {
+            "description": "Cooldown removed or not found",
+            "content": {"application/json": {"example": {"status": "ok", "user_hash": "abc123def456"}}},
+        },
+        401: {"description": "Missing or invalid API key"},
+        403: {"description": "User is not in ADMIN_EMAILS allowlist"},
+    },
 )
 @limiter.limit("10/minute")
 async def remove_cooldown(
     request: Request,
     user_hash: str,
     admin: dict = Depends(verify_admin),
-) -> dict:
-    """Manually remove a cooldown for a user (in case of false-positive lockout)."""
+) -> CooldownRemoveResponse:
+    """Manually remove a cooldown for a user (in case of false-positive lockout).
+
+    **Path parameters:**
+    - `user_hash`: The hashed user ID (12-char SHA256 prefix) to unblock
+
+    **Requires:** Admin privileges.
+    """
     removed = await security_store.remove_cooldown(user_hash)
     logger.info("Cooldown removed for user_hash=%s by admin (removed=%s)", user_hash, removed)
     return {"status": "ok" if removed else "not_found", "user_hash": user_hash}
@@ -562,9 +802,25 @@ def _sanitize_preferences_sections(content: str) -> str:
     summary="Get user preferences",
     tags=["preferences"],
     dependencies=[Depends(verify_api_key)],
+    response_model=None,
+    responses={
+        200: {
+            "description": "User preferences as Markdown text",
+            "content": {"text/plain": {"example": "<user_instructions>\nI prefer budget travel.\n</user_instructions>"}},
+        },
+        401: {"description": "Missing or invalid API key"},
+        503: {"description": "Preferences store unavailable"},
+    },
 )
 @limiter.limit("30/minute")
 async def get_preferences(request: Request, user: dict = Depends(get_current_user)) -> PlainTextResponse:
+    """Get the current user's preferences as Markdown text.
+
+    Returns the raw `preferences.md` content stored for the user.
+    Empty string if no preferences have been saved.
+
+    **Response:** `text/plain` — Markdown content of `preferences.md`.
+    """
     user_id = user["user_id"]
     locale = extract_locale(request)
     logger.info("GET /preferences user=%s locale=%s", user_id, locale)
@@ -585,9 +841,23 @@ async def get_preferences(request: Request, user: dict = Depends(get_current_use
     summary="Save user preferences",
     tags=["preferences"],
     dependencies=[Depends(verify_api_key)],
+    response_model=PreferencesSaveResponse,
+    responses={
+        200: {
+            "description": "Preferences saved successfully",
+            "content": {"application/json": {"example": {"status": "ok", "user_id": "user@example.com"}}},
+        },
+        401: {"description": "Missing or invalid API key"},
+        503: {"description": "Preferences store unavailable"},
+    },
 )
 @limiter.limit("30/minute")
-async def put_preferences(request: Request, user: dict = Depends(get_current_user)) -> dict[str, str]:
+async def put_preferences(request: Request, user: dict = Depends(get_current_user)) -> PreferencesSaveResponse:
+    """Save user preferences as Markdown text.
+
+    **Request body:** Raw Markdown text (not JSON). The body is stored as `preferences.md`.
+    XML-like tags in the `<user_instructions>` section are stripped for safety.
+    """
     user_id = user["user_id"]
     locale = extract_locale(request)
     logger.info("PUT /preferences user=%s locale=%s", user_id, locale)
@@ -614,13 +884,37 @@ ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".pdf"}
     summary="Upload a file (image or PDF) for chat attachments",
     tags=["upload"],
     dependencies=[Depends(verify_api_key)],
+    response_model=UploadResponse,
+    responses={
+        200: {
+            "description": "File uploaded successfully",
+            "content": {"application/json": {"example": {
+                "file_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+                "data_url": "data:image/jpeg;base64,/9j/4AAQ...",
+                "filename": "photo.jpg",
+                "content_type": "image/jpeg",
+                "size": 102400,
+            }}},
+        },
+        400: {"description": "Empty file"},
+        401: {"description": "Missing or invalid API key"},
+        413: {"description": "File too large (max 10MB)"},
+        415: {"description": "Unsupported file type or extension"},
+    },
 )
 @limiter.limit("10/minute")
 async def upload_file(
     request: Request,
     file: UploadFile = FastAPIFile(...),
     user: dict = Depends(get_current_user),
-) -> dict:
+) -> UploadResponse:
+    """Upload a file (image or PDF) for use as a chat attachment.
+
+    **Request body:** `multipart/form-data` with a `file` field.
+    Supported types: JPG, PNG, WebP, PDF. Max size: 10MB.
+
+    Files are stored in Redis with a 1-hour TTL and auto-expire.
+    """
     user_id = user["user_id"]
 
     # Validate content type
@@ -651,6 +945,16 @@ async def upload_file(
     summary="Stream chat conversation with the travel agent",
     tags=["chat"],
     dependencies=[Depends(verify_api_key)],
+    response_model=None,
+    responses={
+        200: {
+            "description": "Server-Sent Events stream of chat tokens and events",
+            "content": {"text/event-stream": {"example": "event: thread_id\ndata: {\"event\": \"thread_id\", \"data\": {\"thread_id\": \"chat:abc123:def456\"}}\n\nevent: token\ndata: {\"event\": \"token\", \"data\": \"Hello\"}\n"}},
+        },
+        400: {"description": "Prompt injection detected — request blocked"},
+        401: {"description": "Missing or invalid API key"},
+        429: {"description": "Rate limit exceeded or user in cooldown"},
+    },
 )
 @limiter.limit("20/minute")
 async def chat_stream(
@@ -658,6 +962,17 @@ async def chat_stream(
     request: Request,
     user: dict = Depends(get_current_user),
 ) -> EventSourceResponse:
+    """Stream a chat conversation with the AI travel agent.
+
+    Returns a Server-Sent Events (SSE) stream with token-by-token LLM output,
+    subagent status updates, itinerary/comparison data, images, charts, and usage stats.
+
+    **Request body:** `ChatRequest` with `message` (required), optional `thread_id`,
+    `locale`, `timezone`, `attachments`, and `client_message_id`.
+
+    **SSE event types:** `thread_id`, `status`, `token`, `itinerary`, `comparison`,
+    `image`, `chart`, `usage`, `tool_error`, `subagent_progress`, `cancelled`, `error`, `done`.
+    """
     _msg_safe = sanitize_prompt_input(chat_req.message, "message")
 
     user_id = user["user_id"]
@@ -803,13 +1118,28 @@ async def chat_stream(
     summary="Cancel an active chat stream",
     tags=["chat"],
     dependencies=[Depends(verify_api_key)],
+    response_model=ChatCancelResponse,
+    responses={
+        200: {
+            "description": "Cancellation status",
+            "content": {"application/json": {"example": {"cancelled": True}}},
+        },
+        400: {"description": "Missing thread_id in request body"},
+        401: {"description": "Missing or invalid API key"},
+    },
 )
 @limiter.limit("30/minute")
 async def chat_cancel(
     request: Request,
     body: dict,
     user: dict = Depends(get_current_user),
-) -> dict:
+) -> ChatCancelResponse:
+    """Cancel an active chat stream for a given thread.
+
+    **Request body:** `{"thread_id": "..."}` — the thread ID to cancel.
+
+    Returns `cancelled: true` if a stream was found and cancelled, `false` otherwise.
+    """
     thread_id = body.get("thread_id", "")
     if not thread_id:
         raise HTTPException(status_code=400, detail="thread_id required")
@@ -824,6 +1154,15 @@ async def chat_cancel(
     summary="Regenerate the last assistant response",
     tags=["chat"],
     dependencies=[Depends(verify_api_key)],
+    response_model=None,
+    responses={
+        200: {
+            "description": "Server-Sent Events stream of regenerated chat tokens",
+            "content": {"text/event-stream": {"example": "event: thread_id\ndata: {\"event\": \"thread_id\", \"data\": {\"thread_id\": \"chat:abc123:def456\"}}\n"}},
+        },
+        400: {"description": "Missing thread_id"},
+        401: {"description": "Missing or invalid API key"},
+    },
 )
 @limiter.limit("30/minute")
 async def chat_regenerate(
@@ -831,6 +1170,12 @@ async def chat_regenerate(
     body: dict,
     user: dict = Depends(get_current_user),
 ):
+    """Regenerate the last assistant response for a thread.
+
+    Returns a Server-Sent Events (SSE) stream — same event types as `/chat/stream`.
+
+    **Request body:** `{"thread_id": "...", "locale": "en", "timezone": "Asia/Kolkata"}`
+    """
     raw_thread_id = body.get("thread_id", "")
     if not raw_thread_id:
         raise HTTPException(status_code=400, detail="thread_id required")
@@ -902,6 +1247,15 @@ async def chat_regenerate(
     summary="Edit the last user message and regenerate the assistant response",
     tags=["chat"],
     dependencies=[Depends(verify_api_key)],
+    response_model=None,
+    responses={
+        200: {
+            "description": "Server-Sent Events stream of edited chat tokens",
+            "content": {"text/event-stream": {"example": "event: thread_id\ndata: {\"event\": \"thread_id\", \"data\": {\"thread_id\": \"chat:abc123:def456\"}}\n"}},
+        },
+        400: {"description": "Missing thread_id or message"},
+        401: {"description": "Missing or invalid API key"},
+    },
 )
 @limiter.limit("30/minute")
 async def chat_edit(
@@ -909,6 +1263,13 @@ async def chat_edit(
     body: dict,
     user: dict = Depends(get_current_user),
 ):
+    """Edit the last user message and regenerate the assistant response.
+
+    Replaces the last user message with the new text and regenerates the response.
+    Returns a Server-Sent Events (SSE) stream — same event types as `/chat/stream`.
+
+    **Request body:** `{"thread_id": "...", "message": "new text", "locale": "en", "timezone": "Asia/Kolkata"}`
+    """
     raw_thread_id = body.get("thread_id", "")
     if not raw_thread_id:
         raise HTTPException(status_code=400, detail="thread_id required")
@@ -985,6 +1346,17 @@ async def chat_edit(
     summary="List user's recent threads",
     tags=["threads"],
     dependencies=[Depends(verify_api_key)],
+    response_model=ThreadListResponse,
+    responses={
+        200: {
+            "description": "List of threads with pagination info",
+            "content": {"application/json": {"example": {
+                "threads": [{"thread_id": "chat:abc123:def456", "summary": "Paris trip plan", "created_at": 1735689600, "updated_at": 1735693200, "status": "idle", "message_count": 4, "pinned": False, "pinned_at": 0}],
+                "has_more": False,
+            }}},
+        },
+        401: {"description": "Missing or invalid API key"},
+    },
 )
 @limiter.limit("30/minute")
 async def list_threads(
@@ -992,7 +1364,15 @@ async def list_threads(
     offset: int = 0,
     limit: int = 20,
     user: dict = Depends(get_current_user),
-) -> dict:
+) -> ThreadListResponse:
+    """List the user's recent conversation threads.
+
+    Threads are sorted: pinned first (by pinned_at desc), then by updated_at desc.
+
+    **Query parameters:**
+    - `offset`: Pagination offset (default 0)
+    - `limit`: Page size (default 20)
+    """
     user_id = user["user_id"]
     locale = extract_locale(request)
     logger.info("GET /threads user=%s locale=%s offset=%d", user_id, locale, offset)
@@ -1012,6 +1392,18 @@ async def list_threads(
     summary="Search across all user's thread messages",
     tags=["threads"],
     dependencies=[Depends(verify_api_key)],
+    response_model=ThreadSearchResponse,
+    responses={
+        200: {
+            "description": "Search results with pagination info",
+            "content": {"application/json": {"example": {
+                "results": [{"thread_id": "chat:abc123:def456", "summary": "Paris trip", "snippet": "...Eiffel Tower...", "created_at": 1735689600}],
+                "total": 1,
+                "has_more": False,
+            }}},
+        },
+        401: {"description": "Missing or invalid API key"},
+    },
 )
 @limiter.limit("30/minute")
 async def search_threads(
@@ -1020,8 +1412,14 @@ async def search_threads(
     offset: int = 0,
     limit: int = 20,
     user: dict = Depends(get_current_user),
-) -> dict:
-    """Full-text search across all user's thread message content."""
+) -> ThreadSearchResponse:
+    """Full-text search across all user's thread message content.
+
+    **Query parameters:**
+    - `q`: Search query string
+    - `offset`: Pagination offset (default 0)
+    - `limit`: Page size (default 20)
+    """
     if not q.strip():
         return JSONResponse(content={"results": [], "total": 0, "has_more": False})
     user_id = user["user_id"]
@@ -1041,6 +1439,20 @@ async def search_threads(
     summary="Get thread message history",
     tags=["threads"],
     dependencies=[Depends(verify_api_key)],
+    response_model=list[ThreadMessage],
+    responses={
+        200: {
+            "description": "List of messages in the thread",
+            "content": {"application/json": {"example": [
+                {"role": "user", "content": "Plan a trip to Paris"},
+                {"role": "assistant", "content": "Here's a 3-day Paris itinerary...", "itinerary": {"destination": "Paris"}},
+            ]}},
+        },
+        401: {"description": "Missing or invalid API key"},
+        403: {"description": "Thread does not belong to this user"},
+        404: {"description": "Thread not found or empty"},
+        503: {"description": "Failed to load thread history"},
+    },
 )
 @limiter.limit("30/minute")
 async def get_thread_history(
@@ -1048,7 +1460,17 @@ async def get_thread_history(
     request: Request,
     checkpoint_id: str | None = None,
     user: dict = Depends(get_current_user),
-) -> list[dict]:
+) -> list[ThreadMessage]:
+    """Get the full message history for a thread.
+
+    **Path parameters:**
+    - `thread_id`: The thread ID to fetch history for
+
+    **Query parameters:**
+    - `checkpoint_id`: Optional checkpoint ID to fetch a specific version
+
+    Assistant messages may include `itinerary`, `comparison`, `activity`, `images`, and `charts` fields.
+    """
     user_id = user["user_id"]
     locale = extract_locale(request)
     logger.info("GET /threads/%s/history user=%s locale=%s checkpoint_id=%s", thread_id, user_id, locale, checkpoint_id)
@@ -1146,13 +1568,33 @@ async def get_thread_history(
     summary="List branches for the last assistant response",
     tags=["threads"],
     dependencies=[Depends(verify_api_key)],
+    response_model=ThreadBranchesResponse,
+    responses={
+        200: {
+            "description": "List of branches from the fork point",
+            "content": {"application/json": {"example": {
+                "branches": [{"checkpoint_id": "abc-123", "is_current": True, "preview": "Here's a 3-day Paris itinerary..."}],
+            }}},
+        },
+        401: {"description": "Missing or invalid API key"},
+        403: {"description": "Thread does not belong to this user"},
+        503: {"description": "Failed to load branches"},
+    },
 )
 @limiter.limit("30/minute")
 async def get_thread_branches(
     thread_id: str,
     request: Request,
     user: dict = Depends(get_current_user),
-) -> dict:
+) -> ThreadBranchesResponse:
+    """List all branches (alternative responses) from the last assistant response's fork point.
+
+    **Path parameters:**
+    - `thread_id`: The thread ID to inspect
+
+    Returns checkpoints that share the same parent (fork point), with `is_current` flag
+    and a 200-char preview of each branch's last message.
+    """
     user_id = user["user_id"]
     logger.info("GET /threads/%s/branches user=%s", thread_id, user_id)
 
@@ -1227,13 +1669,30 @@ async def get_thread_branches(
     summary="Delete a thread",
     tags=["threads"],
     dependencies=[Depends(verify_api_key)],
+    response_model=ThreadDeleteResponse,
+    responses={
+        200: {
+            "description": "Thread deleted successfully",
+            "content": {"application/json": {"example": {"status": "ok", "thread_id": "chat:abc123:def456"}}},
+        },
+        401: {"description": "Missing or invalid API key"},
+        403: {"description": "Thread does not belong to this user"},
+        404: {"description": "Thread not found"},
+    },
 )
 @limiter.limit("30/minute")
 async def delete_thread(
     thread_id: str,
     request: Request,
     user: dict = Depends(get_current_user),
-) -> dict:
+) -> ThreadDeleteResponse:
+    """Delete a thread and its underlying checkpoint state.
+
+    **Path parameters:**
+    - `thread_id`: The thread ID to delete
+
+    Removes both the thread metadata and the langgraph checkpointer state.
+    """
     user_id = user["user_id"]
 
     # Security: verify ownership via prefix check
@@ -1263,6 +1722,16 @@ async def delete_thread(
     summary="Update thread metadata (e.g., pin/unpin)",
     tags=["threads"],
     dependencies=[Depends(verify_api_key)],
+    response_model=ThreadUpdateResponse,
+    responses={
+        200: {
+            "description": "Thread updated successfully",
+            "content": {"application/json": {"example": {"status": "ok", "thread_id": "chat:abc123:def456"}}},
+        },
+        401: {"description": "Missing or invalid API key"},
+        403: {"description": "Thread does not belong to this user"},
+        404: {"description": "Thread not found"},
+    },
 )
 @limiter.limit("30/minute")
 async def update_thread(
@@ -1270,7 +1739,14 @@ async def update_thread(
     request: Request,
     body: ThreadUpdateRequest,
     user: dict = Depends(get_current_user),
-) -> dict:
+) -> ThreadUpdateResponse:
+    """Update thread metadata (e.g., pin or unpin a thread).
+
+    **Path parameters:**
+    - `thread_id`: The thread ID to update
+
+    **Request body:** `ThreadUpdateRequest` with optional `pinned` boolean.
+    """
     user_id = user["user_id"]
 
     # Security: verify ownership via prefix check
@@ -1287,9 +1763,23 @@ async def update_thread(
     return JSONResponse(content={"status": "ok", "thread_id": thread_id})
 
 
-@app.get("/auth/login", summary="Google OAuth login", tags=["auth"])
+@app.get(
+    "/auth/login",
+    summary="Google OAuth login",
+    tags=["auth"],
+    response_model=None,
+    responses={
+        302: {"description": "Redirect to Google OAuth consent screen (or dev-bypass callback)"},
+    },
+)
 async def auth_login(request: Request) -> RedirectResponse:
-    """Redirect to Google OAuth consent screen (or dev-bypass session)."""
+    """Redirect to Google OAuth consent screen.
+
+    In development mode (`AUTH_DEV_BYPASS=true`), creates a dev session and
+    redirects to the frontend callback directly.
+
+    **Returns:** 302 redirect — no JSON response.
+    """
     if settings.AUTH_DEV_BYPASS:
         session_id = await create_session(DEV_USER)
         resp = RedirectResponse(url="http://localhost:3000/auth/callback?success=1")
@@ -1302,9 +1792,23 @@ async def auth_login(request: Request) -> RedirectResponse:
     return await oauth.google.authorize_redirect(request, redirect_uri)
 
 
-@app.get("/auth/callback", summary="OAuth callback handler", tags=["auth"])
+@app.get(
+    "/auth/callback",
+    summary="OAuth callback handler",
+    tags=["auth"],
+    response_model=None,
+    responses={
+        302: {"description": "Redirect to frontend with session cookie set"},
+        400: {"description": "No email in Google response"},
+    },
+)
 async def auth_callback(request: Request) -> RedirectResponse:
-    """Handle Google OAuth callback — exchange code for user info, create session."""
+    """Handle Google OAuth callback — exchange code for user info, create session.
+
+    Sets a session cookie and redirects to the frontend callback URL.
+
+    **Returns:** 302 redirect with `Set-Cookie` header.
+    """
     token = await oauth.google.authorize_access_token(request)
     user_info = token.get("userinfo") or {}
     email = user_info.get("email")
@@ -1325,9 +1829,23 @@ async def auth_callback(request: Request) -> RedirectResponse:
     return resp
 
 
-@app.post("/auth/logout", summary="Logout", tags=["auth"])
-async def auth_logout(request: Request) -> JSONResponse:
-    """Clear session cookie and delete session from Redis."""
+@app.post(
+    "/auth/logout",
+    summary="Logout",
+    tags=["auth"],
+    response_model=AuthLogoutResponse,
+    responses={
+        200: {
+            "description": "Logged out successfully",
+            "content": {"application/json": {"example": {"status": "ok"}}},
+        },
+    },
+)
+async def auth_logout(request: Request) -> AuthLogoutResponse:
+    """Clear session cookie and delete session from Redis.
+
+    No authentication required — always returns 200.
+    """
     session_id = request.cookies.get(SESSION_COOKIE_NAME)
     if session_id:
         await delete_session(session_id)
@@ -1336,9 +1854,29 @@ async def auth_logout(request: Request) -> JSONResponse:
     return response
 
 
-@app.get("/auth/me", summary="Get current user", tags=["auth"])
-async def auth_me(user: dict = Depends(get_current_user)) -> dict:
-    """Return current user info from session."""
+@app.get(
+    "/auth/me",
+    summary="Get current user",
+    tags=["auth"],
+    response_model=AuthMeResponse,
+    responses={
+        200: {
+            "description": "Current user info",
+            "content": {"application/json": {"example": {
+                "user_id": "user@example.com",
+                "display_name": "Jane Doe",
+                "avatar_url": "https://lh3.googleusercontent.com/...",
+                "email": "user@example.com",
+            }}},
+        },
+        401: {"description": "Not authenticated"},
+    },
+)
+async def auth_me(user: dict = Depends(get_current_user)) -> AuthMeResponse:
+    """Return current user info from session.
+
+    Requires a valid session cookie.
+    """
     return user
 
 
@@ -1413,13 +1951,34 @@ async def _get_latest_itinerary(thread_id: str, user_id: str) -> dict | None:
     summary="Create a shareable link for an itinerary",
     tags=["share"],
     dependencies=[Depends(verify_api_key)],
+    response_model=ShareCreateResponse,
+    responses={
+        200: {
+            "description": "Share link created",
+            "content": {"application/json": {"example": {
+                "share_url": "http://localhost:3000/en/share/abc123def456",
+                "expires_at": 1736294400,
+                "destination": "Paris",
+            }}},
+        },
+        401: {"description": "Missing or invalid API key"},
+        404: {"description": "No itinerary found in this thread"},
+    },
 )
 @limiter.limit("10/minute")
 async def create_share_link(
     thread_id: str,
     request: Request,
     user: dict = Depends(get_current_user),
-) -> dict:
+) -> ShareCreateResponse:
+    """Create a shareable link for an itinerary.
+
+    **Path parameters:**
+    - `thread_id`: The thread containing the itinerary to share
+
+    The itinerary is enriched with coordinates and stored with a token.
+    Share links expire after `SHARE_TTL_DAYS` (default 7 days).
+    """
     user_id = user["user_id"]
     itinerary = await _get_latest_itinerary(thread_id, user_id)
     if itinerary is None:
@@ -1440,12 +1999,33 @@ async def create_share_link(
     "/share/{token}",
     summary="Get shared itinerary (public, no auth)",
     tags=["share"],
+    response_model=ShareGetResponse,
+    responses={
+        200: {
+            "description": "Shared itinerary data",
+            "content": {"application/json": {"example": {
+                "itinerary": {"destination": "Paris", "total_days": 3, "estimated_total_cost_usd": 1500},
+                "destination": "Paris",
+                "created_at": 1735689600,
+                "expires_at": 1736294400,
+            }}},
+        },
+        404: {"description": "Share link not found or expired"},
+        500: {"description": "Corrupted share data"},
+    },
 )
 @limiter.limit("60/minute")
 async def get_shared_itinerary(
     token: str,
     request: Request,
-) -> dict:
+) -> ShareGetResponse:
+    """Get a shared itinerary by token.
+
+    **Public endpoint — no authentication required.**
+
+    **Path parameters:**
+    - `token`: The share token from the URL
+    """
     data = await share_store.get_share(token)
     if data is None:
         raise HTTPException(status_code=404, detail="Share link not found or expired")
@@ -1466,13 +2046,29 @@ async def get_shared_itinerary(
     summary="Revoke a share link",
     tags=["share"],
     dependencies=[Depends(verify_api_key)],
+    response_model=ShareRevokeResponse,
+    responses={
+        200: {
+            "description": "Share link revoked",
+            "content": {"application/json": {"example": {"status": "ok"}}},
+        },
+        401: {"description": "Missing or invalid API key"},
+        404: {"description": "Share link not found"},
+    },
 )
 @limiter.limit("20/minute")
 async def revoke_share_link(
     token: str,
     request: Request,
     user: dict = Depends(get_current_user),
-) -> dict:
+) -> ShareRevokeResponse:
+    """Revoke a share link.
+
+    **Path parameters:**
+    - `token`: The share token to revoke
+
+    Only the original creator can revoke a share link.
+    """
     user_id = user["user_id"]
     revoked = await share_store.revoke_share(user_id, token)
     if not revoked:
@@ -1486,12 +2082,26 @@ async def revoke_share_link(
     summary="List user's active share links",
     tags=["share"],
     dependencies=[Depends(verify_api_key)],
+    response_model=list[ShareListItem],
+    responses={
+        200: {
+            "description": "List of active share links",
+            "content": {"application/json": {"example": [
+                {"token": "abc123def456", "thread_id": "chat:abc123:def456", "destination": "Paris", "created_at": 1735689600, "expires_at": 1736294400, "share_url": "http://localhost:3000/share/abc123def456"},
+            ]}},
+        },
+        401: {"description": "Missing or invalid API key"},
+    },
 )
 @limiter.limit("30/minute")
 async def list_shares(
     request: Request,
     user: dict = Depends(get_current_user),
-) -> list[dict]:
+) -> list[ShareListItem]:
+    """List all active share links for the current user.
+
+    Expired shares are automatically filtered out.
+    """
     user_id = user["user_id"]
     shares = await share_store.list_shares(user_id)
     return [
@@ -1509,10 +2119,22 @@ async def list_shares(
 
 @app.get(
     "/export/{thread_id}",
-    summary="Export itinerary as JSON or Markdown",
+    summary="Export itinerary as JSON, Markdown, or iCal",
     tags=["export"],
     dependencies=[Depends(verify_api_key)],
     response_model=None,
+    responses={
+        200: {
+            "description": "Exported itinerary file",
+            "content": {
+                "application/json": {"example": {"destination": "Paris", "total_days": 3}},
+                "text/markdown": {"example": "# Paris\n\n**Duration:** 3 days"},
+                "text/calendar": {"example": "BEGIN:VCALENDAR\nVERSION:2.0\n..."},
+            },
+        },
+        401: {"description": "Missing or invalid API key"},
+        404: {"description": "No itinerary found in this thread"},
+    },
 )
 @limiter.limit("10/minute")
 async def export_itinerary(
@@ -1521,6 +2143,16 @@ async def export_itinerary(
     fmt: str = "json",
     user: dict = Depends(get_current_user),
 ) -> JSONResponse | PlainTextResponse:
+    """Export an itinerary in JSON, Markdown, or iCal format.
+
+    **Path parameters:**
+    - `thread_id`: The thread containing the itinerary
+
+    **Query parameters:**
+    - `fmt`: Export format — "json" (default), "markdown", or "ical"
+
+    Returns a file download with appropriate `Content-Type` and `Content-Disposition` headers.
+    """
     user_id = user["user_id"]
     itinerary = await _get_latest_itinerary(thread_id, user_id)
     if itinerary is None:
@@ -1544,6 +2176,19 @@ async def export_itinerary(
         itinerary,
         headers={"Content-Disposition": f'attachment; filename="{itinerary.get("destination", "itinerary").replace(" ", "_")}.json"'},
     )
+
+
+@app.on_event("startup")
+async def _export_openapi_schema() -> None:
+    """Export OpenAPI JSON to static file for frontend consumption."""
+    import os
+    static_dir = os.path.join(os.path.dirname(__file__), "static")
+    os.makedirs(static_dir, exist_ok=True)
+    schema = app.openapi()
+    path = os.path.join(static_dir, "openapi.json")
+    with open(path, "w") as f:
+        json.dump(schema, f, indent=2)
+    logger.info("OpenAPI schema exported to %s (%d endpoints)", path, len(schema.get("paths", {})))
 
 
 @app.on_event("startup")
