@@ -1671,7 +1671,7 @@
           "auth"
         ],
         "summary": "Google OAuth login",
-        "description": "Redirect to Google OAuth consent screen.\n\nIn development mode (`AUTH_DEV_BYPASS=true`), creates a dev session and\nredirects to the frontend callback directly.\n\n**Returns:** 302 redirect \u2014 no JSON response.",
+        "description": "Redirect to Google OAuth consent screen.\n\nAlways redirects to Google OAuth \u2014 no dev bypass.\n\n**Returns:** 302 redirect \u2014 no JSON response.",
         "operationId": "auth_login_auth_login_get",
         "responses": {
           "200": {
@@ -1683,7 +1683,7 @@
             }
           },
           "302": {
-            "description": "Redirect to Google OAuth consent screen (or dev-bypass callback)"
+            "description": "Redirect to Google OAuth consent screen"
           }
         }
       }
