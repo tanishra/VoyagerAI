@@ -13,6 +13,16 @@ from fastapi.testclient import TestClient
 from threads import ThreadStore
 
 
+def _create_dev_session():
+    """Create a real dev session and return the session ID."""
+    from oauth import DEV_USER, create_session
+    loop = asyncio.new_event_loop()
+    try:
+        return loop.run_until_complete(create_session(DEV_USER))
+    finally:
+        loop.close()
+
+
 @pytest.fixture
 def fresh_store():
     """A ThreadStore with no Redis connection — uses in-memory fallback."""
@@ -26,12 +36,14 @@ def client(fresh_store, monkeypatch):
     """TestClient with the thread_store patched to use in-memory."""
     import main as main_module
 
-    monkeypatch.setattr("config.settings.AUTH_DEV_BYPASS", True)
+    session_id = _create_dev_session()
     with (
         patch.object(main_module, "thread_store", fresh_store),
         patch.object(main_module, "stream_chat_agent", _fake_stream),
         TestClient(main_module.app) as c,
     ):
+        c.cookies.set("voyager_session", session_id)
+        c.cookies.set("voyager_csrf", "test-csrf-token")
         yield c
 
 
@@ -129,7 +141,7 @@ class TestThreadPinningEndpoint:
         thread_id = f"chat:{user_tag}:t1"
         asyncio.run(fresh_store.upsert_thread("dev@localhost", thread_id, "Tokyo trip"))
 
-        resp = client.patch(f"/threads/{thread_id}", json={"pinned": True})
+        resp = client.patch(f"/threads/{thread_id}", json={"pinned": True}, headers={"X-CSRF-Token": "test-csrf-token"})
         assert resp.status_code == 200
         assert resp.json()["status"] == "ok"
 
@@ -147,7 +159,7 @@ class TestThreadPinningEndpoint:
         asyncio.run(fresh_store.upsert_thread("dev@localhost", thread_id, "Tokyo trip"))
         asyncio.run(fresh_store.update_pin_status("dev@localhost", thread_id, True))
 
-        resp = client.patch(f"/threads/{thread_id}", json={"pinned": False})
+        resp = client.patch(f"/threads/{thread_id}", json={"pinned": False}, headers={"X-CSRF-Token": "test-csrf-token"})
         assert resp.status_code == 200
 
         # Verify via GET /threads
@@ -162,5 +174,5 @@ class TestThreadPinningEndpoint:
         thread_id = f"chat:{alice_tag}:t1"
         asyncio.run(fresh_store.upsert_thread("alice", thread_id, "Alice trip"))
 
-        resp = client.patch(f"/threads/{thread_id}", json={"pinned": True})
+        resp = client.patch(f"/threads/{thread_id}", json={"pinned": True}, headers={"X-CSRF-Token": "test-csrf-token"})
         assert resp.status_code == 403

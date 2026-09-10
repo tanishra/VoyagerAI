@@ -16,6 +16,17 @@ import pytest
 from fastapi.testclient import TestClient
 
 
+def _create_dev_session():
+    """Create a real dev session and return the session ID."""
+    import asyncio
+    from oauth import DEV_USER, create_session
+    loop = asyncio.new_event_loop()
+    try:
+        return loop.run_until_complete(create_session(DEV_USER))
+    finally:
+        loop.close()
+
+
 def _make_capturing_stream(captured: list):
     """Return an async generator that captures the locale kwarg."""
 
@@ -29,10 +40,9 @@ def _make_capturing_stream(captured: list):
 
 @pytest.fixture
 def client(monkeypatch):
-    """TestClient with auth bypass and mocked stream_chat_agent."""
+    """TestClient with session injection and mocked stream_chat_agent."""
     import main as main_module
 
-    monkeypatch.setattr("config.settings.AUTH_DEV_BYPASS", True)
     monkeypatch.setenv("GEMINI_API_KEY", "test-key-for-locale-tests")
 
     async def _fake_stream(*, message, thread_id, user_id, locale=None, timezone=None, cancel_event=None, attachments=None):
@@ -41,7 +51,10 @@ def client(monkeypatch):
 
     monkeypatch.setattr(main_module, "stream_chat_agent", _fake_stream)
 
+    session_id = _create_dev_session()
     with TestClient(main_module.app) as c:
+        c.cookies.set("voyager_session", session_id)
+        c.cookies.set("voyager_csrf", "test-csrf-token")
         yield c
 
 

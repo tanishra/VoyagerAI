@@ -16,6 +16,17 @@ from fastapi.testclient import TestClient
 from file_store import FileStore
 
 
+def _create_dev_session():
+    """Create a real dev session and return the session ID."""
+    import asyncio
+    from oauth import DEV_USER, create_session
+    loop = asyncio.new_event_loop()
+    try:
+        return loop.run_until_complete(create_session(DEV_USER))
+    finally:
+        loop.close()
+
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -34,14 +45,14 @@ def client(fresh_file_store, monkeypatch):
     """TestClient with the file_store patched to use in-memory."""
     import main as main_module
 
-    monkeypatch.setattr("config.settings.AUTH_DEV_BYPASS", True)
+    session_id = _create_dev_session()
     with (
         patch.object(main_module, "file_store", fresh_file_store),
         patch.object(main_module, "stream_chat_agent", _fake_stream),
         TestClient(main_module.app) as c,
     ):
-        # Establish dev-bypass session
-        c.get("/auth/login", follow_redirects=False)
+        c.cookies.set("voyager_session", session_id)
+        c.cookies.set("voyager_csrf", "test-csrf-token")
         yield c
 
 
@@ -95,6 +106,7 @@ class TestUploadEndpoint:
         resp = client.post(
             "/upload",
             files={"file": ("test.jpg", b"\xff\xd8\xff\xe0\x00\x10", "image/jpeg")},
+            headers={"X-CSRF-Token": "test-csrf-token"},
         )
         assert resp.status_code == 200
         data = resp.json()
@@ -107,6 +119,7 @@ class TestUploadEndpoint:
         resp = client.post(
             "/upload",
             files={"file": ("doc.pdf", b"%PDF-1.4 test", "application/pdf")},
+            headers={"X-CSRF-Token": "test-csrf-token"},
         )
         assert resp.status_code == 200
         data = resp.json()
@@ -117,6 +130,7 @@ class TestUploadEndpoint:
         resp = client.post(
             "/upload",
             files={"file": ("big.jpg", big_data, "image/jpeg")},
+            headers={"X-CSRF-Token": "test-csrf-token"},
         )
         assert resp.status_code == 413
 
@@ -124,6 +138,7 @@ class TestUploadEndpoint:
         resp = client.post(
             "/upload",
             files={"file": ("test.txt", b"hello", "text/plain")},
+            headers={"X-CSRF-Token": "test-csrf-token"},
         )
         assert resp.status_code == 415
 
@@ -234,6 +249,7 @@ class TestChatStreamWithAttachments:
         upload_resp = client.post(
             "/upload",
             files={"file": ("test.jpg", b"\xff\xd8\xff\xe0\x00\x10", "image/jpeg")},
+            headers={"X-CSRF-Token": "test-csrf-token"},
         )
         assert upload_resp.status_code == 200
         att = upload_resp.json()
@@ -261,6 +277,7 @@ class TestChatStreamWithAttachments:
         upload_resp = client.post(
             "/upload",
             files={"file": ("doc.pdf", pdf_bytes, "application/pdf")},
+            headers={"X-CSRF-Token": "test-csrf-token"},
         )
         assert upload_resp.status_code == 200
         att = upload_resp.json()

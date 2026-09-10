@@ -15,6 +15,17 @@ from fastapi.testclient import TestClient
 
 from share_store import ShareStore
 
+
+def _create_dev_session():
+    """Create a real dev session and return the session ID."""
+    import asyncio
+    from oauth import DEV_USER, create_session
+    loop = asyncio.new_event_loop()
+    try:
+        return loop.run_until_complete(create_session(DEV_USER))
+    finally:
+        loop.close()
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -61,20 +72,22 @@ def _make_scoped_thread_id(user_id="dev@localhost"):
 
 @pytest.fixture
 def client(fresh_share_store, monkeypatch):
-    """TestClient with share_store patched and dev bypass enabled."""
+    """TestClient with share_store patched and session injection."""
     import main as main_module
-
-    monkeypatch.setattr("config.settings.AUTH_DEV_BYPASS", True)
 
     # Mock _get_latest_itinerary to return a fake itinerary
     fake_itinerary = _make_itinerary()
     mock_get_itinerary = AsyncMock(return_value=fake_itinerary)
+
+    session_id = _create_dev_session()
 
     with (
         patch.object(main_module, "share_store", fresh_share_store),
         patch.object(main_module, "_get_latest_itinerary", mock_get_itinerary),
         TestClient(main_module.app) as c,
     ):
+        c.cookies.set("voyager_session", session_id)
+        c.cookies.set("voyager_csrf", "test-csrf-token")
         yield c
 
 
@@ -83,14 +96,17 @@ def client_no_itinerary(fresh_share_store, monkeypatch):
     """TestClient where _get_latest_itinerary returns None (no itinerary)."""
     import main as main_module
 
-    monkeypatch.setattr("config.settings.AUTH_DEV_BYPASS", True)
     mock_get_itinerary = AsyncMock(return_value=None)
+
+    session_id = _create_dev_session()
 
     with (
         patch.object(main_module, "share_store", fresh_share_store),
         patch.object(main_module, "_get_latest_itinerary", mock_get_itinerary),
         TestClient(main_module.app) as c,
     ):
+        c.cookies.set("voyager_session", session_id)
+        c.cookies.set("voyager_csrf", "test-csrf-token")
         yield c
 
 # ---------------------------------------------------------------------------
@@ -194,7 +210,7 @@ class TestShareStore:
 class TestShareEndpoints:
     def test_create_share_link(self, client):
         thread_id = _make_scoped_thread_id()
-        resp = client.post(f"/share/{thread_id}")
+        resp = client.post(f"/share/{thread_id}", headers={"X-CSRF-Token": "test-csrf-token"})
         assert resp.status_code == 200
         data = resp.json()
         assert "share_url" in data
@@ -204,13 +220,13 @@ class TestShareEndpoints:
 
     def test_create_share_no_itinerary(self, client_no_itinerary):
         thread_id = _make_scoped_thread_id()
-        resp = client_no_itinerary.post(f"/share/{thread_id}")
+        resp = client_no_itinerary.post(f"/share/{thread_id}", headers={"X-CSRF-Token": "test-csrf-token"})
         assert resp.status_code == 404
 
     def test_get_shared_itinerary(self, client):
         thread_id = _make_scoped_thread_id()
         # Create a share
-        resp = client.post(f"/share/{thread_id}")
+        resp = client.post(f"/share/{thread_id}", headers={"X-CSRF-Token": "test-csrf-token"})
         assert resp.status_code == 200
         share_url = resp.json()["share_url"]
         token = share_url.split("/share/")[-1]
@@ -224,7 +240,7 @@ class TestShareEndpoints:
 
     def test_get_expired_share(self, client, fresh_share_store):
         thread_id = _make_scoped_thread_id()
-        resp = client.post(f"/share/{thread_id}")
+        resp = client.post(f"/share/{thread_id}", headers={"X-CSRF-Token": "test-csrf-token"})
         token = resp.json()["share_url"].split("/share/")[-1]
 
         # Expire it
@@ -234,10 +250,10 @@ class TestShareEndpoints:
 
     def test_revoke_share(self, client):
         thread_id = _make_scoped_thread_id()
-        resp = client.post(f"/share/{thread_id}")
+        resp = client.post(f"/share/{thread_id}", headers={"X-CSRF-Token": "test-csrf-token"})
         token = resp.json()["share_url"].split("/share/")[-1]
 
-        resp = client.delete(f"/share/{token}")
+        resp = client.delete(f"/share/{token}", headers={"X-CSRF-Token": "test-csrf-token"})
         assert resp.status_code == 200
 
         # Verify it's gone
@@ -246,8 +262,8 @@ class TestShareEndpoints:
 
     def test_list_shares(self, client):
         thread_id = _make_scoped_thread_id()
-        client.post(f"/share/{thread_id}")
-        client.post(f"/share/{thread_id}")
+        client.post(f"/share/{thread_id}", headers={"X-CSRF-Token": "test-csrf-token"})
+        client.post(f"/share/{thread_id}", headers={"X-CSRF-Token": "test-csrf-token"})
 
         resp = client.get("/shares")
         assert resp.status_code == 200

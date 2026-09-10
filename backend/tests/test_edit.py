@@ -9,12 +9,21 @@ import pytest
 from fastapi.testclient import TestClient
 
 
+def _create_dev_session():
+    """Create a real dev session and return the session ID."""
+    import asyncio
+    from oauth import DEV_USER, create_session
+    loop = asyncio.new_event_loop()
+    try:
+        return loop.run_until_complete(create_session(DEV_USER))
+    finally:
+        loop.close()
+
+
 @pytest.fixture
 def client(monkeypatch):
-    """TestClient with dev bypass and mocked thread_store."""
+    """TestClient with session injection and mocked thread_store."""
     import main as main_module
-
-    monkeypatch.setattr("config.settings.AUTH_DEV_BYPASS", True)
 
     mock_thread_store = MagicMock()
     mock_thread_store.list_threads = AsyncMock(return_value=[])
@@ -22,10 +31,14 @@ def client(monkeypatch):
     mock_thread_store.update_status = AsyncMock()
     mock_thread_store.upsert_thread = AsyncMock()
 
+    session_id = _create_dev_session()
+
     with (
         patch.object(main_module, "thread_store", mock_thread_store),
         TestClient(main_module.app) as c,
     ):
+        c.cookies.set("voyager_session", session_id)
+        c.cookies.set("voyager_csrf", "test-csrf-token")
         yield c
 
 

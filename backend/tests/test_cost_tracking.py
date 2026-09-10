@@ -235,8 +235,7 @@ class TestAdminEndpoints:
         from oauth import verify_admin
         from fastapi import HTTPException
 
-        with patch.object(settings, "AUTH_DEV_BYPASS", False), \
-             patch.object(settings, "ADMIN_EMAILS", "admin@example.com"):
+        with patch.object(settings, "ADMIN_EMAILS", "admin@example.com"):
 
             with pytest.raises(HTTPException) as exc_info:
                 await verify_admin(user={"user_id": "u1", "email": "user@example.com"})
@@ -248,8 +247,7 @@ class TestAdminEndpoints:
         from oauth import verify_admin
         from fastapi import HTTPException
 
-        with patch.object(settings, "AUTH_DEV_BYPASS", False), \
-             patch.object(settings, "ADMIN_EMAILS", ""):
+        with patch.object(settings, "ADMIN_EMAILS", ""):
 
             with pytest.raises(HTTPException) as exc_info:
                 await verify_admin(user={"user_id": "u1", "email": "user@example.com"})
@@ -260,19 +258,8 @@ class TestAdminEndpoints:
         """Admin endpoint allows admin users."""
         from oauth import verify_admin
 
-        with patch.object(settings, "AUTH_DEV_BYPASS", False), \
-             patch.object(settings, "ADMIN_EMAILS", "admin@example.com,other@admin.com"):
+        with patch.object(settings, "ADMIN_EMAILS", "admin@example.com,other@admin.com"):
 
             result = await verify_admin(user={"user_id": "u1", "email": "admin@example.com"})
             assert result["email"] == "admin@example.com"
 
-    @pytest.mark.asyncio
-    async def test_admin_dev_bypass(self):
-        """Admin endpoint allows dev bypass."""
-        from oauth import verify_admin
-
-        with patch.object(settings, "AUTH_DEV_BYPASS", True), \
-             patch.object(settings, "ADMIN_EMAILS", ""):
-
-            result = await verify_admin(user={"user_id": "dev", "email": "dev@localhost"})
-            assert result is not None

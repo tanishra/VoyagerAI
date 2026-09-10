@@ -6,7 +6,26 @@ Covers the Phase 4.2 bug fix: raw langchain v2 astream_events were dropped by
 
 from __future__ import annotations
 
+import asyncio
+
 from main import _parse_chat_event
+
+
+def _create_dev_session():
+    """Create a real dev session and return the session ID."""
+    from oauth import DEV_USER, create_session
+
+    loop = asyncio.new_event_loop()
+    try:
+        return loop.run_until_complete(create_session(DEV_USER))
+    finally:
+        loop.close()
+
+
+def _inject_session(c):
+    """Inject dev session + CSRF cookie into a TestClient."""
+    c.cookies.set("voyager_session", _create_dev_session())
+    c.cookies.set("voyager_csrf", "test-csrf-token")
 
 
 class _Chunk:
@@ -744,16 +763,17 @@ class TestChatStreamEndpoint:
             yield {"event": "done", "data": None}
 
         monkeypatch.setattr(main_module, "stream_chat_agent", fake_stream_chat_agent)
-        monkeypatch.setattr("config.settings.AUTH_DEV_BYPASS", True)
-        with TestClient(main_module.app) as c, c.stream(
-            "POST", "/chat/stream",
-            json={"message": "hello"},
-        ) as r:
-            assert r.status_code == 200
-            parsed = []
-            for line in r.iter_lines():
-                if line.startswith("data: "):
-                    parsed.append(_json.loads(line[6:]))
+        with TestClient(main_module.app) as c:
+            _inject_session(c)
+            with c.stream(
+                "POST", "/chat/stream",
+                json={"message": "hello"},
+            ) as r:
+                assert r.status_code == 200
+                parsed = []
+                for line in r.iter_lines():
+                    if line.startswith("data: "):
+                        parsed.append(_json.loads(line[6:]))
 
         events = [(p["event"], p["data"]) for p in parsed]
         assert events[0][0] == "thread_id"
@@ -783,15 +803,16 @@ class TestChatStreamEndpoint:
             yield {"event": "done", "data": None}
 
         monkeypatch.setattr(main_module, "stream_chat_agent", fake_stream_chat_agent)
-        monkeypatch.setattr("config.settings.AUTH_DEV_BYPASS", True)
-        with TestClient(main_module.app) as c, c.stream(
-            "POST", "/chat/stream",
-            json={"message": "hello"},
-        ) as r:
-            parsed = []
-            for line in r.iter_lines():
-                if line.startswith("data: "):
-                    parsed.append(_json.loads(line[6:]))
+        with TestClient(main_module.app) as c:
+            _inject_session(c)
+            with c.stream(
+                "POST", "/chat/stream",
+                json={"message": "hello"},
+            ) as r:
+                parsed = []
+                for line in r.iter_lines():
+                    if line.startswith("data: "):
+                        parsed.append(_json.loads(line[6:]))
 
         statuses = [(p["data"]["tool"], p["data"]["status"]) for p in parsed if p["event"] == "status"]
         assert ("risk_detector", "running") in statuses
@@ -809,17 +830,18 @@ class TestChatStreamEndpoint:
             yield {"event": "done", "data": None}
 
         monkeypatch.setattr(main_module, "stream_chat_agent", fake_stream_chat_agent)
-        monkeypatch.setattr("config.settings.AUTH_DEV_BYPASS", True)
         user_tag = hashlib.sha256(b"dev@localhost").hexdigest()[:12]
 
-        with TestClient(main_module.app) as c, c.stream(
-            "POST", "/chat/stream",
-            json={"message": "hello"},
-        ) as r:
-            parsed = []
-            for line in r.iter_lines():
-                if line.startswith("data: "):
-                    parsed.append(_json.loads(line[6:]))
+        with TestClient(main_module.app) as c:
+            _inject_session(c)
+            with c.stream(
+                "POST", "/chat/stream",
+                json={"message": "hello"},
+            ) as r:
+                parsed = []
+                for line in r.iter_lines():
+                    if line.startswith("data: "):
+                        parsed.append(_json.loads(line[6:]))
 
         first = parsed[0]
         assert first["event"] == "thread_id"
@@ -838,18 +860,19 @@ class TestChatStreamEndpoint:
             yield {"event": "done", "data": None}
 
         monkeypatch.setattr(main_module, "stream_chat_agent", fake_stream_chat_agent)
-        monkeypatch.setattr("config.settings.AUTH_DEV_BYPASS", True)
         user_tag = hashlib.sha256(b"dev@localhost").hexdigest()[:12]
         resume_id = f"chat:{user_tag}:abc123"
 
-        with TestClient(main_module.app) as c, c.stream(
-            "POST", "/chat/stream",
-            json={"message": "hello", "thread_id": resume_id},
-        ) as r:
-            parsed = []
-            for line in r.iter_lines():
-                if line.startswith("data: "):
-                    parsed.append(_json.loads(line[6:]))
+        with TestClient(main_module.app) as c:
+            _inject_session(c)
+            with c.stream(
+                "POST", "/chat/stream",
+                json={"message": "hello", "thread_id": resume_id},
+            ) as r:
+                parsed = []
+                for line in r.iter_lines():
+                    if line.startswith("data: "):
+                        parsed.append(_json.loads(line[6:]))
 
         assert parsed[0]["data"]["thread_id"] == resume_id
 
@@ -865,17 +888,18 @@ class TestChatStreamEndpoint:
             yield {"event": "done", "data": None}
 
         monkeypatch.setattr(main_module, "stream_chat_agent", fake_stream_chat_agent)
-        monkeypatch.setattr("config.settings.AUTH_DEV_BYPASS", True)
         user_tag = hashlib.sha256(b"dev@localhost").hexdigest()[:12]
 
-        with TestClient(main_module.app) as c, c.stream(
-            "POST", "/chat/stream",
-            json={"message": "hello", "thread_id": "plain-id"},
-        ) as r:
-            parsed = []
-            for line in r.iter_lines():
-                if line.startswith("data: "):
-                    parsed.append(_json.loads(line[6:]))
+        with TestClient(main_module.app) as c:
+            _inject_session(c)
+            with c.stream(
+                "POST", "/chat/stream",
+                json={"message": "hello", "thread_id": "plain-id"},
+            ) as r:
+                parsed = []
+                for line in r.iter_lines():
+                    if line.startswith("data: "):
+                        parsed.append(_json.loads(line[6:]))
 
         assert parsed[0]["data"]["thread_id"] == f"chat:{user_tag}:plain-id"
 
@@ -891,15 +915,16 @@ class TestChatStreamEndpoint:
             raise RuntimeError("boom")
 
         monkeypatch.setattr(main_module, "stream_chat_agent", failing_stream_chat_agent)
-        monkeypatch.setattr("config.settings.AUTH_DEV_BYPASS", True)
-        with TestClient(main_module.app) as c, c.stream(
-            "POST", "/chat/stream",
-            json={"message": "hello"},
-        ) as r:
-            parsed = []
-            for line in r.iter_lines():
-                if line.startswith("data: "):
-                    parsed.append(_json.loads(line[6:]))
+        with TestClient(main_module.app) as c:
+            _inject_session(c)
+            with c.stream(
+                "POST", "/chat/stream",
+                json={"message": "hello"},
+            ) as r:
+                parsed = []
+                for line in r.iter_lines():
+                    if line.startswith("data: "):
+                        parsed.append(_json.loads(line[6:]))
 
         events = [(p["event"], p["data"]) for p in parsed]
         assert events[0][0] == "thread_id"
@@ -919,16 +944,17 @@ class TestChatStreamEndpoint:
             raise RuntimeError("boom")
 
         monkeypatch.setattr(main_module, "stream_chat_agent", failing_stream_chat_agent)
-        monkeypatch.setattr("config.settings.AUTH_DEV_BYPASS", True)
-        with TestClient(main_module.app) as c, c.stream(
-            "POST", "/chat/stream",
-            json={"message": "hello"},
-            headers={"Accept-Language": "fr"},
-        ) as r:
-            parsed = []
-            for line in r.iter_lines():
-                if line.startswith("data: "):
-                    parsed.append(_json.loads(line[6:]))
+        with TestClient(main_module.app) as c:
+            _inject_session(c)
+            with c.stream(
+                "POST", "/chat/stream",
+                json={"message": "hello"},
+                headers={"Accept-Language": "fr"},
+            ) as r:
+                parsed = []
+                for line in r.iter_lines():
+                    if line.startswith("data: "):
+                        parsed.append(_json.loads(line[6:]))
 
         events = [(p["event"], p["data"]) for p in parsed]
         assert events[-1][0] == "error"
@@ -954,15 +980,16 @@ class TestConversationModeGate:
             yield {"event": "done", "data": None}
 
         monkeypatch.setattr(main_module, "stream_chat_agent", conversational_stream)
-        monkeypatch.setattr("config.settings.AUTH_DEV_BYPASS", True)
-        with TestClient(main_module.app) as c, c.stream(
-            "POST", "/chat/stream",
-            json={"message": "I want to go on a trip"},
-        ) as r:
-            parsed = []
-            for line in r.iter_lines():
-                if line.startswith("data: "):
-                    parsed.append(_json.loads(line[6:]))
+        with TestClient(main_module.app) as c:
+            _inject_session(c)
+            with c.stream(
+                "POST", "/chat/stream",
+                json={"message": "I want to go on a trip"},
+            ) as r:
+                parsed = []
+                for line in r.iter_lines():
+                    if line.startswith("data: "):
+                        parsed.append(_json.loads(line[6:]))
 
         events = [(p["event"], p["data"]) for p in parsed]
         # Should have thread_id, status, token, done — NO itinerary or comparison

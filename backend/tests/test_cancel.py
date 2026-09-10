@@ -12,6 +12,17 @@ from cancel_registry import _cancel_events, cancel_stream, register_cancel, unre
 from main import _parse_chat_event
 
 
+def _create_dev_session():
+    """Create a real dev session and return the session ID."""
+    import asyncio
+    from oauth import DEV_USER, create_session
+    loop = asyncio.new_event_loop()
+    try:
+        return loop.run_until_complete(create_session(DEV_USER))
+    finally:
+        loop.close()
+
+
 # ---------------------------------------------------------------------------
 # Cancel registry unit tests
 # ---------------------------------------------------------------------------
@@ -77,20 +88,22 @@ class TestCancelledEventParsing:
 
 @pytest.fixture
 def client(monkeypatch):
-    """TestClient with dev bypass and mocked thread_store."""
+    """TestClient with session injection and mocked thread_store."""
     import main as main_module
-
-    monkeypatch.setattr("config.settings.AUTH_DEV_BYPASS", True)
 
     mock_thread_store = MagicMock()
     mock_thread_store.list_threads = AsyncMock(return_value=[])
     mock_thread_store.count_threads = AsyncMock(return_value=0)
     mock_thread_store.update_status = AsyncMock()
 
+    session_id = _create_dev_session()
+
     with (
         patch.object(main_module, "thread_store", mock_thread_store),
         TestClient(main_module.app) as c,
     ):
+        c.cookies.set("voyager_session", session_id)
+        c.cookies.set("voyager_csrf", "test-csrf-token")
         yield c
 
 
@@ -102,19 +115,19 @@ class TestCancelEndpoint:
 
         register_cancel(thread_id)
         try:
-            resp = client.post("/chat/cancel", json={"thread_id": thread_id})
+            resp = client.post("/chat/cancel", json={"thread_id": thread_id}, headers={"X-CSRF-Token": "test-csrf-token"})
             assert resp.status_code == 200
             assert resp.json() == {"cancelled": True}
         finally:
             unregister_cancel(thread_id)
 
     def test_cancel_returns_false_for_unknown_thread(self, client):
-        resp = client.post("/chat/cancel", json={"thread_id": "chat:unknown:xyz"})
+        resp = client.post("/chat/cancel", json={"thread_id": "chat:unknown:xyz"}, headers={"X-CSRF-Token": "test-csrf-token"})
         assert resp.status_code == 200
         assert resp.json() == {"cancelled": False}
 
     def test_cancel_requires_thread_id(self, client):
-        resp = client.post("/chat/cancel", json={})
+        resp = client.post("/chat/cancel", json={}, headers={"X-CSRF-Token": "test-csrf-token"})
         assert resp.status_code == 400
 
     def test_cancel_scopes_thread_id_per_user(self, client):
@@ -126,7 +139,7 @@ class TestCancelEndpoint:
         register_cancel(scoped)
         try:
             # Client sends un-scoped thread_id; endpoint scopes it
-            resp = client.post("/chat/cancel", json={"thread_id": "my-thread"})
+            resp = client.post("/chat/cancel", json={"thread_id": "my-thread"}, headers={"X-CSRF-Token": "test-csrf-token"})
             assert resp.status_code == 200
             assert resp.json() == {"cancelled": True}
         finally:

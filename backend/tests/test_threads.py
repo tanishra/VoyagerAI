@@ -16,6 +16,16 @@ from fastapi.testclient import TestClient
 
 from threads import ThreadStore
 
+
+def _create_dev_session():
+    """Create a real dev session and return the session ID."""
+    from oauth import DEV_USER, create_session
+    loop = asyncio.new_event_loop()
+    try:
+        return loop.run_until_complete(create_session(DEV_USER))
+    finally:
+        loop.close()
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -35,12 +45,14 @@ def client(fresh_store, monkeypatch):
     """TestClient with the thread_store patched to use in-memory."""
     import main as main_module
 
-    monkeypatch.setattr("config.settings.AUTH_DEV_BYPASS", True)
+    session_id = _create_dev_session()
     with (
         patch.object(main_module, "thread_store", fresh_store),
         patch.object(main_module, "stream_chat_agent", _fake_stream),
         TestClient(main_module.app) as c,
     ):
+        c.cookies.set("voyager_session", session_id)
+        c.cookies.set("voyager_csrf", "test-csrf-token")
         yield c
 
 
@@ -218,7 +230,7 @@ class TestThreadsEndpoint:
         import main as main_module
         monkeypatch.setattr(main_module, "create_checkpointer", _fake_create_checkpointer)
 
-        resp = client.delete(f"/threads/{thread_id}")
+        resp = client.delete(f"/threads/{thread_id}", headers={"X-CSRF-Token": "test-csrf-token"})
         assert resp.status_code == 200
         assert resp.json()["status"] == "ok"
 
@@ -229,13 +241,13 @@ class TestThreadsEndpoint:
         thread_id = f"chat:{alice_tag}:t1"
         asyncio.run(fresh_store.upsert_thread("alice", thread_id, "Alice trip"))
         # Dev user tries to delete Alice's thread — the prefix won't match dev@localhost's hash
-        resp = client.delete(f"/threads/{thread_id}")
+        resp = client.delete(f"/threads/{thread_id}", headers={"X-CSRF-Token": "test-csrf-token"})
         assert resp.status_code == 403
 
     def test_delete_nonexistent_returns_404(self, client):
         user_tag = hashlib.sha256(b"dev@localhost").hexdigest()[:12]
         fake_id = f"chat:{user_tag}:nonexistent"
-        resp = client.delete(f"/threads/{fake_id}")
+        resp = client.delete(f"/threads/{fake_id}", headers={"X-CSRF-Token": "test-csrf-token"})
         assert resp.status_code == 404
 
 
