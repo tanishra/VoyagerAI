@@ -31,6 +31,7 @@ from agents.deep_agent import (
     _extract_comparison_from_text,
     _extract_itinerary_from_text,
     _find_fork_checkpoint,
+    _strip_structured_tags,
     create_checkpointer,
     edit_chat_agent,
     regenerate_chat_agent,
@@ -1632,7 +1633,7 @@ async def get_thread_history(
         if not isinstance(content, str):
             content = str(content)
         if content.strip():
-            entry: dict = {"role": role, "content": content}
+            entry: dict = {"role": role, "content": _strip_structured_tags(content)}
             if role == "assistant":
                 itinerary = _extract_itinerary_from_text(content)
                 comparison = _extract_comparison_from_text(content)
@@ -1758,7 +1759,7 @@ async def get_thread_branches(
             branches.append({
                 "checkpoint_id": snap_checkpoint_id,
                 "is_current": snap_checkpoint_id == current_checkpoint_id,
-                "preview": last_content[:200],
+                "preview": _strip_structured_tags(last_content)[:200],
             })
 
     except Exception as exc:  # noqa: BLE001

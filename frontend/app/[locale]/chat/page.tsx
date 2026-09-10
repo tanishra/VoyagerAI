@@ -29,6 +29,7 @@ import ThreadSidebar from './ThreadSidebar';
 import VoiceWaveform from '@/components/VoiceWaveform';
 import FilePreview from '@/components/FilePreview';
 import { useVoiceInput } from '@/lib/useVoiceInput';
+import { stripStructuredTags } from '@/lib/utils';
 import { uploadFile, type UploadedFile } from '@/lib/upload-api';
 import type { ChatMessage, ComparisonData, Itinerary, ActivityData, BranchInfo, GeneratedImage, GeneratedChart } from '@/lib/types';
 
@@ -236,7 +237,7 @@ export default function ChatPage() {
     const historyMessages: ChatMessage[] = history.map((msg, i) => ({
       id: `history-${i}`,
       role: msg.role,
-      content: msg.content,
+      content: stripStructuredTags(msg.content),
       itinerary: msg.itinerary,
       comparison: msg.comparison,
       activity: msg.activity,
@@ -391,7 +392,7 @@ export default function ChatPage() {
           signal: controller.signal,
           onToken: (token) => {
             accumulatedText += token;
-            setStreamingText(accumulatedText);
+            setStreamingText(stripStructuredTags(accumulatedText));
           },
           onItinerary: (itinerary) => {
             accumulatedItinerary = itinerary;
@@ -530,7 +531,7 @@ export default function ChatPage() {
           } else if (aborted && accumulatedText) {
             updated[idx] = {
               ...updated[idx],
-              content: accumulatedText,
+              content: stripStructuredTags(accumulatedText),
               itinerary: accumulatedItinerary ?? undefined,
               comparison: accumulatedComparison ?? undefined,
               activity: streamingActivityRef.current ?? undefined,
@@ -543,7 +544,7 @@ export default function ChatPage() {
           } else {
             updated[idx] = {
               ...updated[idx],
-              content: accumulatedText,
+              content: stripStructuredTags(accumulatedText),
               itinerary: accumulatedItinerary ?? undefined,
               comparison: accumulatedComparison ?? undefined,
               activity: streamingActivityRef.current ?? undefined,
@@ -625,7 +626,7 @@ export default function ChatPage() {
           signal: controller.signal,
           onToken: (token) => {
             accumulatedText += token;
-            setStreamingText(accumulatedText);
+            setStreamingText(stripStructuredTags(accumulatedText));
           },
           onItinerary: (itinerary) => {
             accumulatedItinerary = itinerary;
@@ -758,18 +759,18 @@ export default function ChatPage() {
             if (streamFailed) {
               updated[i] = {
                 ...updated[i],
-                content: accumulatedText || (errorMessage || t('generationFailed', { error: '' })),
+                content: stripStructuredTags(accumulatedText) || (errorMessage || t('generationFailed', { error: '' })),
               };
             } else if (aborted) {
               updated[i] = {
                 ...updated[i],
-                content: accumulatedText,
+                content: stripStructuredTags(accumulatedText),
                 wasStopped: true,
               };
             } else {
               updated[i] = {
                 ...updated[i],
-                content: accumulatedText,
+                content: stripStructuredTags(accumulatedText),
                 itinerary: accumulatedItinerary ?? undefined,
                 comparison: accumulatedComparison ?? undefined,
                 activity: streamingActivityRef.current ?? undefined,
@@ -818,7 +819,7 @@ export default function ChatPage() {
       const historyMessages: ChatMessage[] = history.map((msg, i) => ({
         id: `branch-${i}`,
         role: msg.role,
-        content: msg.content,
+        content: stripStructuredTags(msg.content),
         itinerary: msg.itinerary,
         comparison: msg.comparison,
         activity: msg.activity,
@@ -878,7 +879,7 @@ export default function ChatPage() {
           signal: controller.signal,
           onToken: (token) => {
             accumulatedText += token;
-            setStreamingText(accumulatedText);
+            setStreamingText(stripStructuredTags(accumulatedText));
           },
           onItinerary: (itinerary) => {
             accumulatedItinerary = itinerary;
@@ -1000,18 +1001,18 @@ export default function ChatPage() {
             if (streamFailed) {
               updated[i] = {
                 ...updated[i],
-                content: accumulatedText || t('generationFailed', { error: errorMessage || '' }),
+                content: stripStructuredTags(accumulatedText) || t('generationFailed', { error: errorMessage || '' }),
               };
             } else if (aborted) {
               updated[i] = {
                 ...updated[i],
-                content: accumulatedText,
+                content: stripStructuredTags(accumulatedText),
                 wasStopped: true,
               };
             } else {
               updated[i] = {
                 ...updated[i],
-                content: accumulatedText,
+                content: stripStructuredTags(accumulatedText),
                 itinerary: accumulatedItinerary ?? undefined,
                 comparison: accumulatedComparison ?? undefined,
                 activity: streamingActivityRef.current ?? undefined,
@@ -1096,7 +1097,7 @@ export default function ChatPage() {
             {
               onToken: (token) => {
                 accumulatedText += token;
-                setStreamingText(accumulatedText);
+                setStreamingText(stripStructuredTags(accumulatedText));
               },
               onItinerary: (itinerary) => {
                 accumulatedItinerary = itinerary;
@@ -1191,7 +1192,7 @@ export default function ChatPage() {
               } else {
                 updated[idx] = {
                   ...updated[idx],
-                  content: accumulatedText,
+                  content: stripStructuredTags(accumulatedText),
                   itinerary: accumulatedItinerary ?? undefined,
                   comparison: accumulatedComparison ?? undefined,
                   activity: streamingActivityRef.current ?? undefined,

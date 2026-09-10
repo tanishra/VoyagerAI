@@ -564,6 +564,24 @@ async def create_chat_agent(checkpointer=None, store=None, user_id=None, locale=
 _ITINERARY_TAG_RE = re.compile(r"<itinerary>\s*(.*?)\s*</itinerary>", re.DOTALL)
 _COMPARISON_TAG_RE = re.compile(r"<comparison>\s*(.*?)\s*</comparison>", re.DOTALL)
 
+# Strip complete and partial structured blocks from displayed text
+_STRIP_COMPLETE_RE = re.compile(r"<(?:comparison|itinerary)>[\s\S]*?</(?:comparison|itinerary)>", re.DOTALL)
+_STRIP_PARTIAL_RE = re.compile(r"<(?:comparison|itinerary)>[\s\S]*$")
+
+
+def _strip_structured_tags(text: str) -> str:
+    """Remove <comparison> and <itinerary> blocks from text.
+
+    Handles both complete blocks (with closing tags) and partial blocks
+    (opening tag without closing — e.g. during streaming). Cleans up
+    excess blank lines left behind.
+    """
+    if not text:
+        return text
+    result = _STRIP_COMPLETE_RE.sub("", text)
+    result = _STRIP_PARTIAL_RE.sub("", result)
+    return re.sub(r"\n{3,}", "\n\n", result).strip()
+
 
 def _find_largest_json_object(text: str) -> dict | None:
     """Best-effort fallback: locate the largest balanced JSON object in text.
