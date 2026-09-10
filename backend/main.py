@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import hmac
 import json
 import re
+import secrets
 import uuid
 from dataclasses import asdict
 
@@ -98,6 +100,22 @@ if settings.AUTH_MODE == "production" and not ALLOWED_ORIGINS:
         "CORS_ORIGINS must be set to an explicit allowlist when AUTH_MODE=production"
     )
 
+# --- Production startup guards ---
+if settings.AUTH_MODE == "production":
+    if not settings.SESSION_SECRET_KEY or settings.SESSION_SECRET_KEY == "dev-only-insecure-key-change-in-production":
+        raise RuntimeError(
+            "SESSION_SECRET_KEY must be set to a strong random string in production mode. "
+            'Generate one with: python -c "import secrets; print(secrets.token_urlsafe(32))"'
+        )
+    if not settings.API_AUTH_KEY:
+        raise RuntimeError(
+            "API_AUTH_KEY must be set in production mode."
+        )
+    if not settings.GOOGLE_CLIENT_ID or not settings.GOOGLE_CLIENT_SECRET:
+        raise RuntimeError(
+            "GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET must be set in production mode."
+        )
+
 app = FastAPI(
     title="VoyagerAI — Travel Planning AI Agent",
     version="2.2.0",
@@ -142,6 +160,40 @@ limiter = Limiter(key_func=get_remote_address, default_limits=["30/hour"])
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
+# --- CSRF Protection (double-submit cookie pattern) ---
+CSRF_COOKIE_NAME = "voyager_csrf"
+CSRF_HEADER_NAME = "X-CSRF-Token"
+_CSRF_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+_CSRF_EXEMPT_PATHS = {"/chat/stream", "/chat/regenerate", "/chat/edit", "/auth/callback"}
+
+
+@app.middleware("http")
+async def csrf_middleware(request: Request, call_next):
+    """Verify CSRF token on mutation requests (double-submit cookie pattern).
+
+    Reads the CSRF token from the cookie and compares it to the X-CSRF-Token header.
+    SSE endpoints are exempt (they can't set custom headers easily in all browsers).
+    """
+    if request.method in _CSRF_METHODS and request.url.path not in _CSRF_EXEMPT_PATHS:
+        cookie_token = request.cookies.get(CSRF_COOKIE_NAME)
+        header_token = request.headers.get(CSRF_HEADER_NAME)
+        if not cookie_token or not header_token or not hmac.compare_digest(cookie_token, header_token):
+            return JSONResponse(
+                status_code=403,
+                content={"detail": "CSRF token missing or invalid"},
+            )
+    response = await call_next(request)
+    if not request.cookies.get(CSRF_COOKIE_NAME):
+        response.set_cookie(
+            CSRF_COOKIE_NAME,
+            secrets.token_urlsafe(32),
+            httponly=False,
+            samesite="lax",
+            secure=settings.AUTH_MODE == "production",
+            max_age=7 * 24 * 3600,
+        )
+    return response
+
 # --- Docs endpoints: open in dev, admin-protected in production ---
 _docs_deps: list = [] if settings.AUTH_MODE == "development" else [
     Depends(verify_api_key), Depends(verify_admin),
@@ -181,6 +233,17 @@ def _scoped_chat_thread_id(client_thread_id: str | None, user_id: str) -> str:
 
 def _sse(event: str, data: object) -> dict:
     return {"event": event, "data": json.dumps({"event": event, "data": data})}
+
+
+def _validate_body_fields(body: dict, limits: dict[str, int]) -> None:
+    """Validate that string fields in body dict don't exceed max length."""
+    for field, max_len in limits.items():
+        val = body.get(field, "")
+        if isinstance(val, str) and len(val) > max_len:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Field '{field}' exceeds maximum length of {max_len} characters.",
+            )
 
 
 def _truncate_tool_data(data, max_chars: int = 1000) -> str:
@@ -1143,6 +1206,7 @@ async def chat_cancel(
     thread_id = body.get("thread_id", "")
     if not thread_id:
         raise HTTPException(status_code=400, detail="thread_id required")
+    _validate_body_fields(body, {"thread_id": 200})
     user_id = user["user_id"]
     scoped_thread_id = _scoped_chat_thread_id(thread_id, user_id)
     cancelled = cancel_stream(scoped_thread_id)
@@ -1179,6 +1243,7 @@ async def chat_regenerate(
     raw_thread_id = body.get("thread_id", "")
     if not raw_thread_id:
         raise HTTPException(status_code=400, detail="thread_id required")
+    _validate_body_fields(body, {"thread_id": 200, "locale": 10, "timezone": 50})
 
     user_id = user["user_id"]
     thread_id = _scoped_chat_thread_id(raw_thread_id, user_id)
@@ -1277,6 +1342,7 @@ async def chat_edit(
     new_message = body.get("message", "")
     if not new_message:
         raise HTTPException(status_code=400, detail="message required")
+    _validate_body_fields(body, {"thread_id": 200, "message": 2000, "locale": 10, "timezone": 50})
 
     user_id = user["user_id"]
     thread_id = _scoped_chat_thread_id(raw_thread_id, user_id)
@@ -1769,25 +1835,16 @@ async def update_thread(
     tags=["auth"],
     response_model=None,
     responses={
-        302: {"description": "Redirect to Google OAuth consent screen (or dev-bypass callback)"},
+        302: {"description": "Redirect to Google OAuth consent screen"},
     },
 )
 async def auth_login(request: Request) -> RedirectResponse:
     """Redirect to Google OAuth consent screen.
 
-    In development mode (`AUTH_DEV_BYPASS=true`), creates a dev session and
-    redirects to the frontend callback directly.
+    Always redirects to Google OAuth — no dev bypass.
 
     **Returns:** 302 redirect — no JSON response.
     """
-    if settings.AUTH_DEV_BYPASS:
-        session_id = await create_session(DEV_USER)
-        resp = RedirectResponse(url="http://localhost:3000/auth/callback?success=1")
-        resp.set_cookie(
-            SESSION_COOKIE_NAME, session_id,
-            max_age=SESSION_TTL, httponly=True, samesite="lax",
-        )
-        return resp
     redirect_uri = settings.OAUTH_REDIRECT_URI
     return await oauth.google.authorize_redirect(request, redirect_uri)
 
@@ -1825,6 +1882,7 @@ async def auth_callback(request: Request) -> RedirectResponse:
     resp.set_cookie(
         SESSION_COOKIE_NAME, session_id,
         max_age=SESSION_TTL, httponly=True, samesite="lax",
+        secure=settings.AUTH_MODE == "production",
     )
     return resp
 
