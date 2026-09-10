@@ -57,7 +57,6 @@ class Settings(BaseSettings):
     GOOGLE_CLIENT_SECRET: str | None = None
     OAUTH_REDIRECT_URI: str = "http://localhost:8000/auth/callback"
     SESSION_SECRET_KEY: str = "dev-only-insecure-key-change-in-production"
-    AUTH_DEV_BYPASS: bool = False
 
     # Cost tracking
     SESSION_BUDGET_LIMIT_USD: float = 0.50
