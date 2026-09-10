@@ -4,7 +4,7 @@ Provides:
 - OAuth client configuration (authlib + Google)
 - Session create / read / delete in Redis
 - get_current_user FastAPI dependency for protected endpoints
-- Dev bypass mode (AUTH_DEV_BYPASS=1) for local development without Google credentials
+- DEV_USER mock dict for test session injection (no runtime bypass)
 """
 
 from __future__ import annotations
@@ -42,7 +42,7 @@ SESSION_REDIS_PREFIX = "session:"
 # In-memory session fallback (used when Redis is unavailable — same pattern as cache.py / threads.py)
 _mem_sessions: dict[str, dict] = {}
 
-# Mock user for dev bypass mode
+# Mock user for test session injection (not used for runtime bypass)
 DEV_USER: dict = {
     "user_id": "dev@localhost",
     "display_name": "Dev User",
@@ -124,9 +124,6 @@ async def get_current_user(request: Request) -> dict:
     Returns a dict with keys: user_id, display_name, avatar_url, email.
     Raises 401 if not authenticated.
     """
-    if settings.AUTH_DEV_BYPASS:
-        return DEV_USER.copy()
-
     session_id = request.cookies.get(SESSION_COOKIE_NAME)
     if not session_id:
         raise HTTPException(
@@ -156,11 +153,7 @@ async def verify_admin(user: dict = Depends(get_current_user)) -> dict:
 
     Checks the user's email against the ADMIN_EMAILS setting (comma-separated).
     Raises 403 if admin emails are not configured or the user is not an admin.
-    In dev bypass mode, the dev user is always treated as admin.
     """
-    if settings.AUTH_DEV_BYPASS:
-        return user
-
     admin_emails = [e.strip().lower() for e in settings.ADMIN_EMAILS.split(",") if e.strip()]
     if not admin_emails:
         raise HTTPException(
