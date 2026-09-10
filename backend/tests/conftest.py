@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import os
 
 import pytest
@@ -17,6 +18,36 @@ def client():
     from main import app
     with TestClient(app) as c:
         yield c
+
+
+@pytest.fixture
+def dev_session_id():
+    """Create a real dev session in Redis/memory and return the session ID."""
+    from oauth import DEV_USER, create_session
+
+    loop = asyncio.new_event_loop()
+    try:
+        session_id = loop.run_until_complete(create_session(DEV_USER))
+    finally:
+        loop.close()
+    return session_id
+
+
+@pytest.fixture
+def authed_client(monkeypatch, dev_session_id):
+    """TestClient with a valid dev session cookie + CSRF cookie injected."""
+    import main as main_module
+
+    with TestClient(main_module.app) as c:
+        c.cookies.set("voyager_session", dev_session_id)
+        c.cookies.set("voyager_csrf", "test-csrf-token")
+        yield c
+
+
+@pytest.fixture
+def csrf_headers():
+    """Headers dict with CSRF token for mutation requests in tests."""
+    return {"X-CSRF-Token": "test-csrf-token"}
 
 
 @pytest.fixture
