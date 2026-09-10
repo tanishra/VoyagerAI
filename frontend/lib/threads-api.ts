@@ -1,5 +1,6 @@
 import type { Itinerary, ComparisonData, ActivityData, BranchInfo, GeneratedImage, GeneratedChart } from '@/lib/types';
 import { putThreads, getAllCachedThreads, putThreadHistory, getCachedThreadHistory, clearOldThreads } from './offline-db';
+import { getCsrfHeaders } from './csrf';
 
 export interface ThreadMeta {
   thread_id: string;
@@ -116,6 +117,7 @@ export async function deleteThread(threadId: string): Promise<boolean> {
   try {
     const res = await fetch(`${API_URL}/threads/${threadId}`, {
       method: 'DELETE',
+      headers: { ...getCsrfHeaders() },
       credentials: 'include',
     });
     if (res.status === 401) {
@@ -149,7 +151,7 @@ export async function updateThread(threadId: string, pinned: boolean): Promise<b
   try {
     const res = await fetch(`${API_URL}/threads/${threadId}`, {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...getCsrfHeaders() },
       credentials: 'include',
       body: JSON.stringify({ pinned }),
     });

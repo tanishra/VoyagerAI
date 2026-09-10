@@ -5,6 +5,7 @@ import { motion } from 'framer-motion';
 import { Save, CheckCircle, AlertCircle, Loader2, FileText, ArrowLeft } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { getSession } from '@/lib/auth';
+import { getCsrfHeaders } from '@/lib/csrf';
 import { useLocale } from '@/lib/useLocale';
 import Link from 'next/link';
 
@@ -65,7 +66,7 @@ export default function PreferencesPage() {
     try {
       const res = await fetch(`${API_BASE}/preferences`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'text/plain' },
+        headers: { 'Content-Type': 'text/plain', ...getCsrfHeaders() },
         body: content,
         credentials: 'include',
       });

@@ -1,4 +1,5 @@
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+import { getCsrfHeaders } from './csrf';
 
 export interface FeedbackPayload {
   thread_id: string;
@@ -20,7 +21,7 @@ export async function submitFeedback(
 ): Promise<{ status: string; rating: string }> {
   const res = await fetch(`${API_BASE}/feedback`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...getCsrfHeaders() },
     credentials: 'include',
     body: JSON.stringify(payload),
   });

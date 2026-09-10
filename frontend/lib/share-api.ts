@@ -1,4 +1,5 @@
 import type { Itinerary } from '@/lib/types';
+import { getCsrfHeaders } from './csrf';
 
 export interface ShareLink {
   token: string;
@@ -21,6 +22,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 export async function createShare(threadId: string): Promise<{ share_url: string; expires_at: number; destination: string }> {
   const res = await fetch(`${API_URL}/share/${threadId}`, {
     method: 'POST',
+    headers: { ...getCsrfHeaders() },
     credentials: 'include',
   });
   if (res.status === 401) {
@@ -43,6 +45,7 @@ export async function getShare(token: string): Promise<ShareData | null> {
 export async function revokeShare(token: string): Promise<boolean> {
   const res = await fetch(`${API_URL}/share/${token}`, {
     method: 'DELETE',
+    headers: { ...getCsrfHeaders() },
     credentials: 'include',
   });
   if (res.status === 401) {

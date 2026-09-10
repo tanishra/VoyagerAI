@@ -1,4 +1,5 @@
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+import { getCsrfHeaders } from './csrf';
 
 export interface SessionUser {
   user_id: string;
@@ -49,6 +50,7 @@ export async function logout(): Promise<void> {
   try {
     await fetch(`${API_URL}/auth/logout`, {
       method: 'POST',
+      headers: { ...getCsrfHeaders() },
       credentials: 'include',
     });
   } catch {

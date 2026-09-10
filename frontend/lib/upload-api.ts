@@ -1,4 +1,5 @@
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+import { getCsrfHeaders } from './csrf';
 
 export interface UploadedFile {
   file_id: string;
@@ -14,6 +15,7 @@ export async function uploadFile(file: File): Promise<UploadedFile> {
 
   const res = await fetch(`${API_URL}/upload`, {
     method: 'POST',
+    headers: { ...getCsrfHeaders() },
     body: formData,
     credentials: 'include',
   });

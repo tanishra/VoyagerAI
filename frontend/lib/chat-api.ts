@@ -1,4 +1,5 @@
 import type { BranchInfo, ChatStreamCallbacks, ComparisonData, GeneratedChart, GeneratedImage, Itinerary, UsageEntry } from './types';
+import { getCsrfHeaders } from './csrf';
 
 const MAX_RETRIES = 3;
 const RETRY_DELAYS = [1000, 2000, 4000];
@@ -194,7 +195,7 @@ export async function cancelStream(threadId: string): Promise<void> {
       `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/chat/cancel`,
       {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...getCsrfHeaders() },
         credentials: 'include',
         body: JSON.stringify({ thread_id: threadId }),
       },
