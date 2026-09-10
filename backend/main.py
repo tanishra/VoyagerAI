@@ -35,6 +35,12 @@ from agents.deep_agent import (
     edit_chat_agent,
     regenerate_chat_agent,
 )
+from agents.prompts import (
+    _dict_to_learned_preferences_text,
+    _parse_learned_preferences_to_dict,
+    _parse_preferences,
+    _sanitize_instructions,
+)
 from auth import verify_api_key
 from cache import cache_client
 from cancel_registry import cancel_stream, register_cancel, unregister_cancel
@@ -876,21 +882,21 @@ def _sanitize_preferences_sections(content: str) -> str:
     response_model=None,
     responses={
         200: {
-            "description": "User preferences as Markdown text",
-            "content": {"text/plain": {"example": "<user_instructions>\nI prefer budget travel.\n</user_instructions>"}},
+            "description": "User preferences as JSON",
+            "content": {"application/json": {"example": {"user_instructions": "I prefer budget travel.", "learned_preferences": {"travel_style": "relaxed"}}}},
         },
         401: {"description": "Missing or invalid API key"},
         503: {"description": "Preferences store unavailable"},
     },
 )
 @limiter.limit("30/minute")
-async def get_preferences(request: Request, user: dict = Depends(get_current_user)) -> PlainTextResponse:
-    """Get the current user's preferences as Markdown text.
+async def get_preferences(request: Request, user: dict = Depends(get_current_user)) -> JSONResponse:
+    """Get the current user's preferences as JSON.
 
-    Returns the raw `preferences.md` content stored for the user.
-    Empty string if no preferences have been saved.
+    Returns `{"user_instructions": str, "learned_preferences": dict}`.
+    Empty fields if no preferences have been saved.
 
-    **Response:** `text/plain` — Markdown content of `preferences.md`.
+    **Response:** `application/json`
     """
     user_id = user["user_id"]
     locale = extract_locale(request)
@@ -900,11 +906,13 @@ async def get_preferences(request: Request, user: dict = Depends(get_current_use
         item = store.get((user_id,), "/preferences.md")
     except Exception:  # noqa: BLE001 (intentional fallback handler)
         logger.warning("Preferences store unavailable — returning empty preferences")
-        return PlainTextResponse("", status_code=503)
+        return JSONResponse({"user_instructions": "", "learned_preferences": {}}, status_code=503)
     if item is None:
-        return PlainTextResponse("", status_code=200)
+        return JSONResponse({"user_instructions": "", "learned_preferences": {}}, status_code=200)
     content = item.value.get("content", "")
-    return PlainTextResponse(content, status_code=200)
+    user_text, learned_text = _parse_preferences(content)
+    learned_dict = _parse_learned_preferences_to_dict(learned_text)
+    return JSONResponse({"user_instructions": user_text, "learned_preferences": learned_dict}, status_code=200)
 
 
 @app.put(
@@ -924,19 +932,41 @@ async def get_preferences(request: Request, user: dict = Depends(get_current_use
 )
 @limiter.limit("30/minute")
 async def put_preferences(request: Request, user: dict = Depends(get_current_user)) -> PreferencesSaveResponse:
-    """Save user preferences as Markdown text.
+    """Save user preferences as JSON.
 
-    **Request body:** Raw Markdown text (not JSON). The body is stored as `preferences.md`.
-    XML-like tags in the `<user_instructions>` section are stripped for safety.
+    **Request body:** JSON object with `user_instructions` (string).
+    The `learned_preferences` section is preserved from existing storage.
+    User instructions are sanitized to strip XML-like tags for safety.
+
+    **Response:** `application/json`
     """
     user_id = user["user_id"]
     locale = extract_locale(request)
     logger.info("PUT /preferences user=%s locale=%s", user_id, locale)
     body = await request.body()
-    content = body.decode("utf-8") if body else ""
-    content = _sanitize_preferences_sections(content)
+    try:
+        payload = json.loads(body) if body else {}
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return {"status": "error", "user_id": user_id, "error": "Invalid JSON body"}
+    user_text = _sanitize_instructions(payload.get("user_instructions", ""))
+
+    # Fetch existing content to preserve learned_preferences
     try:
         store = get_redis_file_store()
+        existing_item = store.get((user_id,), "/preferences.md")
+    except Exception:  # noqa: BLE001 (intentional fallback handler)
+        logger.warning("Preferences store unavailable — preferences not saved")
+        return {"status": "error", "user_id": user_id, "error": "Preferences store unavailable"}
+
+    existing_learned_text = ""
+    if existing_item is not None:
+        existing_content = existing_item.value.get("content", "")
+        _, existing_learned_text = _parse_preferences(existing_content)
+
+    # Reconstruct the stored format with XML tags
+    content = f"<user_instructions>\n{user_text}\n</user_instructions>\n\n<learned_preferences>\n{existing_learned_text}\n</learned_preferences>"
+
+    try:
         store.put((user_id,), "/preferences.md", {"content": content, "encoding": "utf-8"})
     except Exception:  # noqa: BLE001 (intentional fallback handler)
         logger.warning("Preferences store unavailable — preferences not saved")

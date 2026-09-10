@@ -682,7 +682,7 @@
           "preferences"
         ],
         "summary": "Get user preferences",
-        "description": "Get the current user's preferences as Markdown text.\n\nReturns the raw `preferences.md` content stored for the user.\nEmpty string if no preferences have been saved.\n\n**Response:** `text/plain` \u2014 Markdown content of `preferences.md`.",
+        "description": "Get the current user's preferences as JSON.\n\nReturns `{\"user_instructions\": str, \"learned_preferences\": dict}`.\nEmpty fields if no preferences have been saved.\n\n**Response:** `application/json`",
         "operationId": "get_preferences_preferences_get",
         "parameters": [
           {
@@ -704,13 +704,16 @@
         ],
         "responses": {
           "200": {
-            "description": "User preferences as Markdown text",
+            "description": "User preferences as JSON",
             "content": {
               "application/json": {
-                "schema": {}
-              },
-              "text/plain": {
-                "example": "<user_instructions>\nI prefer budget travel.\n</user_instructions>"
+                "schema": {},
+                "example": {
+                  "user_instructions": "I prefer budget travel.",
+                  "learned_preferences": {
+                    "travel_style": "relaxed"
+                  }
+                }
               }
             }
           },
@@ -737,7 +740,7 @@
           "preferences"
         ],
         "summary": "Save user preferences",
-        "description": "Save user preferences as Markdown text.\n\n**Request body:** Raw Markdown text (not JSON). The body is stored as `preferences.md`.\nXML-like tags in the `<user_instructions>` section are stripped for safety.",
+        "description": "Save user preferences as JSON.\n\n**Request body:** JSON object with `user_instructions` (string).\nThe `learned_preferences` section is preserved from existing storage.\nUser instructions are sanitized to strip XML-like tags for safety.\n\n**Response:** `application/json`",
         "operationId": "put_preferences_preferences_put",
         "parameters": [
           {

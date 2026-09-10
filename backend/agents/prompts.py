@@ -173,6 +173,34 @@ def _sanitize_instructions(text: str) -> str:
     return re.sub(r"</?[\w-]+>", "", text).strip()
 
 
+def _parse_learned_preferences_to_dict(text: str) -> dict:
+    """Parse learned preferences text (key-value lines) into a dict.
+
+    Lines like 'travel_style: relaxed' become {'travel_style': 'relaxed'}.
+    Empty lines and lines without a colon are skipped.
+    """
+    if not text:
+        return {}
+    result: dict[str, str] = {}
+    for line in text.strip().splitlines():
+        line = line.strip()
+        if not line or ":" not in line:
+            continue
+        key, _, value = line.partition(":")
+        result[key.strip()] = value.strip()
+    return result
+
+
+def _dict_to_learned_preferences_text(d: dict) -> str:
+    """Convert a learned preferences dict back to text (key: value lines).
+
+    Reverse of _parse_learned_preferences_to_dict.
+    """
+    if not d:
+        return ""
+    return "\n".join(f"{k}: {v}" for k, v in d.items())
+
+
 def build_chat_agent_prompt(
     locale: str | None = None,
     user_id: str | None = None,
