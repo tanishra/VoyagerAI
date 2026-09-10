@@ -139,7 +139,7 @@ export default function PreferencesPage() {
             <Loader2 className="w-8 h-8 text-primary animate-spin" />
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-0">
+          <div className="grid grid-cols-1 md:grid-cols-[1fr_1px_1fr] gap-0">
             {/* Left card — User Instructions */}
             <motion.div
               initial={{ opacity: 0, filter: 'blur(4px)', y: 12 }}
