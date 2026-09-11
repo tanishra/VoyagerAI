@@ -19,6 +19,7 @@ from redis.asyncio import Redis
 from redis.exceptions import RedisError
 
 from config import REDIS_URL, settings
+from sqlite_fallback import get_sqlite_connection
 
 logger = logging.getLogger("travel_agent.feedback_store")
 
@@ -26,7 +27,7 @@ _TTL_SECONDS: int = settings.THREAD_TTL_DAYS * 86_400
 
 
 class FeedbackStore:
-    """Redis-backed feedback storage with in-memory fallback."""
+    """Redis-backed feedback storage with SQLite + in-memory fallback."""
 
     def __init__(self) -> None:
         self._redis: Redis | None = None
@@ -81,6 +82,19 @@ class FeedbackStore:
             except (RedisError, RuntimeError) as exc:
                 logger.warning("FeedbackStore submit_feedback Redis error: %s", exc)
 
+        # SQLite fallback
+        db = await get_sqlite_connection()
+        if db is not None:
+            try:
+                await db.execute(
+                    "INSERT OR REPLACE INTO feedback (key, user_id, message_id, thread_id, rating, comment, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    (key, user_id, message_id, thread_id, rating, comment or "", now, now),
+                )
+                await db.commit()
+                return {"status": "ok", "rating": rating}
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("FeedbackStore submit_feedback SQLite error: %s", exc)
+
         self._mem_feedback[key] = data
         return {"status": "ok", "rating": rating}
 
@@ -104,6 +118,28 @@ class FeedbackStore:
                 }
             except (RedisError, RuntimeError) as exc:
                 logger.warning("FeedbackStore get_feedback Redis error: %s", exc)
+
+        # SQLite fallback
+        db = await get_sqlite_connection()
+        if db is not None:
+            try:
+                cur = await db.execute(
+                    "SELECT * FROM feedback WHERE key = ?", (key,)
+                )
+                row = await cur.fetchone()
+                if row:
+                    return {
+                        "user_id": row["user_id"] or user_id,
+                        "message_id": row["message_id"] or message_id,
+                        "thread_id": row["thread_id"] or "",
+                        "rating": row["rating"] or "",
+                        "comment": row["comment"] or "",
+                        "created_at": float(row["created_at"] or 0),
+                        "updated_at": float(row["updated_at"] or 0),
+                    }
+                return None
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("FeedbackStore get_feedback SQLite error: %s", exc)
 
         mem = self._mem_feedback.get(key)
         if mem is None:
