@@ -93,5 +93,17 @@ class Settings(BaseSettings):
     INJECTION_STRIKE_WINDOW_MINUTES: int = 60
     INJECTION_COOLDOWN_MINUTES: int = 15
 
+    # Per-user rate limiting (Phase 7.2)
+    RATE_LIMIT_CHAT_PER_MIN: int = 10
+    RATE_LIMIT_THREADS_PER_MIN: int = 30
+    RATE_LIMIT_UPLOADS_PER_MIN: int = 5
+
+    # Per-user daily cost cap (Phase 7.2)
+    DAILY_COST_CAP_USD: float = 5.0
+
+    # Global circuit breaker (Phase 7.2)
+    HOURLY_PLATFORM_CAP_USD: float = 50.0
+    CIRCUIT_BREAKER_ENABLED: bool = True
+
 
 settings = Settings()
