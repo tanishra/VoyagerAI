@@ -4,8 +4,7 @@ Stores itinerary snapshots against unguessable tokens so users can share
 read-only itinerary links with anyone. Tokens expire after a configurable
 TTL (default 7 days). Includes listing and revocation for full management.
 
-Falls back to an in-memory dict when Redis is unavailable (same graceful
-degradation pattern as threads.py and cache.py).
+Falls back to SQLite (persistent) then in-memory when Redis is unavailable.
 """
 
 from __future__ import annotations
@@ -20,6 +19,7 @@ from redis.asyncio import Redis
 from redis.exceptions import RedisError
 
 from config import REDIS_URL, settings
+from sqlite_fallback import get_sqlite_connection
 
 logger = logging.getLogger("travel_agent.share")
 
@@ -41,7 +41,7 @@ def _user_tag(user_id: str) -> str:
 
 
 class ShareStore:
-    """Redis-backed share token store with in-memory fallback."""
+    """Redis-backed share token store with SQLite + in-memory fallback."""
 
     def __init__(self) -> None:
         self._redis: Redis | None = None
@@ -91,6 +91,19 @@ class ShareStore:
             except (RedisError, RuntimeError) as exc:
                 logger.warning("ShareStore create_share Redis error — falling back: %s", exc)
 
+        # SQLite fallback
+        db = await get_sqlite_connection()
+        if db is not None:
+            try:
+                await db.execute(
+                    "INSERT INTO shares (token, user_tag, thread_id, destination, itinerary_json, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (token, tag, thread_id, destination[:100], itinerary_json, now, expires_at),
+                )
+                await db.commit()
+                return token, expires_at
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("ShareStore create_share SQLite error — falling back: %s", exc)
+
         # In-memory fallback
         user_shares = self._mem.setdefault(user_id, {})
         user_shares[token] = {
@@ -130,6 +143,30 @@ class ShareStore:
                 return None
             except (RedisError, RuntimeError) as exc:
                 logger.warning("ShareStore get_share Redis error — falling back: %s", exc)
+
+        # SQLite fallback
+        db = await get_sqlite_connection()
+        if db is not None:
+            try:
+                cur = await db.execute(
+                    "SELECT * FROM shares WHERE token = ?", (token,)
+                )
+                row = await cur.fetchone()
+                if row:
+                    expires_at = float(row["expires_at"] or 0)
+                    if expires_at < time.time():
+                        await db.execute("DELETE FROM shares WHERE token = ?", (token,))
+                        await db.commit()
+                        return None
+                    return {
+                        "itinerary_json": row["itinerary_json"] or "",
+                        "destination": row["destination"] or "",
+                        "created_at": float(row["created_at"] or 0),
+                        "expires_at": expires_at,
+                    }
+                return None
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("ShareStore get_share SQLite error — falling back: %s", exc)
 
         # In-memory fallback
         for user_shares in self._mem.values():
@@ -178,6 +215,31 @@ class ShareStore:
             except (RedisError, RuntimeError) as exc:
                 logger.warning("ShareStore list_shares Redis error — falling back: %s", exc)
 
+        # SQLite fallback
+        db = await get_sqlite_connection()
+        if db is not None:
+            try:
+                cur = await db.execute(
+                    "SELECT * FROM shares WHERE user_tag = ? ORDER BY created_at DESC", (tag,)
+                )
+                rows = await cur.fetchall()
+                now = time.time()
+                shares = []
+                for row in rows:
+                    expires_at = float(row["expires_at"] or 0)
+                    if expires_at < now:
+                        continue
+                    shares.append(ShareMeta(
+                        token=row["token"],
+                        thread_id=row["thread_id"] or "",
+                        destination=row["destination"] or "",
+                        created_at=float(row["created_at"] or 0),
+                        expires_at=expires_at,
+                    ))
+                return shares
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("ShareStore list_shares SQLite error — falling back: %s", exc)
+
         # In-memory fallback
         user_shares = self._mem.get(user_id, {})
         now = time.time()
@@ -207,6 +269,18 @@ class ShareStore:
                 return deleted > 0
             except (RedisError, RuntimeError) as exc:
                 logger.warning("ShareStore revoke_share Redis error — falling back: %s", exc)
+
+        # SQLite fallback
+        db = await get_sqlite_connection()
+        if db is not None:
+            try:
+                cur = await db.execute(
+                    "DELETE FROM shares WHERE token = ? AND user_tag = ?", (token, tag)
+                )
+                await db.commit()
+                return cur.rowcount > 0
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("ShareStore revoke_share SQLite error — falling back: %s", exc)
 
         # In-memory fallback
         user_shares = self._mem.get(user_id, {})
