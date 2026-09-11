@@ -496,5 +496,131 @@ class CostStore:
 
         return cleaned
 
+    # ------------------------------------------------------------------
+    # Phase 7.2: Daily cost cap + circuit breaker
+    # ------------------------------------------------------------------
+
+    async def get_user_daily_spend(self, user_id: str) -> float:
+        """Return total USD spent by *user_id* since UTC midnight."""
+        now = time.time()
+        # Start of today (UTC midnight)
+        today_str = time.strftime("%Y-%m-%d", time.gmtime(now))
+        start_of_day = time.mktime(time.strptime(today_str, "%Y-%m-%d"))
+        user_tag = hashlib.sha256(user_id.encode()).hexdigest()[:12]
+
+        r = await self._get_redis()
+        if r is not None:
+            try:
+                # costs:user:{user_tag} is a sorted set: thread_id → cost_usd
+                # We need to sum costs for threads created today.
+                thread_ids = await r.zrange(f"costs:user:{user_tag}", 0, -1)
+                if not thread_ids:
+                    return 0.0
+                pipe = r.pipeline()
+                for tid in thread_ids:
+                    pipe.hgetall(f"costs:session:{tid}")
+                sessions = await pipe.execute()
+                total = 0.0
+                for tid, data in zip(thread_ids, sessions, strict=False):
+                    if not data:
+                        continue
+                    created = float(data.get("created_at", 0))
+                    if created >= start_of_day:
+                        total += float(data.get("total_cost_usd", 0.0))
+                return round(total, 6)
+            except (RedisError, RuntimeError) as exc:
+                logger.warning("CostStore get_user_daily_spend Redis error: %s", exc)
+
+        # SQLite fallback
+        db = await get_sqlite_connection()
+        if db is not None:
+            try:
+                cur = await db.execute(
+                    "SELECT SUM(total_cost_usd) FROM costs_session WHERE user_id = ? AND created_at >= ?",
+                    (user_id, start_of_day),
+                )
+                row = await cur.fetchone()
+                return round(float(row[0] or 0.0), 6)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("CostStore get_user_daily_spend SQLite error: %s", exc)
+
+        # In-memory fallback
+        total = 0.0
+        for tid, data in self._mem_sessions.items():
+            if data.get("user_id", "") != user_id:
+                continue
+            created = float(data.get("created_at", 0))
+            if created >= start_of_day:
+                total += float(data.get("total_cost_usd", 0.0))
+        return round(total, 6)
+
+    async def check_daily_budget(self, user_id: str) -> tuple[bool, float, float]:
+        """Check if user is within their daily cost cap.
+
+        Returns ``(within_budget, spent, cap)``.
+        """
+        spent = await self.get_user_daily_spend(user_id)
+        cap = settings.DAILY_COST_CAP_USD
+        return (spent < cap, round(spent, 6), cap)
+
+    async def get_hourly_platform_spend(self) -> float:
+        """Return total USD spent across all users in the last hour."""
+        now = time.time()
+        one_hour_ago = now - 3600
+
+        r = await self._get_redis()
+        if r is not None:
+            try:
+                thread_ids = await r.zrange("costs:index", 0, -1)
+                if not thread_ids:
+                    return 0.0
+                pipe = r.pipeline()
+                for tid in thread_ids:
+                    pipe.hgetall(f"costs:session:{tid}")
+                sessions = await pipe.execute()
+                total = 0.0
+                for tid, data in zip(thread_ids, sessions, strict=False):
+                    if not data:
+                        continue
+                    created = float(data.get("created_at", 0))
+                    if created >= one_hour_ago:
+                        total += float(data.get("total_cost_usd", 0.0))
+                return round(total, 6)
+            except (RedisError, RuntimeError) as exc:
+                logger.warning("CostStore get_hourly_platform_spend Redis error: %s", exc)
+
+        # SQLite fallback
+        db = await get_sqlite_connection()
+        if db is not None:
+            try:
+                cur = await db.execute(
+                    "SELECT SUM(total_cost_usd) FROM costs_session WHERE created_at >= ?",
+                    (one_hour_ago,),
+                )
+                row = await cur.fetchone()
+                return round(float(row[0] or 0.0), 6)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("CostStore get_hourly_platform_spend SQLite error: %s", exc)
+
+        # In-memory fallback
+        total = 0.0
+        for tid, data in self._mem_sessions.items():
+            created = float(data.get("created_at", 0))
+            if created >= one_hour_ago:
+                total += float(data.get("total_cost_usd", 0.0))
+        return round(total, 6)
+
+    async def check_circuit_breaker(self) -> tuple[bool, float, float]:
+        """Check if the global circuit breaker is tripped.
+
+        Returns ``(tripped, spent, cap)``.
+        """
+        if not settings.CIRCUIT_BREAKER_ENABLED:
+            spent = await self.get_hourly_platform_spend()
+            return (False, spent, settings.HOURLY_PLATFORM_CAP_USD)
+        spent = await self.get_hourly_platform_spend()
+        cap = settings.HOURLY_PLATFORM_CAP_USD
+        return (spent >= cap, round(spent, 6), cap)
+
 
 cost_store = CostStore()
