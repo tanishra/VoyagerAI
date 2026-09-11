@@ -153,6 +153,13 @@ CREATE TABLE IF NOT EXISTS files (
     expires_at REAL
 );
 CREATE INDEX IF NOT EXISTS idx_files_user_tag ON files(user_tag);
+
+-- RateLimiter (Phase 7.2)
+CREATE TABLE IF NOT EXISTS rate_limits (
+    key TEXT NOT NULL,
+    timestamp REAL NOT NULL,
+    PRIMARY KEY (key, timestamp)
+);
 """
 
 _conn: aiosqlite.Connection | None = None
@@ -204,6 +211,11 @@ async def cleanup_expired() -> int:
                 f"DELETE FROM {table} WHERE expires_at < ?", (now,)
             )
             total += cur.rowcount
+        # Rate limits: keep 1 hour of history
+        cur = await db.execute(
+            "DELETE FROM rate_limits WHERE timestamp < ?", (now - 3600,)
+        )
+        total += cur.rowcount
         await db.commit()
         if total:
             logger.info("SQLite cleanup: deleted %d expired rows", total)
