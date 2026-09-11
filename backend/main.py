@@ -2309,6 +2309,13 @@ async def _start_thread_cleanup_task() -> None:
                             pass
             except Exception:  # noqa: BLE001
                 logger.warning("Thread cleanup task error", exc_info=True)
+            try:
+                from sqlite_fallback import cleanup_expired
+                deleted = await cleanup_expired()
+                if deleted:
+                    logger.info("SQLite fallback cleanup: %d expired rows", deleted)
+            except Exception:  # noqa: BLE001
+                logger.warning("SQLite fallback cleanup task error", exc_info=True)
 
     asyncio.create_task(_cleanup_loop())
 
