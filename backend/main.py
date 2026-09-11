@@ -175,6 +175,11 @@ limiter = Limiter(key_func=get_remote_address, default_limits=["30/hour"])
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
+# --- Per-user rate limiting (Phase 7.2) ---
+from rate_limiter import RateLimitMiddleware  # noqa: E402
+
+app.add_middleware(RateLimitMiddleware)
+
 # --- CSRF Protection (double-submit cookie pattern) ---
 CSRF_COOKIE_NAME = "voyager_csrf"
 CSRF_HEADER_NAME = "X-CSRF-Token"
@@ -575,6 +580,89 @@ async def get_thread_cost_breakdown(
     return JSONResponse(content={
         "session": session_cost,
         "subagents": subagent_breakdown,
+    })
+
+
+@app.get(
+    "/admin/costs/user/{user_id}",
+    summary="Get per-user daily cost summary (Phase 7.2)",
+    tags=["admin"],
+    dependencies=[Depends(verify_api_key)],
+    response_model=None,
+    responses={
+        200: {
+            "description": "Per-user cost summary",
+            "content": {"application/json": {"example": {
+                "user_id": "alice@example.com",
+                "daily_spent": 2.34,
+                "daily_cap": 5.0,
+                "remaining": 2.66,
+            }}},
+        },
+        401: {"description": "Missing or invalid API key"},
+        403: {"description": "User is not in ADMIN_EMAILS allowlist"},
+    },
+)
+@limiter.limit("10/minute")
+async def get_user_cost_summary(
+    user_id: str,
+    request: Request,
+    admin: dict = Depends(verify_admin),
+) -> JSONResponse:
+    """Get a per-user daily cost summary including remaining budget.
+
+    **Path parameters:**
+    - `user_id`: The user ID to inspect
+
+    **Requires:** Admin privileges.
+    """
+    spent = await cost_store.get_user_daily_spend(user_id)
+    cap = settings.DAILY_COST_CAP_USD
+    return JSONResponse(content={
+        "user_id": user_id,
+        "daily_spent": round(spent, 6),
+        "daily_cap": cap,
+        "remaining": round(cap - spent, 6),
+    })
+
+
+@app.get(
+    "/admin/costs/platform",
+    summary="Get platform-wide hourly cost summary (Phase 7.2)",
+    tags=["admin"],
+    dependencies=[Depends(verify_api_key)],
+    response_model=None,
+    responses={
+        200: {
+            "description": "Platform cost summary",
+            "content": {"application/json": {"example": {
+                "hourly_spent": 12.34,
+                "hourly_cap": 50.0,
+                "circuit_breaker_enabled": True,
+                "circuit_breaker_tripped": False,
+            }}},
+        },
+        401: {"description": "Missing or invalid API key"},
+        403: {"description": "User is not in ADMIN_EMAILS allowlist"},
+    },
+)
+@limiter.limit("10/minute")
+async def get_platform_cost_summary(
+    request: Request,
+    admin: dict = Depends(verify_admin),
+) -> JSONResponse:
+    """Get platform-wide hourly cost summary and circuit breaker status.
+
+    **Requires:** Admin privileges.
+    """
+    spent = await cost_store.get_hourly_platform_spend()
+    cap = settings.HOURLY_PLATFORM_CAP_USD
+    tripped = settings.CIRCUIT_BREAKER_ENABLED and spent >= cap
+    return JSONResponse(content={
+        "hourly_spent": round(spent, 6),
+        "hourly_cap": cap,
+        "circuit_breaker_enabled": settings.CIRCUIT_BREAKER_ENABLED,
+        "circuit_breaker_tripped": tripped,
     })
 
 
@@ -1083,6 +1171,20 @@ async def chat_stream(
     # Determine locale: explicit request field takes priority, then Accept-Language header
     locale = extract_locale(request, chat_req.locale)
 
+    # --- Phase 7.2: Daily cost cap + circuit breaker ---
+    within_budget, _spent, _cap = await cost_store.check_daily_budget(user_id)
+    if not within_budget:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Daily cost limit reached (${_spent:.2f}/${_cap:.2f}). Try again tomorrow.",
+        )
+    tripped, _p_spent, _p_cap = await cost_store.check_circuit_breaker()
+    if tripped:
+        raise HTTPException(
+            status_code=503,
+            detail="Platform temporarily unavailable due to high demand. Please try again shortly.",
+        )
+
     # --- Phase 6.30: Prompt injection defense ---
     # Step 1: Check cooldown
     if await security_store.is_in_cooldown(user_id):
@@ -1289,6 +1391,20 @@ async def chat_regenerate(
     locale = extract_locale(request, body.get("locale"))
     timezone = body.get("timezone")
 
+    # --- Phase 7.2: Daily cost cap + circuit breaker ---
+    within_budget, _spent, _cap = await cost_store.check_daily_budget(user_id)
+    if not within_budget:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Daily cost limit reached (${_spent:.2f}/${_cap:.2f}). Try again tomorrow.",
+        )
+    tripped, _p_spent, _p_cap = await cost_store.check_circuit_breaker()
+    if tripped:
+        raise HTTPException(
+            status_code=503,
+            detail="Platform temporarily unavailable due to high demand. Please try again shortly.",
+        )
+
     logger.info("POST /chat/regenerate — thread_id=%s, user=%s", thread_id, user_id)
 
     async def event_generator():
@@ -1387,6 +1503,20 @@ async def chat_edit(
     thread_id = _scoped_chat_thread_id(raw_thread_id, user_id)
     locale = extract_locale(request, body.get("locale"))
     timezone = body.get("timezone")
+
+    # --- Phase 7.2: Daily cost cap + circuit breaker ---
+    within_budget, _spent, _cap = await cost_store.check_daily_budget(user_id)
+    if not within_budget:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Daily cost limit reached (${_spent:.2f}/${_cap:.2f}). Try again tomorrow.",
+        )
+    tripped, _p_spent, _p_cap = await cost_store.check_circuit_breaker()
+    if tripped:
+        raise HTTPException(
+            status_code=503,
+            detail="Platform temporarily unavailable due to high demand. Please try again shortly.",
+        )
 
     logger.info("POST /chat/edit — thread_id=%s, user=%s", thread_id, user_id)
 
