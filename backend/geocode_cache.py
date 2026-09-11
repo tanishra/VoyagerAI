@@ -16,6 +16,7 @@ from redis.asyncio import Redis
 from redis.exceptions import RedisError
 
 from config import REDIS_URL
+from sqlite_fallback import get_sqlite_connection
 
 logger = logging.getLogger("travel_agent.geocode")
 
@@ -29,7 +30,7 @@ def _cache_key(query: str) -> str:
 
 
 class GeocodeCache:
-    """Redis-backed geocode cache with in-memory fallback."""
+    """Redis-backed geocode cache with SQLite + in-memory fallback."""
 
     def __init__(self) -> None:
         self._redis: Redis | None = None
@@ -59,6 +60,20 @@ class GeocodeCache:
             except (RedisError, RuntimeError) as exc:
                 logger.warning("GeocodeCache get Redis error — falling back: %s", exc)
 
+        # SQLite fallback
+        db = await get_sqlite_connection()
+        if db is not None:
+            try:
+                cur = await db.execute(
+                    "SELECT lat, lng FROM geocode_cache WHERE query_hash = ?", (key,)
+                )
+                row = await cur.fetchone()
+                if row:
+                    return {"lat": float(row["lat"]), "lng": float(row["lng"])}
+                return None
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("GeocodeCache get SQLite error — falling back: %s", exc)
+
         # In-memory fallback
         return self._mem.get(key)
 
@@ -73,6 +88,20 @@ class GeocodeCache:
                 return
             except (RedisError, RuntimeError) as exc:
                 logger.warning("GeocodeCache set Redis error — falling back: %s", exc)
+
+        # SQLite fallback
+        db = await get_sqlite_connection()
+        if db is not None:
+            try:
+                import time as _time
+                await db.execute(
+                    "INSERT OR REPLACE INTO geocode_cache (query_hash, lat, lng, created_at) VALUES (?, ?, ?, ?)",
+                    (key, lat, lng, _time.time()),
+                )
+                await db.commit()
+                return
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("GeocodeCache set SQLite error — falling back: %s", exc)
 
         # In-memory fallback
         self._mem[key] = {"lat": lat, "lng": lng}
