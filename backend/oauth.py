@@ -20,6 +20,7 @@ from redis.asyncio import Redis
 from redis.exceptions import RedisError
 
 from config import settings
+from sqlite_fallback import get_sqlite_connection
 
 logger = logging.getLogger("travel_agent.oauth")
 
@@ -63,59 +64,101 @@ async def _get_redis() -> Redis | None:
 
 
 async def create_session(user_info: dict) -> str:
-    """Create a session in Redis (or in-memory fallback) and return the session ID."""
+    """Create a session in Redis (or SQLite / in-memory fallback) and return the session ID."""
     session_id = secrets.token_urlsafe(32)
+    now = int(time.time())
     payload = {
         **user_info,
-        "created_at": int(time.time()),
-        "exp": int(time.time()) + SESSION_TTL,
+        "created_at": now,
+        "exp": now + SESSION_TTL,
     }
     r = await _get_redis()
-    if r is None:
-        _mem_sessions[session_id] = payload
-        return session_id
-    try:
-        await r.set(
-            f"{SESSION_REDIS_PREFIX}{session_id}",
-            json.dumps(payload),
-            ex=SESSION_TTL,
-        )
-    except (RedisError, RuntimeError) as exc:
-        logger.warning("Session Redis write failed — using in-memory fallback: %s", exc)
-        _mem_sessions[session_id] = payload
-    finally:
-        await r.aclose()
+    if r is not None:
+        try:
+            await r.set(
+                f"{SESSION_REDIS_PREFIX}{session_id}",
+                json.dumps(payload),
+                ex=SESSION_TTL,
+            )
+            return session_id
+        except (RedisError, RuntimeError) as exc:
+            logger.warning("Session Redis write failed — using fallback: %s", exc)
+        finally:
+            await r.aclose()
+
+    # SQLite fallback
+    db = await get_sqlite_connection()
+    if db is not None:
+        try:
+            await db.execute(
+                "INSERT OR REPLACE INTO sessions (session_id, payload_json, created_at, expires_at) VALUES (?, ?, ?, ?)",
+                (session_id, json.dumps(payload), now, now + SESSION_TTL),
+            )
+            await db.commit()
+            return session_id
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Session SQLite write failed — using in-memory: %s", exc)
+
+    # In-memory fallback
+    _mem_sessions[session_id] = payload
     return session_id
 
 
 async def get_session(session_id: str) -> dict | None:
-    """Read a session by ID from Redis (or in-memory fallback)."""
+    """Read a session by ID from Redis (or SQLite / in-memory fallback)."""
     r = await _get_redis()
-    if r is None:
-        return _mem_sessions.get(session_id)
-    try:
-        data = await r.get(f"{SESSION_REDIS_PREFIX}{session_id}")
-        if data:
-            return json.loads(data)
-    except (RedisError, RuntimeError):
-        logger.warning("Failed to read session from Redis")
-    finally:
-        await r.aclose()
+    if r is not None:
+        try:
+            data = await r.get(f"{SESSION_REDIS_PREFIX}{session_id}")
+            if data:
+                return json.loads(data)
+        except (RedisError, RuntimeError):
+            logger.warning("Failed to read session from Redis")
+        finally:
+            await r.aclose()
+
+    # SQLite fallback
+    db = await get_sqlite_connection()
+    if db is not None:
+        try:
+            cur = await db.execute(
+                "SELECT payload_json, expires_at FROM sessions WHERE session_id = ?",
+                (session_id,),
+            )
+            row = await cur.fetchone()
+            if row:
+                if float(row["expires_at"]) < time.time():
+                    await db.execute("DELETE FROM sessions WHERE session_id = ?", (session_id,))
+                    await db.commit()
+                    return None
+                return json.loads(row["payload_json"])
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Session SQLite read failed — using in-memory: %s", exc)
+
+    # In-memory fallback
     return _mem_sessions.get(session_id)
 
 
 async def delete_session(session_id: str) -> None:
-    """Delete a session from Redis and in-memory fallback (logout)."""
+    """Delete a session from Redis, SQLite, and in-memory fallback (logout)."""
     _mem_sessions.pop(session_id, None)
     r = await _get_redis()
-    if r is None:
-        return
-    try:
-        await r.delete(f"{SESSION_REDIS_PREFIX}{session_id}")
-    except (RedisError, RuntimeError):
-        logger.warning("Failed to delete session from Redis")
-    finally:
-        await r.aclose()
+    if r is not None:
+        try:
+            await r.delete(f"{SESSION_REDIS_PREFIX}{session_id}")
+        except (RedisError, RuntimeError):
+            logger.warning("Failed to delete session from Redis")
+        finally:
+            await r.aclose()
+
+    # SQLite fallback
+    db = await get_sqlite_connection()
+    if db is not None:
+        try:
+            await db.execute("DELETE FROM sessions WHERE session_id = ?", (session_id,))
+            await db.commit()
+        except Exception:  # noqa: BLE001, S110
+            pass
 
 
 async def get_current_user(request: Request) -> dict:
