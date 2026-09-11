@@ -19,6 +19,7 @@ from redis.asyncio import Redis
 from redis.exceptions import RedisError
 
 from config import REDIS_URL
+from sqlite_fallback import get_sqlite_connection
 
 logger = logging.getLogger("travel_agent.research_cache")
 
@@ -26,7 +27,7 @@ _DEFAULT_TTL = 86400  # 24 hours
 
 
 class ResearchCache:
-    """Redis-backed research cache with in-memory fallback."""
+    """Redis-backed research cache with SQLite + in-memory fallback."""
 
     def __init__(self) -> None:
         self._redis: Redis | None = None
@@ -57,6 +58,23 @@ class ResearchCache:
             except (RedisError, RuntimeError) as exc:
                 logger.warning("ResearchCache get Redis error: %s", exc)
 
+        # SQLite fallback
+        db = await get_sqlite_connection()
+        if db is not None:
+            try:
+                cur = await db.execute(
+                    "SELECT value, expires_at FROM research_cache WHERE key = ?", (key,)
+                )
+                row = await cur.fetchone()
+                if row:
+                    if time.time() < float(row["expires_at"]):
+                        return row["value"]
+                    await db.execute("DELETE FROM research_cache WHERE key = ?", (key,))
+                    await db.commit()
+                return None
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("ResearchCache get SQLite error: %s", exc)
+
         now = time.time()
         entry = self._mem_cache.get(key)
         if entry is not None:
@@ -79,6 +97,20 @@ class ResearchCache:
                 return
             except (RedisError, RuntimeError) as exc:
                 logger.warning("ResearchCache set Redis error: %s", exc)
+
+        # SQLite fallback
+        db = await get_sqlite_connection()
+        if db is not None:
+            try:
+                now = time.time()
+                await db.execute(
+                    "INSERT OR REPLACE INTO research_cache (key, value, created_at, expires_at) VALUES (?, ?, ?, ?)",
+                    (key, value, now, now + ttl),
+                )
+                await db.commit()
+                return
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("ResearchCache set SQLite error: %s", exc)
 
         self._mem_cache[key] = (value, time.time() + ttl)
 
