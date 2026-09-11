@@ -26,6 +26,7 @@ from redis.asyncio import Redis
 from redis.exceptions import RedisError
 
 from config import REDIS_URL, settings
+from sqlite_fallback import get_sqlite_connection
 
 logger = logging.getLogger("travel_agent.security_store")
 
@@ -40,7 +41,7 @@ def _hash_user_id(user_id: str) -> str:
 
 
 class SecurityStore:
-    """Redis-backed security flag/strike storage with in-memory fallback."""
+    """Redis-backed security flag/strike storage with SQLite + in-memory fallback."""
 
     def __init__(self) -> None:
         self._redis: Redis | None = None
@@ -107,6 +108,19 @@ class SecurityStore:
             except (RedisError, RuntimeError) as exc:
                 logger.warning("SecurityStore record_flag Redis error: %s", exc)
 
+        # SQLite fallback
+        db = await get_sqlite_connection()
+        if db is not None:
+            try:
+                await db.execute(
+                    "INSERT INTO security_flags (flag_id, user_hash, category, confidence, source, thread_id, reasoning_snippet, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    (flag_id, user_hash, category, confidence, source, thread_hash, reasoning[:200], now),
+                )
+                await db.commit()
+                return flag_id
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("SecurityStore record_flag SQLite error: %s", exc)
+
         self._mem_flags.setdefault(user_hash, []).append(entry)
         return flag_id
 
@@ -134,6 +148,29 @@ class SecurityStore:
             except (RedisError, RuntimeError) as exc:
                 logger.warning("SecurityStore record_strike Redis error: %s", exc)
 
+        # SQLite fallback
+        db = await get_sqlite_connection()
+        if db is not None:
+            try:
+                strike_id = uuid.uuid4().hex[:16]
+                await db.execute(
+                    "DELETE FROM security_strikes WHERE user_hash = ? AND created_at < ?",
+                    (user_hash, window_start),
+                )
+                await db.execute(
+                    "INSERT INTO security_strikes (user_hash, created_at) VALUES (?, ?)",
+                    (user_hash, now),
+                )
+                await db.commit()
+                cur = await db.execute(
+                    "SELECT COUNT(*) FROM security_strikes WHERE user_hash = ? AND created_at >= ?",
+                    (user_hash, window_start),
+                )
+                row = await cur.fetchone()
+                return int(row[0]) if row else 1
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("SecurityStore record_strike SQLite error: %s", exc)
+
         strikes = self._mem_strikes.setdefault(user_hash, [])
         strikes = [s for s in strikes if s > window_start]
         strikes.append(now)
@@ -158,6 +195,24 @@ class SecurityStore:
             except (RedisError, RuntimeError) as exc:
                 logger.warning("SecurityStore get_strike_count Redis error: %s", exc)
 
+        # SQLite fallback
+        db = await get_sqlite_connection()
+        if db is not None:
+            try:
+                await db.execute(
+                    "DELETE FROM security_strikes WHERE user_hash = ? AND created_at < ?",
+                    (user_hash, window_start),
+                )
+                await db.commit()
+                cur = await db.execute(
+                    "SELECT COUNT(*) FROM security_strikes WHERE user_hash = ?",
+                    (user_hash,),
+                )
+                row = await cur.fetchone()
+                return int(row[0]) if row else 0
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("SecurityStore get_strike_count SQLite error: %s", exc)
+
         strikes = self._mem_strikes.get(user_hash, [])
         strikes = [s for s in strikes if s > window_start]
         return len(strikes)
@@ -181,6 +236,21 @@ class SecurityStore:
             except (RedisError, RuntimeError) as exc:
                 logger.warning("SecurityStore is_in_cooldown Redis error: %s", exc)
 
+        # SQLite fallback
+        db = await get_sqlite_connection()
+        if db is not None:
+            try:
+                cur = await db.execute(
+                    "SELECT cooldown_until FROM security_cooldowns WHERE user_hash = ?",
+                    (user_hash,),
+                )
+                row = await cur.fetchone()
+                if row:
+                    return float(row["cooldown_until"]) > now
+                return False
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("SecurityStore is_in_cooldown SQLite error: %s", exc)
+
         until = self._mem_cooldowns.get(user_hash, 0)
         return until > now
 
@@ -198,6 +268,19 @@ class SecurityStore:
             except (RedisError, RuntimeError) as exc:
                 logger.warning("SecurityStore apply_cooldown Redis error: %s", exc)
 
+        # SQLite fallback
+        db = await get_sqlite_connection()
+        if db is not None:
+            try:
+                await db.execute(
+                    "INSERT OR REPLACE INTO security_cooldowns (user_hash, cooldown_until) VALUES (?, ?)",
+                    (user_hash, until),
+                )
+                await db.commit()
+                return
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("SecurityStore apply_cooldown SQLite error: %s", exc)
+
         self._mem_cooldowns[user_hash] = until
 
     async def remove_cooldown(self, user_hash: str) -> bool:
@@ -209,6 +292,18 @@ class SecurityStore:
                 return deleted > 0
             except (RedisError, RuntimeError) as exc:
                 logger.warning("SecurityStore remove_cooldown Redis error: %s", exc)
+
+        # SQLite fallback
+        db = await get_sqlite_connection()
+        if db is not None:
+            try:
+                cur = await db.execute(
+                    "DELETE FROM security_cooldowns WHERE user_hash = ?", (user_hash,)
+                )
+                await db.commit()
+                return cur.rowcount > 0
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("SecurityStore remove_cooldown SQLite error: %s", exc)
 
         if user_hash in self._mem_cooldowns:
             del self._mem_cooldowns[user_hash]
