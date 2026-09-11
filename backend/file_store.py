@@ -2,8 +2,7 @@
 
 Stores uploaded files (images, PDFs) as base64 in Redis hashes with a
 configurable TTL (default 1 hour). Files auto-expire and are cleaned up
-by Redis. Falls back to an in-memory dict when Redis is unavailable
-(same graceful degradation pattern as threads.py, share_store.py, etc.).
+by Redis. Falls back to SQLite (persistent) then in-memory when Redis is unavailable.
 """
 
 from __future__ import annotations
@@ -19,6 +18,7 @@ from redis.asyncio import Redis
 from redis.exceptions import RedisError
 
 from config import REDIS_URL
+from sqlite_fallback import get_sqlite_connection
 
 logger = logging.getLogger("travel_agent.file_store")
 
@@ -41,7 +41,7 @@ def _user_tag(user_id: str) -> str:
 
 
 class FileStore:
-    """Redis-backed file store with in-memory fallback."""
+    """Redis-backed file store with SQLite + in-memory fallback."""
 
     def __init__(self) -> None:
         self._redis: Redis | None = None
@@ -98,6 +98,25 @@ class FileStore:
             except (RedisError, RuntimeError) as exc:
                 logger.warning("FileStore upload Redis error — falling back: %s", exc)
 
+        # SQLite fallback
+        db = await get_sqlite_connection()
+        if db is not None:
+            try:
+                await db.execute(
+                    "INSERT INTO files (file_id, user_tag, filename, content_type, size, data_base64, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    (file_id, tag, filename[:200], content_type, size, b64_data, now, now + _TTL_SECONDS),
+                )
+                await db.commit()
+                return {
+                    "file_id": file_id,
+                    "data_url": data_url,
+                    "filename": filename,
+                    "content_type": content_type,
+                    "size": size,
+                }
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("FileStore upload SQLite error — falling back: %s", exc)
+
         # In-memory fallback
         user_files = self._mem.setdefault(user_id, {})
         user_files[file_id] = {
@@ -137,6 +156,31 @@ class FileStore:
             except (RedisError, RuntimeError) as exc:
                 logger.warning("FileStore get Redis error — falling back: %s", exc)
 
+        # SQLite fallback
+        db = await get_sqlite_connection()
+        if db is not None:
+            try:
+                cur = await db.execute(
+                    "SELECT * FROM files WHERE file_id = ? AND user_tag = ?", (file_id, tag)
+                )
+                row = await cur.fetchone()
+                if row:
+                    if float(row["expires_at"]) < time.time():
+                        await db.execute("DELETE FROM files WHERE file_id = ?", (file_id,))
+                        await db.commit()
+                        return None
+                    return FileMeta(
+                        file_id=row["file_id"],
+                        filename=row["filename"] or "",
+                        content_type=row["content_type"] or "",
+                        size=int(row["size"] or 0),
+                        data=row["data_base64"] or "",
+                        created_at=float(row["created_at"] or 0),
+                    )
+                return None
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("FileStore get SQLite error — falling back: %s", exc)
+
         # In-memory fallback
         user_files = self._mem.get(user_id, {})
         entry = user_files.get(file_id)
@@ -162,6 +206,18 @@ class FileStore:
                 return deleted > 0
             except (RedisError, RuntimeError) as exc:
                 logger.warning("FileStore delete Redis error — falling back: %s", exc)
+
+        # SQLite fallback
+        db = await get_sqlite_connection()
+        if db is not None:
+            try:
+                cur = await db.execute(
+                    "DELETE FROM files WHERE file_id = ? AND user_tag = ?", (file_id, tag)
+                )
+                await db.commit()
+                return cur.rowcount > 0
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("FileStore delete SQLite error — falling back: %s", exc)
 
         # In-memory fallback
         user_files = self._mem.get(user_id, {})
