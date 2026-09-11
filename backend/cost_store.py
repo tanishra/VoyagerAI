@@ -23,6 +23,7 @@ from redis.asyncio import Redis
 from redis.exceptions import RedisError
 
 from config import REDIS_URL, settings
+from sqlite_fallback import get_sqlite_connection
 
 logger = logging.getLogger("travel_agent.cost_store")
 
@@ -53,7 +54,7 @@ class SubagentCost:
 
 
 class CostStore:
-    """Redis-backed cost storage with in-memory fallback."""
+    """Redis-backed cost storage with SQLite + in-memory fallback."""
 
     def __init__(self) -> None:
         self._redis: Redis | None = None
@@ -105,6 +106,19 @@ class CostStore:
             except (RedisError, RuntimeError) as exc:
                 logger.warning("CostStore record_subagent_cost Redis error: %s", exc)
 
+        # SQLite fallback
+        db = await get_sqlite_connection()
+        if db is not None:
+            try:
+                await db.execute(
+                    "INSERT INTO costs_subagent (thread_id, subagent_name, input_tokens, output_tokens, cost_usd, model_used, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (thread_id, subagent_name, input_tokens, output_tokens, cost_usd, model_used, ts),
+                )
+                await db.commit()
+                return
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("CostStore record_subagent_cost SQLite error: %s", exc)
+
         self._mem_subagents.setdefault(thread_id, []).append(entry)
 
     async def update_session_total(
@@ -152,6 +166,19 @@ class CostStore:
             except (RedisError, RuntimeError) as exc:
                 logger.warning("CostStore update_session_total Redis error: %s", exc)
 
+        # SQLite fallback
+        db = await get_sqlite_connection()
+        if db is not None:
+            try:
+                await db.execute(
+                    "INSERT OR REPLACE INTO costs_session (thread_id, user_id, total_input_tokens, total_output_tokens, total_cost_usd, efficiency_ratio, budget_limit_usd, budget_reached, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (thread_id, user_id, total_input_tokens, total_output_tokens, total_cost_usd, efficiency_ratio, budget_limit_usd, 1 if budget_reached else 0, now),
+                )
+                await db.commit()
+                return
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("CostStore update_session_total SQLite error: %s", exc)
+
         self._mem_sessions[thread_id] = data
 
     async def get_session_cost(self, thread_id: str) -> dict | None:
@@ -175,6 +202,30 @@ class CostStore:
                 }
             except (RedisError, RuntimeError) as exc:
                 logger.warning("CostStore get_session_cost Redis error: %s", exc)
+
+        # SQLite fallback
+        db = await get_sqlite_connection()
+        if db is not None:
+            try:
+                cur = await db.execute(
+                    "SELECT * FROM costs_session WHERE thread_id = ?", (thread_id,)
+                )
+                row = await cur.fetchone()
+                if row:
+                    return {
+                        "thread_id": row["thread_id"],
+                        "user_id": row["user_id"] or "",
+                        "total_input_tokens": int(row["total_input_tokens"] or 0),
+                        "total_output_tokens": int(row["total_output_tokens"] or 0),
+                        "total_cost_usd": float(row["total_cost_usd"] or 0.0),
+                        "efficiency_ratio": float(row["efficiency_ratio"] or 0.0),
+                        "budget_limit_usd": float(row["budget_limit_usd"] or 0.0),
+                        "budget_reached": bool(row["budget_reached"]),
+                        "created_at": float(row["created_at"] or 0),
+                    }
+                return None
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("CostStore get_session_cost SQLite error: %s", exc)
 
         mem_data = self._mem_sessions.get(thread_id)
         if mem_data is None:
@@ -213,6 +264,29 @@ class CostStore:
                 return results
             except (RedisError, RuntimeError) as exc:
                 logger.warning("CostStore get_subagent_breakdown Redis error: %s", exc)
+
+        # SQLite fallback
+        db = await get_sqlite_connection()
+        if db is not None:
+            try:
+                cur = await db.execute(
+                    "SELECT * FROM costs_subagent WHERE thread_id = ? ORDER BY timestamp", (thread_id,)
+                )
+                rows = await cur.fetchall()
+                results = [
+                    {
+                        "subagent_name": row["subagent_name"],
+                        "input_tokens": int(row["input_tokens"] or 0),
+                        "output_tokens": int(row["output_tokens"] or 0),
+                        "cost_usd": float(row["cost_usd"] or 0.0),
+                        "model_used": row["model_used"] or "",
+                        "timestamp": float(row["timestamp"] or 0),
+                    }
+                    for row in rows
+                ]
+                return results
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("CostStore get_subagent_breakdown SQLite error: %s", exc)
 
         return self._mem_subagents.get(thread_id, [])
 
