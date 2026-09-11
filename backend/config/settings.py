@@ -49,6 +49,11 @@ class Settings(BaseSettings):
     CHECKPOINTER_DB_PATH: str = "./data/checkpoints.sqlite"
     STORE_BACKEND: str = "redis"
 
+    # SQLite fallback for all Redis-backed stores (threads, shares, sessions, etc.)
+    # Used when Redis is unavailable — data persists across restarts.
+    # Single-server only; multi-server production requires Redis.
+    SQLITE_FALLBACK_DB_PATH: str = "./data/stores.sqlite"
+
     THREAD_TTL_DAYS: int = 30  # threads expire after N days of inactivity
     SHARE_TTL_DAYS: int = 7  # share links expire after N days
 
