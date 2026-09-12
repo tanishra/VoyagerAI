@@ -210,6 +210,219 @@
         }
       }
     },
+    "/admin/costs/user/{user_id}": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Get per-user daily cost summary (Phase 7.2)",
+        "description": "Get a per-user daily cost summary including remaining budget.\n\n**Path parameters:**\n- `user_id`: The user ID to inspect\n\n**Requires:** Admin privileges.",
+        "operationId": "get_user_cost_summary_admin_costs_user__user_id__get",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "User Id"
+            }
+          },
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Per-user cost summary",
+            "content": {
+              "application/json": {
+                "schema": {},
+                "example": {
+                  "user_id": "alice@example.com",
+                  "daily_spent": 2.34,
+                  "daily_cap": 5.0,
+                  "remaining": 2.66
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key"
+          },
+          "403": {
+            "description": "User is not in ADMIN_EMAILS allowlist"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/costs/platform": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Get platform-wide hourly cost summary (Phase 7.2)",
+        "description": "Get platform-wide hourly cost summary and circuit breaker status.\n\n**Requires:** Admin privileges.",
+        "operationId": "get_platform_cost_summary_admin_costs_platform_get",
+        "parameters": [
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Platform cost summary",
+            "content": {
+              "application/json": {
+                "schema": {},
+                "example": {
+                  "hourly_spent": 12.34,
+                  "hourly_cap": 50.0,
+                  "circuit_breaker_enabled": true,
+                  "circuit_breaker_tripped": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key"
+          },
+          "403": {
+            "description": "User is not in ADMIN_EMAILS allowlist"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/costs/live": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Get live cost breakdown for last N hours (Phase 7.4)",
+        "description": "Get live per-hour cost breakdown for the last N hours.\n\n**Query parameters:**\n- `hours`: Number of hours to look back (default: 24, max: 168)\n\n**Requires:** Admin privileges.",
+        "operationId": "get_live_costs_admin_costs_live_get",
+        "parameters": [
+          {
+            "name": "hours",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 24,
+              "title": "Hours"
+            }
+          },
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Live cost breakdown",
+            "content": {
+              "application/json": {
+                "schema": {},
+                "example": {
+                  "hours": 24,
+                  "total_spend": 3.45,
+                  "per_hour": [
+                    {
+                      "hour": "2024-01-15T14:00",
+                      "cost": 0.12,
+                      "requests": 3,
+                      "tokens_in": 1200,
+                      "tokens_out": 800
+                    }
+                  ],
+                  "alert": {
+                    "level": "ok",
+                    "daily_spend": 3.45,
+                    "daily_cap": 50.0,
+                    "percentage": 6.9,
+                    "message": "Spend within normal range"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key"
+          },
+          "403": {
+            "description": "User is not in ADMIN_EMAILS allowlist"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/admin/costs/export": {
       "get": {
         "tags": [
@@ -1135,6 +1348,84 @@
           },
           "400": {
             "description": "Missing thread_id or message"
+          },
+          "401": {
+            "description": "Missing or invalid API key"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/chat/{thread_id}/edit-itinerary": {
+      "post": {
+        "tags": [
+          "chat"
+        ],
+        "summary": "Validate a user-edited itinerary via AI",
+        "description": "Validate a user-edited itinerary.\n\nReceives a modified itinerary JSON from the frontend editor, sends it\nto the AI for validation (budget, route, feasibility), and streams\nthe validated itinerary back as SSE events.\n\n**Request body:** `{\"itinerary\": {...}, \"locale\": \"en\", \"timezone\": \"...\", \"currency\": \"USD\"}`",
+        "operationId": "chat_edit_itinerary_chat__thread_id__edit_itinerary_post",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          },
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true,
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Server-Sent Events stream of AI validation response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              },
+              "text/event-stream": {
+                "example": "event: itinerary\ndata: {\"event\": \"itinerary\", \"data\": {\"destination\": \"...\"}}\n"
+              }
+            }
+          },
+          "400": {
+            "description": "Missing or invalid itinerary"
           },
           "401": {
             "description": "Missing or invalid API key"
@@ -2341,6 +2632,19 @@
             ],
             "title": "Timezone",
             "description": "User's IANA timezone (e.g. 'Asia/Kolkata', 'America/New_York')."
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 10
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency",
+            "description": "User's preferred currency code (e.g. 'USD', 'INR', 'EUR')."
           },
           "attachments": {
             "items": {
