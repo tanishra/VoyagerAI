@@ -301,6 +301,7 @@ class ShareGetResponse(BaseModel):
     destination: str = Field(..., description="Destination name.")
     created_at: float = Field(..., description="Unix timestamp of share creation.")
     expires_at: float = Field(..., description="Unix timestamp when share expires.")
+    image_base64: str | None = Field(None, description="Base64-encoded destination image PNG, if generated.")
 
 
 class ShareRevokeResponse(BaseModel):
