@@ -3189,6 +3189,18 @@
             "type": "number",
             "title": "Expires At",
             "description": "Unix timestamp when share expires."
+          },
+          "image_base64": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Base64",
+            "description": "Base64-encoded destination image PNG, if generated."
           }
         },
         "type": "object",
