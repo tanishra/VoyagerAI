@@ -215,3 +215,57 @@ def get_visual_tools() -> list:
     if settings.ENABLE_IMAGE_GENERATION:
         tools.append(generate_travel_image)
     return tools
+
+
+async def generate_destination_image(destination: str) -> str | None:
+    """Generate a destination image for share cards.
+
+    Returns base64-encoded PNG string, or None if generation fails or is disabled.
+    """
+    if not settings.ENABLE_IMAGE_GENERATION:
+        return None
+
+    if not settings.GEMINI_API_KEY:
+        logger.warning("Cannot generate destination image: GEMINI_API_KEY not set")
+        return None
+
+    prompt = (
+        f"A beautiful, editorial travel photograph of {destination}. "
+        "Magazine quality, warm tones, no text overlay, no people in foreground. "
+        "Landscape orientation, cinematic lighting."
+    )
+
+    try:
+        from google import genai
+        from google.genai import types
+
+        client = genai.Client(api_key=settings.GEMINI_API_KEY)
+
+        response = client.models.generate_content(
+            model=settings.IMAGE_GENERATION_MODEL,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                response_modalities=["IMAGE"],
+            ),
+        )
+
+        image_bytes = None
+        for candidate in response.candidates:
+            if candidate.content is None:
+                continue
+            for part in candidate.content.parts:
+                if part.inline_data is not None and part.inline_data.data:
+                    image_bytes = part.inline_data.data
+                    break
+            if image_bytes:
+                break
+
+        if image_bytes is None:
+            logger.warning("Destination image generation returned no data for: %s", destination)
+            return None
+
+        return base64.b64encode(image_bytes).decode("ascii")
+
+    except Exception as exc:
+        logger.warning("Destination image generation failed: %s", exc, exc_info=True)
+        return None
