@@ -121,6 +121,15 @@ LANGUAGE_INSTRUCTIONS = {
     "ja": "Respond in Japanese (日本語). All itinerary content (activities, tips, warnings, themes, accommodation, transport, visa notes, packing essentials) must be written in Japanese.",
 }
 
+CURRENCY_SYMBOLS = {
+    "USD": "$",
+    "INR": "₹",
+    "EUR": "€",
+    "JPY": "¥",
+    "GBP": "£",
+    "AUD": "A$",
+}
+
 import logging
 import re
 from datetime import datetime
@@ -205,6 +214,7 @@ def build_chat_agent_prompt(
     locale: str | None = None,
     user_id: str | None = None,
     timezone: str | None = None,
+    currency: str | None = None,
 ) -> str:
     """Return the chat agent system prompt with preferences and language injected.
 
@@ -264,6 +274,18 @@ def build_chat_agent_prompt(
     if locale and locale in LANGUAGE_INSTRUCTIONS and locale != "en":
         lang_block = f"\n<language>\n{LANGUAGE_INSTRUCTIONS[locale]}\n</language>\n"
         prompt += lang_block
+
+    if currency:
+        symbol = CURRENCY_SYMBOLS.get(currency, currency)
+        currency_block = (
+            f"\n<currency>\n"
+            f"All costs in the itinerary (cost_usd, estimated_total_cost_usd, daily_cost_usd, "
+            f"and cost_breakdown fields) must be expressed in {currency} ({symbol}). "
+            f"Use realistic local pricing estimates for {currency}. "
+            f"Do NOT use USD or any other currency.\n"
+            f"</currency>\n"
+        )
+        prompt += currency_block
 
     return prompt
 
