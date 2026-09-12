@@ -104,4 +104,33 @@ describe('TimelineView', () => {
     fireEvent.click(screen.getByText(/Day 1 — Arrival/));
     expect(screen.getAllByText('Train').length).toBe(2);
   });
+
+  it('activeDay prop controls expanded day (controlled mode)', () => {
+    render(<TimelineView days={makeDays()} destination="Tokyo" onDayClick={vi.fn()} activeDay={2} />);
+    expect(screen.queryByText('Hotel check-in')).not.toBeInTheDocument();
+    expect(screen.getByText('Senso-ji Temple')).toBeInTheDocument();
+  });
+
+  it('activeDay null collapses all days', () => {
+    render(<TimelineView days={makeDays()} destination="Tokyo" onDayClick={vi.fn()} activeDay={null} />);
+    expect(screen.queryByText('Hotel check-in')).not.toBeInTheDocument();
+    expect(screen.queryByText('Senso-ji Temple')).not.toBeInTheDocument();
+  });
+
+  it('onDayExpand callback fires when day is toggled', () => {
+    const onDayExpand = vi.fn();
+    render(<TimelineView days={makeDays()} destination="Tokyo" onDayClick={vi.fn()} onDayExpand={onDayExpand} />);
+    fireEvent.click(screen.getByText(/Day 1 — Arrival/));
+    expect(onDayExpand).toHaveBeenCalledWith(1);
+    fireEvent.click(screen.getByText(/Day 1 — Arrival/));
+    expect(onDayExpand).toHaveBeenCalledWith(null);
+  });
+
+  it('works without activeDay/onDayExpand (uncontrolled mode)', () => {
+    render(<TimelineView days={makeDays()} destination="Tokyo" onDayClick={vi.fn()} />);
+    fireEvent.click(screen.getByText(/Day 1 — Arrival/));
+    expect(screen.getByText('Hotel check-in')).toBeInTheDocument();
+    fireEvent.click(screen.getByText(/Day 1 — Arrival/));
+    expect(screen.queryByText('Hotel check-in')).not.toBeInTheDocument();
+  });
 });
