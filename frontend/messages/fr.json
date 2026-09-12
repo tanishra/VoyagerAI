@@ -26,6 +26,7 @@
     "welcome": "Salut ! Je suis votre planificateur de voyage IA. Parlez-moi du voyage dont vous rêvez — où aimeriez-vous aller, pour combien de temps et quel est votre budget ?",
     "generationFailed": "⚠ La génération a échoué : {error}",
     "generationStopped": "⏹ Génération arrêtée.",
+    "partialResearchNote": "Cette réponse a été générée avec une recherche partielle en raison des limites de budget de session.",
     "stopped": "Arrêté",
     "imageGenerated": "Image générée",
     "chartGenerated": "Graphique généré",
