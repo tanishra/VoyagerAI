@@ -177,7 +177,10 @@
     "dayN": "Jour {n}",
     "openInMaps": "Ouvrir dans Google Maps",
     "mapUnavailable": "Carte indisponible — pas de coordonnées pour cet itinéraire",
-    "mapForDay": "Carte pour le Jour {day} à {destination}"
+    "mapForDay": "Carte pour le Jour {day} à {destination}",
+    "tips": "Conseils",
+    "closeDayDetails": "Fermer les détails du jour",
+    "dailyCostSummary": "Coût journalier"
   },
   "comparison": {
     "title": "Comparer les Plans",
