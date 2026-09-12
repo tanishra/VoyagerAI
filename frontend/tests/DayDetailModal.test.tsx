@@ -7,6 +7,15 @@ vi.mock('@/components/ItineraryMap', () => ({
   default: () => <div data-testid="itinerary-map">Map</div>,
 }));
 
+vi.mock('swr', () => {
+  return {
+    default: (key: string | null) => {
+      if (key === null) return { data: undefined, isLoading: false };
+      return { data: null, isLoading: false };
+    },
+  };
+});
+
 const makeDay = (overrides?: Partial<DayPlan>): DayPlan => ({
   day: 1,
   theme: 'Arrival',
