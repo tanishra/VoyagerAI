@@ -26,6 +26,7 @@
     "welcome": "¡Hola! Soy tu planificador de viajes con IA. Cuéntame sobre el viaje que estás soñando — ¿a dónde te gustaría ir, por cuánto tiempo y cuál es tu presupuesto?",
     "generationFailed": "⚠ La generación falló: {error}",
     "generationStopped": "⏹ Generación detenida.",
+    "partialResearchNote": "Esta respuesta se generó con investigación parcial debido a los límites de presupuesto de la sesión.",
     "stopped": "Detenido",
     "imageGenerated": "Imagen generada",
     "chartGenerated": "Gráfico generado",
