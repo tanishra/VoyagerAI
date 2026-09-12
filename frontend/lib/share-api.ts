@@ -15,6 +15,7 @@ export interface ShareData {
   destination: string;
   created_at: number;
   expires_at: number;
+  image_base64?: string;
 }
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
