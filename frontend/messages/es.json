@@ -182,7 +182,8 @@
     "closeDayDetails": "Cerrar detalles del día",
     "dailyCostSummary": "Costo diario",
     "viewDetails": "Ver detalles",
-    "loadingDescription": "Cargando descripción..."
+    "loadingDescription": "Cargando descripción...",
+    "viewOnMaps": "Ver en Google Maps"
   },
   "comparison": {
     "title": "Comparar Planes",
