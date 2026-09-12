@@ -183,7 +183,16 @@
     "dailyCostSummary": "1日の費用",
     "viewDetails": "詳細を見る",
     "loadingDescription": "説明を読み込み中...",
-    "viewOnMaps": "Google Mapsで見る"
+    "viewOnMaps": "Google Mapsで見る",
+    "total": "合計",
+    "accommodation": "宿泊",
+    "food": "食事",
+    "activities": "アクティビティ",
+    "averageCost": "平均",
+    "withinBudget": "予算内",
+    "overBudget": "予算超過",
+    "underBudget": "予算未満",
+    "budgetBreakdown": "予算内訳"
   },
   "comparison": {
     "title": "プランを比較",
