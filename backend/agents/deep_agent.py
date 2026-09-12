@@ -1333,3 +1333,121 @@ async def edit_chat_agent(
         await stream.persist_costs(thread_id, user_id or "anonymous")
     except Exception:
         logger.warning("Failed to re-persist cost data for thread %s", thread_id, exc_info=True)
+
+
+async def edit_itinerary_agent(
+    thread_id: str,
+    modified_itinerary: dict,
+    user_id: str | None = None,
+    locale: str | None = None,
+    timezone: str | None = None,
+    cancel_event=None,
+    currency: str | None = None,
+):
+    """Validate a user-edited itinerary via AI and stream the response.
+
+    The user has manually modified their itinerary (drag-and-drop, removed
+    activities, added custom ones). This function sends the modified itinerary
+    to the chat agent with a validation prompt, streams the AI response, and
+    emits the validated itinerary as an SSE event.
+    """
+    from agents.prompts import build_edit_itinerary_prompt
+
+    agent = await create_chat_agent(user_id=user_id, locale=locale, timezone=timezone, currency=currency)
+    config = {
+        "configurable": {
+            "thread_id": thread_id,
+            "user_id": user_id or "anonymous",
+        },
+        "recursion_limit": 100,
+    }
+
+    set_current_thread_id(thread_id)
+
+    validation_prompt = build_edit_itinerary_prompt(
+        modified_itinerary,
+        currency=currency,
+        locale=locale,
+    )
+
+    stream = _ModelStream(agent, config)
+    async for event in stream.events(
+        {"messages": [{"role": "user", "content": validation_prompt}]},
+        cancel_event=cancel_event,
+    ):
+        yield event
+
+    if cancel_event and cancel_event.is_set():
+        yield {"event": "cancelled", "data": None}
+        return
+
+    # Save activity data
+    if stream.activity["thinking"] or stream.activity["tool_calls"] or stream.activity["usage"] or stream.activity["images"] or stream.activity["charts"]:
+        try:
+            store = create_redis_store() if settings.STORE_BACKEND == "redis" else InMemoryStore()
+        except Exception:
+            store = InMemoryStore()
+        try:
+            state = await agent.aget_state(config)
+            msg_count = len(state.values.get("messages", []))
+            message_index = msg_count - 1
+        except Exception:
+            message_index = None
+        await save_activity(store, thread_id, stream.activity, message_index=message_index)
+
+    # Persist cost data
+    try:
+        await stream.persist_costs(thread_id, user_id or "anonymous")
+    except Exception:
+        logger.warning("Failed to persist cost data for thread %s", thread_id, exc_info=True)
+
+    stream_text = stream.last_text()
+    logger.info(
+        "edit_itinerary finished: last_text len=%d, has_tags=%s",
+        len(stream_text),
+        bool(stream_text and _ITINERARY_TAG_RE.search(stream_text)),
+    )
+
+    has_itinerary_tag = bool(stream_text and _ITINERARY_TAG_RE.search(stream_text))
+
+    if not has_itinerary_tag:
+        yield {"event": "done", "data": None}
+        return
+
+    itinerary = _extract_itinerary_from_text(stream_text) if stream_text else None
+    if itinerary is None:
+        state = await agent.aget_state(config)
+        itinerary = _extract_chat_itinerary(state.values)
+
+    if itinerary is None:
+        retry = _ModelStream(agent, config)
+        async for event in retry.events(
+            {
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": _extraction_failure_hint(state.values, stream_text),
+                    }
+                ]
+            },
+            cancel_event=cancel_event,
+        ):
+            yield event
+
+        if cancel_event and cancel_event.is_set():
+            yield {"event": "cancelled", "data": None}
+            return
+
+        stream_text = stream.last_text() or retry.last_text()
+        itinerary = _extract_itinerary_from_text(stream_text) if stream_text else None
+        if itinerary is None:
+            state = await agent.aget_state(config)
+            itinerary = _extract_chat_itinerary(state.values)
+
+    try:
+        if itinerary is not None:
+            itinerary = await _enrich_itinerary_with_coordinates(itinerary)
+            yield {"event": "itinerary", "data": itinerary}
+        yield {"event": "done", "data": None}
+    except (ValueError, json.JSONDecodeError) as exc:
+        yield {"event": "error", "data": str(exc)}
