@@ -8,9 +8,9 @@ describe('HowItWorks', () => {
     expect(screen.getByText('Three Steps to Your Perfect Trip')).toBeInTheDocument();
   });
 
-  it('renders pill badge', () => {
+  it('renders subtitle', () => {
     render(<HowItWorks />);
-    expect(screen.getByText('How it works')).toBeInTheDocument();
+    expect(screen.getByText('From your preferences to a complete itinerary in minutes')).toBeInTheDocument();
   });
 
   it('renders all step titles', () => {
