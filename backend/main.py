@@ -90,6 +90,7 @@ from oauth import (
 from locale_utils import extract_locale, get_error_message
 from sanitize import sanitize_prompt_input, sanitize_prompt_input_detailed
 from share_store import share_store
+from agents.tools.visuals import generate_destination_image
 from threads import generate_summary, thread_store
 from cost_store import cost_store
 from feedback_store import feedback_store
@@ -2390,8 +2391,9 @@ async def create_share_link(
     itinerary = await _enrich_itinerary_with_coordinates(itinerary)
     destination = itinerary.get("destination", "Untitled Trip")
     itinerary_json = json.dumps(itinerary)
+    image_base64 = await generate_destination_image(destination)
     token, expires_at = await share_store.create_share(
-        user_id, thread_id, itinerary_json, destination,
+        user_id, thread_id, itinerary_json, destination, image_base64=image_base64,
     )
     locale = extract_locale(request) or "en"
     share_url = f"http://localhost:3000/{locale}/share/{token}"
@@ -2442,6 +2444,7 @@ async def get_shared_itinerary(
         "destination": data["destination"],
         "created_at": data["created_at"],
         "expires_at": data["expires_at"],
+        "image_base64": data.get("image_base64"),
     }
 
 
