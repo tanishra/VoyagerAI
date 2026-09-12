@@ -329,7 +329,7 @@ def _parse_chat_event(
     if event_type == "chart" and event_data is not None:
         return [_sse("chart", event_data)]
     if event_type == "done":
-        return [_sse("done", None)]
+        return [_sse("done", event_data)]
     if event_type == "cancelled":
         return [_sse("cancelled", None)]
     if event_type == "error":
