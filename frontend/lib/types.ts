@@ -129,6 +129,7 @@ export interface ChatMessage {
   attachments?: import('./upload-api').UploadedFile[];
   images?: GeneratedImage[];
   charts?: GeneratedChart[];
+  partialResearch?: boolean;
 }
 
 export interface ChatStreamCallbacks {
@@ -139,7 +140,7 @@ export interface ChatStreamCallbacks {
   onChart?: (chart: GeneratedChart) => void;
   onStatus?: (status: { tool: string; status: string }) => void;
   onThreadId?: (threadId: string) => void;
-  onDone?: () => void;
+  onDone?: (data?: { budget_reached?: boolean }) => void;
   onError?: (error: string) => void;
   onAbort?: () => void;
   onCancelled?: () => void;
