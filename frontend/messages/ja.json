@@ -180,7 +180,8 @@
     "mapForDay": "{day}日目の地図 — {destination}",
     "tips": "ヒント",
     "closeDayDetails": "日の詳細を閉じる",
-    "dailyCostSummary": "1日の費用"
+    "dailyCostSummary": "1日の費用",
+    "viewDetails": "詳細を見る"
   },
   "comparison": {
     "title": "プランを比較",
