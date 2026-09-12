@@ -1,13 +1,14 @@
 'use client';
 
-import { Globe, MoreHorizontal, Printer, FileJson, FileText, Share2, Check, Map as MapIcon, ChevronDown, Calendar } from 'lucide-react';
+import { Globe, MoreHorizontal, Printer, FileJson, FileText, Share2, Check, Map as MapIcon, ChevronDown, ChevronRight, Calendar } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import { useTranslations } from 'next-intl';
 import dynamic from 'next/dynamic';
-import type { Itinerary } from '@/lib/types';
+import type { Itinerary, DayPlan } from '@/lib/types';
 import { createShare, exportItinerary } from '@/lib/share-api';
 import { useLocale } from '@/lib/useLocale';
 import { formatCurrency } from '@/lib/format';
+import DayDetailModal from './DayDetailModal';
 
 const ItineraryMap = dynamic(() => import('./ItineraryMap'), { ssr: false });
 
@@ -28,6 +29,7 @@ export default function ItineraryCard({ itinerary, threadId, printMode = false }
   const [menuOpen, setMenuOpen] = useState(false);
   const [shareStatus, setShareStatus] = useState<'idle' | 'creating' | 'copied' | 'error'>('idle');
   const [mapExpanded, setMapExpanded] = useState(false);
+  const [selectedDay, setSelectedDay] = useState<DayPlan | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -172,20 +174,33 @@ export default function ItineraryCard({ itinerary, threadId, printMode = false }
         </div>
         <div className="space-y-2">
           {days.map((day) => (
-            <div key={day.day} className="p-2 rounded-lg bg-muted border border-border print-break-inside-avoid">
-              <p className="font-medium text-foreground">
-                {t('dayN', { n: day.day })} — {day.theme ?? t('dayN', { n: day.day })}
-              </p>
+            <div
+              key={day.day}
+              onClick={!printMode ? () => setSelectedDay(day) : undefined}
+              className={`p-2 rounded-lg bg-muted border border-border print-break-inside-avoid ${!printMode ? 'hover:border-primary/30 hover:bg-muted/60 cursor-pointer transition-colors' : ''}`}
+            >
+              <div className="flex items-center justify-between">
+                <p className="font-medium text-foreground">
+                  {t('dayN', { n: day.day })} — {day.theme ?? t('dayN', { n: day.day })}
+                </p>
+                {!printMode && (
+                  <ChevronRight className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                )}
+              </div>
               <p className="text-muted-foreground text-xs mt-0.5">
                 {day.morning?.activity ?? '—'} → {day.afternoon?.activity ?? '—'} → {day.evening?.activity ?? '—'}
               </p>
-              {!printMode && (
+              {printMode && (
                 <div className="mt-1.5 text-xs text-muted-foreground space-y-0.5">
                   <p>{t('transport')}: {day.transport ?? t('na')}</p>
                   <p>{t('stay')}: {day.accommodation ?? t('na')}</p>
                   <p>{t('dailyCost')}: {day.daily_cost_usd != null ? formatCurrency(day.daily_cost_usd, locale) : t('na')}</p>
                   {day.tips && day.tips.length > 0 && (
-                    <p className="text-amber-600">💡 {day.tips[0]}</p>
+                    <div className="space-y-0.5">
+                      {day.tips.map((tip, i) => (
+                        <p key={i} className="text-accent-foreground">💡 {tip}</p>
+                      ))}
+                    </div>
                   )}
                 </div>
               )}
@@ -213,11 +228,13 @@ export default function ItineraryCard({ itinerary, threadId, printMode = false }
           </div>
         )}
         {warnings.length > 0 && (
-          <div className="text-xs text-amber-600">
-            ⚠ {warnings[0]}
+          <div className="text-xs space-y-1 pt-2 border-t border-border">
+            {warnings.map((w, i) => (
+              <p key={i} className="text-accent-foreground">⚠ {w}</p>
+            ))}
           </div>
         )}
-        {printMode && itinerary.packing_essentials && itinerary.packing_essentials.length > 0 && (
+        {itinerary.packing_essentials && itinerary.packing_essentials.length > 0 && (
           <div className="pt-2 border-t border-border">
             <p className="text-muted-foreground font-medium mb-1">🎒 {t('packingEssentials')}</p>
             <ul className="text-xs text-muted-foreground list-disc list-inside">
@@ -228,6 +245,14 @@ export default function ItineraryCard({ itinerary, threadId, printMode = false }
           </div>
         )}
       </div>
+      {selectedDay && (
+        <DayDetailModal
+          day={selectedDay}
+          dayNumber={selectedDay.day}
+          destination={itinerary.destination}
+          onClose={() => setSelectedDay(null)}
+        />
+      )}
     </div>
   );
 }
