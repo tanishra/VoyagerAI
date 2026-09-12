@@ -180,7 +180,8 @@
     "mapForDay": "दिन {day} का नक्शा — {destination}",
     "tips": "सुझाव",
     "closeDayDetails": "दिन विवरण बंद करें",
-    "dailyCostSummary": "दैनिक लागत"
+    "dailyCostSummary": "दैनिक लागत",
+    "viewDetails": "विवरण देखें"
   },
   "comparison": {
     "title": "योजनाएँ तुलना करें",
