@@ -1,6 +1,6 @@
 'use client';
 
-import { Globe, MoreHorizontal, Printer, FileJson, FileText, Share2, Check, Map as MapIcon, ChevronDown, ChevronRight, Calendar } from 'lucide-react';
+import { Globe, MoreHorizontal, Printer, FileJson, FileText, Share2, Check, Map as MapIcon, ChevronDown, Calendar } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import { useTranslations } from 'next-intl';
 import dynamic from 'next/dynamic';
@@ -9,6 +9,7 @@ import { createShare, exportItinerary } from '@/lib/share-api';
 import { useLocale } from '@/lib/useLocale';
 import { formatCurrency } from '@/lib/format';
 import DayDetailModal from './DayDetailModal';
+import TimelineView from './TimelineView';
 
 const ItineraryMap = dynamic(() => import('./ItineraryMap'), { ssr: false });
 
@@ -172,25 +173,22 @@ export default function ItineraryCard({ itinerary, threadId, printMode = false }
             <p className="text-foreground font-medium">{cost === null ? t('na') : formatCurrency(cost, locale)}</p>
           </div>
         </div>
-        <div className="space-y-2">
-          {days.map((day) => (
-            <div
-              key={day.day}
-              onClick={!printMode ? () => setSelectedDay(day) : undefined}
-              className={`p-2 rounded-lg bg-muted border border-border print-break-inside-avoid ${!printMode ? 'hover:border-primary/30 hover:bg-muted/60 cursor-pointer transition-colors' : ''}`}
-            >
-              <div className="flex items-center justify-between">
+        {!printMode ? (
+          <TimelineView
+            days={days}
+            destination={itinerary.destination}
+            onDayClick={(day) => setSelectedDay(day)}
+          />
+        ) : (
+          <div className="space-y-2">
+            {days.map((day) => (
+              <div key={day.day} className="p-2 rounded-lg bg-muted border border-border print-break-inside-avoid">
                 <p className="font-medium text-foreground">
                   {t('dayN', { n: day.day })} — {day.theme ?? t('dayN', { n: day.day })}
                 </p>
-                {!printMode && (
-                  <ChevronRight className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                )}
-              </div>
-              <p className="text-muted-foreground text-xs mt-0.5">
-                {day.morning?.activity ?? '—'} → {day.afternoon?.activity ?? '—'} → {day.evening?.activity ?? '—'}
-              </p>
-              {printMode && (
+                <p className="text-muted-foreground text-xs mt-0.5">
+                  {day.morning?.activity ?? '—'} → {day.afternoon?.activity ?? '—'} → {day.evening?.activity ?? '—'}
+                </p>
                 <div className="mt-1.5 text-xs text-muted-foreground space-y-0.5">
                   <p>{t('transport')}: {day.transport ?? t('na')}</p>
                   <p>{t('stay')}: {day.accommodation ?? t('na')}</p>
@@ -203,10 +201,10 @@ export default function ItineraryCard({ itinerary, threadId, printMode = false }
                     </div>
                   )}
                 </div>
-              )}
-            </div>
-          ))}
-        </div>
+              </div>
+            ))}
+          </div>
+        )}
         {/* Map section — hidden in print mode */}
         {!printMode && (
           <div className="print-hidden">
