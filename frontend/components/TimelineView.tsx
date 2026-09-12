@@ -7,6 +7,7 @@ import { useTranslations } from 'next-intl';
 import type { DayPlan } from '@/lib/types';
 import { useLocale } from '@/lib/useLocale';
 import { formatCurrency } from '@/lib/format';
+import { useCurrency } from '@/lib/useCurrency';
 
 interface TimelineViewProps {
   days: DayPlan[];
@@ -34,6 +35,7 @@ function getTransportIcon(transport: string) {
 export default function TimelineView({ days, destination, onDayClick, activeDay, onDayExpand }: TimelineViewProps) {
   const t = useTranslations('itinerary');
   const locale = useLocale();
+  const [currency] = useCurrency();
   const [internalExpandedDay, setInternalExpandedDay] = useState<number | null>(null);
   const isControlled = activeDay !== undefined;
   const expandedDay = isControlled ? activeDay : internalExpandedDay;
@@ -96,7 +98,7 @@ export default function TimelineView({ days, destination, onDayClick, activeDay,
                     {/* Cost badge */}
                     {day.daily_cost_usd != null && (
                       <span className="text-xs text-muted-foreground tabular-nums">
-                        {formatCurrency(day.daily_cost_usd, locale)}
+                        {formatCurrency(day.daily_cost_usd, locale, undefined, currency)}
                       </span>
                     )}
                   </div>
@@ -150,7 +152,7 @@ export default function TimelineView({ days, destination, onDayClick, activeDay,
                                 {slot.cost_usd != null && slot.cost_usd > 0 && (
                                   <span className="flex items-center gap-1">
                                     <DollarSign className="w-3 h-3" />
-                                    {formatCurrency(slot.cost_usd, locale)}
+                                    {formatCurrency(slot.cost_usd, locale, undefined, currency)}
                                   </span>
                                 )}
                               </div>
