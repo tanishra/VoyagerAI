@@ -519,6 +519,8 @@ export default function ChatPage() {
 
       if (sessionResetRef.current) return;
 
+      const finalActivity = streamingActivityRef.current;
+
       setMessages((prev) => {
         const updated = [...prev];
         const idx = updated.findIndex((m) => m.id === assistantId);
@@ -534,7 +536,7 @@ export default function ChatPage() {
               content: stripStructuredTags(accumulatedText),
               itinerary: accumulatedItinerary ?? undefined,
               comparison: accumulatedComparison ?? undefined,
-              activity: streamingActivityRef.current ?? undefined,
+              activity: finalActivity ?? undefined,
               images: accumulatedImages.length > 0 ? accumulatedImages : undefined,
               charts: accumulatedCharts.length > 0 ? accumulatedCharts : undefined,
               wasStopped: true,
@@ -547,7 +549,7 @@ export default function ChatPage() {
               content: stripStructuredTags(accumulatedText),
               itinerary: accumulatedItinerary ?? undefined,
               comparison: accumulatedComparison ?? undefined,
-              activity: streamingActivityRef.current ?? undefined,
+              activity: finalActivity ?? undefined,
               images: accumulatedImages.length > 0 ? accumulatedImages : undefined,
               charts: accumulatedCharts.length > 0 ? accumulatedCharts : undefined,
             };
@@ -751,6 +753,7 @@ export default function ChatPage() {
       );
     } finally {
       // Replace the last assistant message with the regenerated response
+      const finalActivity = streamingActivityRef.current;
       setMessages((prev) => {
         const updated = [...prev];
         // Find the last assistant message
@@ -773,7 +776,7 @@ export default function ChatPage() {
                 content: stripStructuredTags(accumulatedText),
                 itinerary: accumulatedItinerary ?? undefined,
                 comparison: accumulatedComparison ?? undefined,
-                activity: streamingActivityRef.current ?? undefined,
+                activity: finalActivity ?? undefined,
               };
             }
             break;
@@ -986,6 +989,7 @@ export default function ChatPage() {
       );
     } finally {
       // Update the user message content and replace the assistant response
+      const finalActivity = streamingActivityRef.current;
       setMessages((prev) => {
         const updated = [...prev];
         // Update the last user message with edited content
@@ -1015,7 +1019,7 @@ export default function ChatPage() {
                 content: stripStructuredTags(accumulatedText),
                 itinerary: accumulatedItinerary ?? undefined,
                 comparison: accumulatedComparison ?? undefined,
-                activity: streamingActivityRef.current ?? undefined,
+                activity: finalActivity ?? undefined,
               };
             }
             break;
@@ -1180,6 +1184,7 @@ export default function ChatPage() {
             },
           );
 
+          const finalActivity = streamingActivityRef.current;
           setMessages((prev) => {
             const updated = [...prev];
             const idx = updated.findIndex((m) => m.id === assistantId);
@@ -1195,7 +1200,7 @@ export default function ChatPage() {
                   content: stripStructuredTags(accumulatedText),
                   itinerary: accumulatedItinerary ?? undefined,
                   comparison: accumulatedComparison ?? undefined,
-                  activity: streamingActivityRef.current ?? undefined,
+                  activity: finalActivity ?? undefined,
                   images: accumulatedImages.length > 0 ? accumulatedImages : undefined,
                   charts: accumulatedCharts.length > 0 ? accumulatedCharts : undefined,
                 };
