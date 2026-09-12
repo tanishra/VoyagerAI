@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Send, Square, RotateCcw, Globe, Search, ShieldAlert, ListChecks, Loader2, PanelLeft, ChevronDown, ChevronLeft, ChevronRight, Clock, Sparkles, Copy, Check, Pencil, X, Mic, Paperclip, FileText } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useLocale } from '@/lib/useLocale';
-import { streamChat, cancelStream, regenerateStream, editStream } from '@/lib/chat-api';
+import { streamChat, cancelStream, regenerateStream, editStream, editItinerary } from '@/lib/chat-api';
 import { listThreads, getThreadHistory, getBranches, deleteThread, updateThread, type ThreadMeta } from '@/lib/threads-api';
 import { getSession, type SessionUser } from '@/lib/auth';
 import { useOnlineStatus } from '@/lib/useOnlineStatus';
@@ -596,6 +596,74 @@ export default function ChatPage() {
     setError(null);
     handleSend(lastSentMessageRef.current.message);
   }, [loading, handleSend]);
+
+  const handleEditItinerary = useCallback(async (modifiedItinerary: Itinerary, messageId?: string) => {
+    if (!threadId) return;
+    setLoading(true);
+    setError(null);
+    setStreamingText('');
+    setStreamingItinerary(null);
+    setStreamingComparison(null);
+    setStreamingImages([]);
+    setStreamingCharts([]);
+    setStreamingActivity(null);
+    setActiveWorkers([]);
+    setProgressMap({});
+
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    let accumulatedText = '';
+    let accumulatedItinerary: Itinerary | null = null;
+
+    try {
+      await editItinerary(
+        {
+          thread_id: threadId,
+          itinerary: modifiedItinerary,
+          locale,
+          timezone: userTimezone,
+          currency,
+        },
+        {
+          signal: controller.signal,
+          onToken: (token) => {
+            accumulatedText += token;
+            setStreamingText(stripStructuredTags(accumulatedText));
+          },
+          onItinerary: (itinerary) => {
+            accumulatedItinerary = itinerary;
+            setStreamingItinerary(itinerary);
+          },
+          onDone: () => {
+            setMessages((prev) => {
+              const updated = [...prev];
+              const newMsg: ChatMessage = {
+                id: `edit-${Date.now()}`,
+                role: 'assistant',
+                content: stripStructuredTags(accumulatedText),
+                itinerary: accumulatedItinerary ?? undefined,
+              };
+              updated.push(newMsg);
+              return updated;
+            });
+            setStreamingText('');
+            setStreamingItinerary(null);
+          },
+          onError: (err) => {
+            setError(err);
+          },
+        },
+      );
+    } catch {
+      setError('Failed to validate itinerary');
+    } finally {
+      setLoading(false);
+      abortRef.current = null;
+      setActiveWorkers([]);
+      setProgressMap({});
+    }
+  }, [threadId, locale, userTimezone, currency]);
 
   const handleRegenerate = useCallback(async () => {
     if (!threadId || loading || regenerating) return;
@@ -1595,7 +1663,7 @@ export default function ChatPage() {
                       </span>
                     )}
                     {msg.comparison && <ComparisonView data={msg.comparison} onSelect={handleSelectPlan} />}
-                    {msg.itinerary && <ItineraryCard itinerary={msg.itinerary} threadId={threadId ?? undefined} />}
+                    {msg.itinerary && <ItineraryCard itinerary={msg.itinerary} threadId={threadId ?? undefined} onEditItinerary={(modified) => handleEditItinerary(modified, msg.id)} />}
                     {msg.images && msg.images.map((img, i) => (
                       <GeneratedImageCard key={i} image={img} />
                     ))}
@@ -1719,7 +1787,7 @@ export default function ChatPage() {
                   </div>
                 )}
                 {streamingComparison && <ComparisonView data={streamingComparison} onSelect={handleSelectPlan} />}
-                {streamingItinerary && <ItineraryCard itinerary={streamingItinerary} threadId={threadId ?? undefined} />}
+                {streamingItinerary && <ItineraryCard itinerary={streamingItinerary} threadId={threadId ?? undefined} onEditItinerary={(modified) => handleEditItinerary(modified, undefined)} />}
                 {streamingImages.map((img, i) => (
                   <GeneratedImageCard key={i} image={img} />
                 ))}
