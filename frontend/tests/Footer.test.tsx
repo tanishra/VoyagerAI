@@ -8,14 +8,9 @@ describe('Footer', () => {
     expect(screen.getByText('VoyagerAI')).toBeInTheDocument();
   });
 
-  it('renders footer links', () => {
+  it('renders live clock', () => {
     render(<Footer />);
-    expect(screen.getByText('Chat')).toBeInTheDocument();
-    expect(screen.getByText('About')).toBeInTheDocument();
-  });
-
-  it('renders the tagline', () => {
-    render(<Footer />);
-    expect(screen.getByText(/Built with AI/)).toBeInTheDocument();
+    const clock = document.querySelector('.tabular-nums');
+    expect(clock).toBeInTheDocument();
   });
 });
