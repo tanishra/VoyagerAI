@@ -4,10 +4,6 @@ import logging
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
-)
 logger = logging.getLogger("travel_agent")
 
 
@@ -105,5 +101,16 @@ class Settings(BaseSettings):
     HOURLY_PLATFORM_CAP_USD: float = 50.0
     CIRCUIT_BREAKER_ENABLED: bool = True
 
+    # Observability (Phase 7.4)
+    LOG_FORMAT: str = "json"  # "json" or "text"
+    LOG_LEVEL: str = "INFO"
+    PROMETHEUS_ENABLED: bool = True
+    ALERT_DAILY_THRESHOLD_PCT: float = 0.8  # alert at 80% of daily cap
+
 
 settings = Settings()
+
+# Configure structured logging based on settings
+from logging_config import configure_logging  # noqa: E402
+
+configure_logging(fmt=settings.LOG_FORMAT, level=settings.LOG_LEVEL)
