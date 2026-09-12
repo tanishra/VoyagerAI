@@ -2,12 +2,13 @@
 
 import { useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Clock, MapPin, Bus, Home, DollarSign, Lightbulb } from 'lucide-react';
+import { X, Bus, Home, DollarSign, Lightbulb } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import dynamic from 'next/dynamic';
 import type { DayPlan } from '@/lib/types';
 import { useLocale } from '@/lib/useLocale';
 import { formatCurrency } from '@/lib/format';
+import ActivityCard from './ActivityCard';
 
 const ItineraryMap = dynamic(() => import('./ItineraryMap'), { ssr: false });
 
@@ -88,38 +89,18 @@ export default function DayDetailModal({ day, dayNumber, destination, onClose }:
               <ItineraryMap days={[day]} destination={destination} />
             </div>
 
-            {/* Timeline */}
-            <div className="p-4 space-y-4">
-              {SLOTS.map(({ key, labelKey }) => {
+            {/* Activity Cards */}
+            <div className="p-4 space-y-3">
+              {SLOTS.map(({ key }) => {
                 const slot = day[key];
                 if (!slot) return null;
                 return (
-                  <div key={key} className="space-y-1">
-                    <p className="text-[10px] font-medium text-primary uppercase tracking-widest">
-                      {t(labelKey)}
-                    </p>
-                    <p className="text-sm font-medium text-foreground">{slot.activity}</p>
-                    {slot.location && (
-                      <p className="text-xs text-muted-foreground flex items-center gap-1">
-                        <MapPin className="w-3 h-3 shrink-0" />
-                        {slot.location}
-                      </p>
-                    )}
-                    <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                      {slot.duration && (
-                        <span className="flex items-center gap-1">
-                          <Clock className="w-3 h-3" />
-                          {slot.duration}
-                        </span>
-                      )}
-                      {slot.cost_usd != null && slot.cost_usd > 0 && (
-                        <span className="flex items-center gap-1">
-                          <DollarSign className="w-3 h-3" />
-                          {formatCurrency(slot.cost_usd, locale)}
-                        </span>
-                      )}
-                    </div>
-                  </div>
+                  <ActivityCard
+                    key={key}
+                    slot={slot}
+                    slotKey={key}
+                    destination={destination}
+                  />
                 );
               })}
 
