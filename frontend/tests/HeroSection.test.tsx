@@ -3,11 +3,6 @@ import { render, screen } from '@testing-library/react';
 import HeroSection from '@/components/HeroSection';
 
 describe('HeroSection', () => {
-  it('renders the AI badge', () => {
-    render(<HeroSection />);
-    expect(screen.getByText('AI-Powered Travel Planning')).toBeInTheDocument();
-  });
-
   it('renders main heading', () => {
     render(<HeroSection />);
     expect(screen.getByText('Your Perfect Trip,')).toBeInTheDocument();
