@@ -762,3 +762,55 @@ Score each criterion 0-10. The total score is the sum (0-100).
 - Be strict but fair: a perfect plan scores 100, a plan with minor issues scores 85-95
 - Output ONLY the JSON object — no prose, no markdown, no truncation
 </rules>"""
+
+
+import json as _json
+
+
+def build_edit_itinerary_prompt(
+    modified_itinerary: dict,
+    currency: str | None = None,
+    locale: str | None = None,
+) -> str:
+    """Build a prompt for AI validation of an edited itinerary.
+
+    The user has manually modified their itinerary (drag-and-drop, removed
+    activities, added custom ones). The AI must validate the result and return
+    the corrected itinerary JSON inside <itinerary></itinerary> tags.
+    """
+    symbol = CURRENCY_SYMBOLS.get(currency or "", currency or "$")
+    lang_instruction = LANGUAGE_INSTRUCTIONS.get(locale or "", "") if locale and locale != "en" else ""
+
+    prompt = f"""<role>
+You are an itinerary validation specialist. The user has manually edited their itinerary. Your job is to validate it and return the corrected version.
+</role>
+
+<task>
+The user has manually edited their itinerary (reordered activities, removed some, added custom ones). Validate the modified itinerary below and return the validated version.
+</task>
+
+<itinerary>
+{_json.dumps(modified_itinerary, indent=2, ensure_ascii=False)}
+</itinerary>
+
+<validation_checks>
+1. Budget accuracy: do the daily costs add up to the total? Are costs reasonable for the destination?
+2. Route efficiency: are activities logically ordered within each day? Is transit feasible between locations?
+3. Time conflicts: are durations realistic for morning/afternoon/evening slots?
+4. Feasibility: are the activities real and open at the suggested times?
+5. Completeness: are all required fields present (destination, days, morning/afternoon/evening, transport, accommodation, tips)?
+6. Empty slots: if the user removed an activity, fill the empty slot with a reasonable alternative OR leave it empty if the user intended to remove it.
+</validation_checks>
+
+<output_rules>
+- Return the validated itinerary JSON inside <itinerary></itinerary> tags
+- If everything is fine, return the itinerary unchanged
+- If issues are found, fix them and briefly note what you changed before the <itinerary> tag
+- Do NOT use markdown code fences around the <itinerary> tags
+- The itinerary must follow the same JSON schema as the input
+- All costs must be expressed in {currency or "USD"} ({symbol})
+</output_rules>
+"""
+    if lang_instruction:
+        prompt += f"\n<language>\n{lang_instruction}\n</language>\n"
+    return prompt
