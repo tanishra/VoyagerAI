@@ -154,4 +154,29 @@ describe('ItineraryCard', () => {
     const map = screen.getByTestId('itinerary-map');
     expect(map.getAttribute('data-active-day')).toBe('1');
   });
+
+  it('shows budget breakdown toggle button', () => {
+    render(<ItineraryCard itinerary={makeItinerary()} threadId="t1" />);
+    expect(screen.getByText('Budget Breakdown')).toBeInTheDocument();
+  });
+
+  it('expands budget breakdown section when toggled', () => {
+    render(<ItineraryCard itinerary={makeItinerary()} threadId="t1" />);
+    fireEvent.click(screen.getByText('Budget Breakdown'));
+    expect(screen.getByText('Total')).toBeInTheDocument();
+    expect(screen.getByText('Accommodation')).toBeInTheDocument();
+    expect(screen.getByText('Food')).toBeInTheDocument();
+    expect(screen.getByText('Activities')).toBeInTheDocument();
+    expect(screen.getByText('Transport')).toBeInTheDocument();
+  });
+
+  it('shows budget status badge next to cost', () => {
+    render(<ItineraryCard itinerary={makeItinerary()} threadId="t1" />);
+    expect(screen.getByText('Within budget')).toBeInTheDocument();
+  });
+
+  it('does not show budget breakdown toggle in print mode', () => {
+    render(<ItineraryCard itinerary={makeItinerary()} threadId="t1" printMode />);
+    expect(screen.queryByText('Budget Breakdown')).not.toBeInTheDocument();
+  });
 });
