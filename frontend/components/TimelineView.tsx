@@ -12,6 +12,8 @@ interface TimelineViewProps {
   days: DayPlan[];
   destination: string;
   onDayClick: (day: DayPlan) => void;
+  activeDay?: number | null;
+  onDayExpand?: (day: number | null) => void;
 }
 
 const SLOTS = [
@@ -29,13 +31,21 @@ function getTransportIcon(transport: string) {
   return Navigation;
 }
 
-export default function TimelineView({ days, destination, onDayClick }: TimelineViewProps) {
+export default function TimelineView({ days, destination, onDayClick, activeDay, onDayExpand }: TimelineViewProps) {
   const t = useTranslations('itinerary');
   const locale = useLocale();
-  const [expandedDay, setExpandedDay] = useState<number | null>(null);
+  const [internalExpandedDay, setInternalExpandedDay] = useState<number | null>(null);
+  const isControlled = activeDay !== undefined;
+  const expandedDay = isControlled ? activeDay : internalExpandedDay;
 
   const toggleDay = (dayNumber: number) => {
-    setExpandedDay((prev) => (prev === dayNumber ? null : dayNumber));
+    const newExpanded = expandedDay === dayNumber ? null : dayNumber;
+    if (onDayExpand) {
+      onDayExpand(newExpanded);
+    }
+    if (!isControlled) {
+      setInternalExpandedDay(newExpanded);
+    }
   };
 
   return (
