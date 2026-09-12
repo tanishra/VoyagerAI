@@ -64,6 +64,7 @@ class ShareStore:
         thread_id: str,
         itinerary_json: str,
         destination: str,
+        image_base64: str | None = None,
     ) -> tuple[str, float]:
         """Create a share token. Returns (token, expires_at)."""
         tag = _user_tag(user_id)
@@ -76,14 +77,17 @@ class ShareStore:
             try:
                 key = f"shares:{tag}:{token}"
                 pipe = r.pipeline()
-                pipe.hset(key, mapping={
+                mapping = {
                     "token": token,
                     "thread_id": thread_id,
                     "destination": destination[:100],
                     "itinerary_json": itinerary_json,
                     "created_at": str(now),
                     "expires_at": str(expires_at),
-                })
+                }
+                if image_base64:
+                    mapping["image_base64"] = image_base64
+                pipe.hset(key, mapping=mapping)
                 pipe.zadd(f"shares:{tag}", {token: now})
                 pipe.expire(key, _TTL_SECONDS)
                 await pipe.execute()
@@ -96,8 +100,8 @@ class ShareStore:
         if db is not None:
             try:
                 await db.execute(
-                    "INSERT INTO shares (token, user_tag, thread_id, destination, itinerary_json, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    (token, tag, thread_id, destination[:100], itinerary_json, now, expires_at),
+                    "INSERT INTO shares (token, user_tag, thread_id, destination, itinerary_json, created_at, expires_at, image_base64) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    (token, tag, thread_id, destination[:100], itinerary_json, now, expires_at, image_base64),
                 )
                 await db.commit()
                 return token, expires_at
@@ -113,6 +117,7 @@ class ShareStore:
             "itinerary_json": itinerary_json,
             "created_at": now,
             "expires_at": expires_at,
+            "image_base64": image_base64,
         }
         return token, expires_at
 
@@ -137,6 +142,7 @@ class ShareStore:
                                 "destination": data.get("destination", ""),
                                 "created_at": float(data.get("created_at", 0)),
                                 "expires_at": expires_at,
+                                "image_base64": data.get("image_base64"),
                             }
                     if cursor == 0:
                         break
@@ -163,6 +169,7 @@ class ShareStore:
                         "destination": row["destination"] or "",
                         "created_at": float(row["created_at"] or 0),
                         "expires_at": expires_at,
+                        "image_base64": row["image_base64"] if "image_base64" in row.keys() else None,
                     }
                 return None
             except Exception as exc:  # noqa: BLE001
@@ -180,6 +187,7 @@ class ShareStore:
                     "destination": data["destination"],
                     "created_at": data["created_at"],
                     "expires_at": data["expires_at"],
+                    "image_base64": data.get("image_base64"),
                 }
         return None
 
