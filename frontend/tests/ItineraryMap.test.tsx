@@ -1,7 +1,12 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
-import ItineraryMap from '@/components/ItineraryMap';
-import type { DayPlan } from '@/lib/types';
+
+vi.mock('swr', () => ({
+  default: (key: string | null) => {
+    if (key === null) return { data: undefined, isLoading: false };
+    return { data: undefined, isLoading: false };
+  },
+}));
 
 // Mock maplibre-gl — jsdom has no WebGL/canvas support
 const mockMarker = {
@@ -17,8 +22,16 @@ const mockMap = {
   on: vi.fn((event: string, cb: () => void) => {
     if (event === 'load') cb();
   }),
+  once: vi.fn((event: string, cb: () => void) => {
+    if (event === 'load') cb();
+  }),
+  loaded: vi.fn(() => true),
   addSource: vi.fn(),
   addLayer: vi.fn(),
+  removeSource: vi.fn(),
+  removeLayer: vi.fn(),
+  getSource: vi.fn(() => null),
+  getLayer: vi.fn(() => null),
   fitBounds: vi.fn(),
   remove: vi.fn(),
 };
@@ -27,8 +40,14 @@ vi.mock('maplibre-gl', () => {
   return {
     Map: class MockMap {
       on = mockMap.on;
+      once = mockMap.once;
+      loaded = mockMap.loaded;
       addSource = mockMap.addSource;
       addLayer = mockMap.addLayer;
+      removeSource = mockMap.removeSource;
+      removeLayer = mockMap.removeLayer;
+      getSource = mockMap.getSource;
+      getLayer = mockMap.getLayer;
       fitBounds = mockMap.fitBounds;
       remove = mockMap.remove;
     },
@@ -48,6 +67,9 @@ vi.mock('maplibre-gl', () => {
 });
 
 vi.mock('maplibre-gl/dist/maplibre-gl.css', () => ({}));
+
+import ItineraryMap from '@/components/ItineraryMap';
+import type { DayPlan } from '@/lib/types';
 
 const daysWithCoords: DayPlan[] = [
   {
@@ -125,5 +147,18 @@ describe('ItineraryMap', () => {
     // Only Day 1 should appear (Day 2 has no coords)
     expect(screen.getByText('Day 1')).toBeInTheDocument();
     expect(screen.queryByText('Day 2')).not.toBeInTheDocument();
+  });
+
+  it('uses activeDay prop in controlled mode', () => {
+    render(<ItineraryMap days={daysWithCoords} destination="Paris, France" activeDay={2} />);
+    const day2Btn = screen.getByText('Day 2');
+    expect(day2Btn.className).toContain('bg-primary');
+  });
+
+  it('calls onDaySelect when tab is clicked', () => {
+    const onDaySelect = vi.fn();
+    render(<ItineraryMap days={daysWithCoords} destination="Paris, France" activeDay={1} onDaySelect={onDaySelect} />);
+    fireEvent.click(screen.getByText('Day 2'));
+    expect(onDaySelect).toHaveBeenCalledWith(2);
   });
 });
