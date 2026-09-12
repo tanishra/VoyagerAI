@@ -1,42 +1,50 @@
 <div align="center">
-  <img src="images/banner.svg" alt="VoyagerAI Banner" width="100%">
+  <img src="images/banner.svg" alt="VoyagerAI" width="100%">
   <br><br>
   <p>
     <img src="https://img.shields.io/badge/Python-3.11%2B-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python">
     <img src="https://img.shields.io/badge/FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white" alt="FastAPI">
-    <img src="https://img.shields.io/badge/LiteLLM-Provider_Agnostic-8E75C2?style=for-the-badge" alt="LiteLLM">
-    <img src="https://img.shields.io/badge/Next.js-000000?style=for-the-badge&logo=nextdotjs&logoColor=white" alt="Next.js">
-    <img src="https://img.shields.io/badge/Tailwind_CSS_v4-38B2AC?style=for-the-badge&logo=tailwindcss&logoColor=white" alt="Tailwind CSS">
+    <img src="https://img.shields.io/badge/Next.js_16-000000?style=for-the-badge&logo=nextdotjs&logoColor=white" alt="Next.js">
+    <img src="https://img.shields.io/badge/React_19-61DAFB?style=for-the-badge&logo=react&logoColor=black" alt="React">
+    <img src="https://img.shields.io/badge/TypeScript-3178C6?style=for-the-badge&logo=typescript&logoColor=white" alt="TypeScript">
+    <img src="https://img.shields.io/badge/Tailwind_CSS_v4-06B6D4?style=for-the-badge&logo=tailwindcss&logoColor=white" alt="Tailwind CSS">
+    <img src="https://img.shields.io/badge/Redis-DC382D?style=for-the-badge&logo=redis&logoColor=white" alt="Redis">
     <img src="https://img.shields.io/badge/License-MIT-green?style=for-the-badge" alt="License">
+  </p>
+  <p>
+    <a href="#key-features">Key Features</a> ·
+    <a href="#quick-start">Quick Start</a> ·
+    <a href="#architecture">Architecture</a> ·
+    <a href="#testing">Testing</a> ·
+    <a href="https://github.com/tanishrajput/VoyagerAI/issues">Report Bug</a> ·
+    <a href="https://github.com/tanishrajput/VoyagerAI/issues">Request Feature</a>
   </p>
 </div>
 
-**VoyagerAI** is a multi-agent AI travel planning platform. It uses 8 specialized sub-agents working in parallel to research destinations, analyze constraints, detect risks, generate multiple plan variants, self-critique quality, and present interactive itineraries with map visualization — all through a conversational chat interface.
+**VoyagerAI** is a multi-agent AI travel planning platform — 8 specialized sub-agents work in parallel to research destinations, analyze constraints, detect risks, generate multiple plan variants, self-critique quality, and present interactive itineraries with map visualization — all through a conversational chat interface.
 
 ---
 
-## Features
+## Key Features
 
-- **Conversational Multi-Agent Planning** — Free-form chat, agent decomposes requests and dispatches sub-agents in parallel (researcher, constraint analyzer, risk detector, quality scorer, and more)
-- **Multi-Plan Comparison** — Generates 2 budget tiers (budget / balanced / premium) side-by-side with tradeoff highlights
-- **Self-Critique Loop** — Quality scorer evaluates plans against 10 criteria, applies fixes, re-scores (max 2 iterations)
-- **Interactive Itinerary Cards** — Day-by-day breakdown with morning/afternoon/evening slots, costs, transport, tips, warnings, packing essentials
-- **Map Visualization** — MapLibre GL with per-day route lines, numbered markers, cost popups, and Google Maps deep links
-- **Thread Management** — Save, resume, and delete past conversations with AI-generated summaries
-- **Memory & Preferences** — Agent remembers user preferences across sessions (dietary, budget, mobility)
-- **Export & Sharing** — PDF print view, JSON/Markdown export, shareable read-only links with expiry
-- **Multi-Language Support** — 6 languages (English, Spanish, French, German, Hindi, Japanese) with locale-aware currency formatting
-- **Google OAuth** — Real authentication with per-user data isolation
-- **PWA / Offline** — Installable app, cached thread history, message queueing when offline, auto-sync on reconnect
-- **Provider-Agnostic LLM** — Swap between Gemini, OpenAI, Anthropic, etc. via env vars (powered by LiteLLM)
+| | |
+|---|---|
+| **Multi-Agent Orchestration** — 8 sub-agents work in parallel (researcher, constraint analyzer, risk detector, quality scorer, cost optimizer, and more) | **Interactive Itinerary Cards** — Day-by-day breakdown with morning/afternoon/evening slots, costs, transport, tips, warnings |
+| **Multi-Plan Comparison** — Budget vs balanced vs premium tiers side-by-side with tradeoff highlights | **Self-Critique Loop** — Quality scorer evaluates against 10 criteria, applies fixes, re-scores (max 2 iterations) |
+| **Map Visualization** — MapLibre GL with per-day route lines, numbered markers, cost popups, Google Maps deep links | **Thread Management** — Save, resume, delete, pin, and branch past conversations with AI-generated summaries |
+| **Memory & Preferences** — Agent remembers dietary, budget, and mobility preferences across sessions | **Export & Sharing** — PDF print, JSON/Markdown/iCal export, shareable read-only links with expiry |
+| **6-Language Support** — English, Hindi, Japanese, Spanish, French, German with locale-aware currency | **Google OAuth** — Real authentication with per-user data isolation |
+| **Offline Support** — Cached thread history, message queueing when offline, auto-sync on reconnect | **Provider-Agnostic LLM** — Swap between Gemini, OpenAI, Anthropic, etc. via env vars |
 
 ---
 
 ## Tech Stack
 
-**Backend:** Python 3.11+, FastAPI, deepagents, LangGraph, LiteLLM, Redis, Tavily, Pydantic
-
-**Frontend:** Next.js 16, React, TypeScript, Tailwind CSS v4, next-intl, MapLibre GL, Framer Motion, PWA (Workbox)
+| Layer | Technologies |
+|---|---|
+| **Backend** | Python 3.11+, FastAPI, deepagents, LangGraph, LiteLLM, Redis, Tavily, Pydantic |
+| **Frontend** | Next.js 16, React 19, TypeScript, Tailwind CSS v4, next-intl, MapLibre GL, Framer Motion |
+| **Infra** | Docker, SQLite fallback, Prometheus metrics, structured JSON logging |
 
 ---
 
@@ -46,7 +54,14 @@
 
 - Python 3.11+, Node.js 18+, Redis (optional but recommended)
 
-### 1. Backend
+### 1. Clone
+
+```bash
+git clone https://github.com/tanishrajput/VoyagerAI.git
+cd VoyagerAI
+```
+
+### 2. Backend
 
 ```bash
 cd backend
@@ -56,7 +71,7 @@ cp .env.example .env
 uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-### 2. Frontend
+### 3. Frontend
 
 ```bash
 cd frontend
@@ -67,7 +82,7 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000).
 
-### 3. Redis (optional)
+### 4. Redis (optional)
 
 Without Redis, the app falls back to in-memory storage (no persistence across restarts).
 
@@ -98,8 +113,10 @@ See [`backend/.env.example`](backend/.env.example) for all options. Key settings
 | `GOOGLE_CLIENT_SECRET` | Google OAuth client secret | — |
 | `SESSION_SECRET_KEY` | Session encryption key (change in production!) | `dev-only-insecure-key...` |
 | `CORS_ORIGINS` | Comma-separated allowed origins | `http://localhost:3000` |
-| `SHARE_TTL_DAYS` | Share link expiry in days | `7` |
-| `THREAD_TTL_DAYS` | Thread metadata expiry in days | `30` |
+| `LOG_FORMAT` | Logging format: `json` or `text` | `json` |
+| `LOG_LEVEL` | Logging level | `INFO` |
+| `PROMETHEUS_ENABLED` | Enable Prometheus metrics endpoint | `true` |
+| `ALERT_DAILY_THRESHOLD_PCT` | Daily spend alert threshold (0-1) | `0.8` |
 
 ### Frontend (`frontend/.env.local`)
 
@@ -144,7 +161,7 @@ graph TD
 ## Testing
 
 ```bash
-# Backend (220 tests)
+# Backend (603 tests)
 cd backend
 python -m pytest
 
@@ -155,6 +172,6 @@ npx vitest run
 
 ---
 
-## Contribute
+## License
 
-PRs and ideas welcome. Open an issue or submit a pull request.
+Distributed under the MIT License. See [`LICENSE`](LICENSE) for more information.
