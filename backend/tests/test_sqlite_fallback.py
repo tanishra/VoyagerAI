@@ -52,6 +52,7 @@ def _cleanup_db_files():
 @pytest_asyncio.fixture(autouse=True)
 async def _reset_sqlite_conn():
     """Reset the shared SQLite connection before each test for isolation."""
+    settings.SQLITE_FALLBACK_DB_PATH = _test_db_path
     await sqlite_fallback.close_connection()
     _cleanup_db_files()
     yield
