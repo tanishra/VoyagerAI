@@ -28,6 +28,8 @@ import FeedbackButtons from '@/components/FeedbackButtons';
 import ThreadSidebar from './ThreadSidebar';
 import VoiceWaveform from '@/components/VoiceWaveform';
 import FilePreview from '@/components/FilePreview';
+import CurrencySwitcher from '@/components/CurrencySwitcher';
+import { useCurrency } from '@/lib/useCurrency';
 import { useVoiceInput } from '@/lib/useVoiceInput';
 import { stripStructuredTags } from '@/lib/utils';
 import { uploadFile, type UploadedFile } from '@/lib/upload-api';
@@ -59,6 +61,7 @@ export default function ChatPage() {
   const tStatus = useTranslations('status');
   const tCommon = useTranslations('common');
   const locale = useLocale();
+  const [currency] = useCurrency();
   const userTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
@@ -387,7 +390,7 @@ export default function ChatPage() {
 
     try {
       const newThreadId = await streamChat(
-        { message: text, thread_id: threadId ?? undefined, locale, timezone: userTimezone, attachments: sentAttachments.length > 0 ? sentAttachments : undefined },
+        { message: text, thread_id: threadId ?? undefined, locale, timezone: userTimezone, currency, attachments: sentAttachments.length > 0 ? sentAttachments : undefined },
         {
           signal: controller.signal,
           onToken: (token) => {
@@ -623,7 +626,7 @@ export default function ChatPage() {
 
     try {
       await regenerateStream(
-        { thread_id: threadId, locale, timezone: userTimezone },
+        { thread_id: threadId, locale, timezone: userTimezone, currency },
         {
           signal: controller.signal,
           onToken: (token) => {
@@ -877,7 +880,7 @@ export default function ChatPage() {
 
     try {
       await editStream(
-        { thread_id: threadId, message: editContent.trim(), locale, timezone: userTimezone },
+        { thread_id: threadId, message: editContent.trim(), locale, timezone: userTimezone, currency },
         {
           signal: controller.signal,
           onToken: (token) => {
@@ -1097,7 +1100,7 @@ export default function ChatPage() {
           let errorMessage = '';
 
           await streamChat(
-            { message: msg.content, thread_id: msg.thread_id ?? undefined, locale, timezone: userTimezone },
+            { message: msg.content, thread_id: msg.thread_id ?? undefined, locale, timezone: userTimezone, currency },
             {
               onToken: (token) => {
                 accumulatedText += token;
@@ -1406,13 +1409,16 @@ export default function ChatPage() {
               </div>
             )}
           </div>
-          <button
-            onClick={handleNewChat}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground bg-muted hover:bg-accent border border-border rounded-lg transition-colors cursor-pointer"
-          >
-            <RotateCcw className="w-3.5 h-3.5" />
-            {t('newChat')}
-          </button>
+          <div className="flex items-center gap-2">
+            <CurrencySwitcher />
+            <button
+              onClick={handleNewChat}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground bg-muted hover:bg-accent border border-border rounded-lg transition-colors cursor-pointer"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              {t('newChat')}
+            </button>
+          </div>
         </header>
 
         {/* Reconnecting Banner */}
