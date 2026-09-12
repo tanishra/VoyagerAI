@@ -14,6 +14,7 @@ import time
 from unittest.mock import patch
 
 import pytest
+import pytest_asyncio
 
 # Patch the SQLite fallback DB path BEFORE importing any store modules
 _tmpdir = tempfile.mkdtemp(prefix="voyager_test_")
@@ -41,22 +42,21 @@ from file_store import FileStore  # noqa: E402
 # ---------------------------------------------------------------------------
 
 
-@pytest.fixture(autouse=True)
-def _reset_sqlite_conn():
+def _cleanup_db_files():
+    for ext in ("", "-wal", "-shm"):
+        path = _test_db_path + ext
+        if os.path.exists(path):
+            os.remove(path)
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def _reset_sqlite_conn():
     """Reset the shared SQLite connection before each test for isolation."""
-    # Close any existing connection
-    asyncio.get_event_loop().run_until_complete(sqlite_fallback.close_connection())
-    # Remove the test DB file so each test starts fresh
-    for ext in ("", "-wal", "-shm"):
-        path = _test_db_path + ext
-        if os.path.exists(path):
-            os.remove(path)
+    await sqlite_fallback.close_connection()
+    _cleanup_db_files()
     yield
-    asyncio.get_event_loop().run_until_complete(sqlite_fallback.close_connection())
-    for ext in ("", "-wal", "-shm"):
-        path = _test_db_path + ext
-        if os.path.exists(path):
-            os.remove(path)
+    await sqlite_fallback.close_connection()
+    _cleanup_db_files()
 
 
 def _no_redis():
