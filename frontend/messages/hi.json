@@ -181,7 +181,8 @@
     "tips": "सुझाव",
     "closeDayDetails": "दिन विवरण बंद करें",
     "dailyCostSummary": "दैनिक लागत",
-    "viewDetails": "विवरण देखें"
+    "viewDetails": "विवरण देखें",
+    "loadingDescription": "विवरण लोड हो रहा है..."
   },
   "comparison": {
     "title": "योजनाएँ तुलना करें",
