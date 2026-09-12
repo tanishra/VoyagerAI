@@ -183,7 +183,16 @@
     "dailyCostSummary": "Tägliche Kosten",
     "viewDetails": "Details ansehen",
     "loadingDescription": "Beschreibung wird geladen...",
-    "viewOnMaps": "Auf Google Maps ansehen"
+    "viewOnMaps": "Auf Google Maps ansehen",
+    "total": "Gesamt",
+    "accommodation": "Unterkunft",
+    "food": "Essen",
+    "activities": "Aktivitäten",
+    "averageCost": "Ø",
+    "withinBudget": "Im Budget",
+    "overBudget": "Über dem Budget",
+    "underBudget": "Unter dem Budget",
+    "budgetBreakdown": "Budgetaufschlüsselung"
   },
   "comparison": {
     "title": "Pläne vergleichen",
