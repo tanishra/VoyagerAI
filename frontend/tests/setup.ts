@@ -93,6 +93,21 @@ vi.mock('@/lib/useLocale', async () => {
   };
 });
 
+vi.mock('@/lib/useCurrency', async () => {
+  const { vi } = await import('vitest');
+  return {
+    useCurrency: () => ['USD', vi.fn()],
+  };
+});
+
+vi.mock('@/lib/currency', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/currency')>();
+  return {
+    ...actual,
+    getStoredCurrency: () => null as null,
+  };
+});
+
 vi.mock('next/link', () => ({
   default: ({ children, href, ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement> & { children?: React.ReactNode }) =>
     React.createElement('a', { href, ...props }, children),
