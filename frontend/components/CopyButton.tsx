@@ -4,11 +4,18 @@ import { useState } from 'react';
 import { Copy, Check } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import type { Itinerary, ComparisonData, DayPlan } from '@/lib/types';
+import { getStoredCurrency, CURRENCY_SYMBOLS } from '@/lib/currency';
+
+function getCurrencySymbol(): string {
+  const c = getStoredCurrency();
+  return c ? CURRENCY_SYMBOLS[c] : '$';
+}
 
 export function formatItineraryText(itinerary: Itinerary): string {
   const lines: string[] = [];
+  const sym = getCurrencySymbol();
   const cost = itinerary.estimated_total_cost_usd != null
-    ? `$${itinerary.estimated_total_cost_usd.toLocaleString()}`
+    ? `${sym}${itinerary.estimated_total_cost_usd.toLocaleString()}`
     : 'N/A';
 
   lines.push(`📍 ${itinerary.destination} — ${itinerary.total_days} days — ${cost}`);
@@ -17,17 +24,17 @@ export function formatItineraryText(itinerary: Itinerary): string {
   for (const day of itinerary.days ?? []) {
     lines.push(`Day ${day.day}: ${day.theme ?? `Day ${day.day}`}`);
     if (day.morning?.activity) {
-      lines.push(`  Morning: ${day.morning.activity} (${day.morning.duration ?? ''}, $${day.morning.cost_usd ?? 0})`);
+      lines.push(`  Morning: ${day.morning.activity} (${day.morning.duration ?? ''}, ${sym}${day.morning.cost_usd ?? 0})`);
     }
     if (day.afternoon?.activity) {
-      lines.push(`  Afternoon: ${day.afternoon.activity} (${day.afternoon.duration ?? ''}, $${day.afternoon.cost_usd ?? 0})`);
+      lines.push(`  Afternoon: ${day.afternoon.activity} (${day.afternoon.duration ?? ''}, ${sym}${day.afternoon.cost_usd ?? 0})`);
     }
     if (day.evening?.activity) {
-      lines.push(`  Evening: ${day.evening.activity} (${day.evening.duration ?? ''}, $${day.evening.cost_usd ?? 0})`);
+      lines.push(`  Evening: ${day.evening.activity} (${day.evening.duration ?? ''}, ${sym}${day.evening.cost_usd ?? 0})`);
     }
     if (day.transport) lines.push(`  Transport: ${day.transport}`);
     if (day.accommodation) lines.push(`  Stay: ${day.accommodation}`);
-    if (day.daily_cost_usd != null) lines.push(`  Daily cost: $${day.daily_cost_usd}`);
+    if (day.daily_cost_usd != null) lines.push(`  Daily cost: ${sym}${day.daily_cost_usd}`);
     if (day.tips && day.tips.length > 0) {
       lines.push(`  💡 ${day.tips[0]}`);
     }
@@ -49,13 +56,14 @@ export function formatItineraryText(itinerary: Itinerary): string {
 
 export function formatComparisonText(data: ComparisonData): string {
   const lines: string[] = [];
+  const sym = getCurrencySymbol();
 
   for (const plan of data.plans ?? []) {
     const itin = plan.itinerary;
     const cost = itin.estimated_total_cost_usd != null
-      ? `$${itin.estimated_total_cost_usd.toLocaleString()}`
+      ? `${sym}${itin.estimated_total_cost_usd.toLocaleString()}`
       : plan.cost_breakdown?.total != null
-        ? `$${plan.cost_breakdown.total.toLocaleString()}`
+        ? `${sym}${plan.cost_breakdown.total.toLocaleString()}`
         : 'N/A';
 
     lines.push(`=== ${plan.tier.toUpperCase()} — ${cost} ===`);
