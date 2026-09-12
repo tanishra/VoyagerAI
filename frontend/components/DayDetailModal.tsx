@@ -8,6 +8,7 @@ import dynamic from 'next/dynamic';
 import type { DayPlan } from '@/lib/types';
 import { useLocale } from '@/lib/useLocale';
 import { formatCurrency } from '@/lib/format';
+import { useCurrency } from '@/lib/useCurrency';
 import ActivityCard from './ActivityCard';
 
 const ItineraryMap = dynamic(() => import('./ItineraryMap'), { ssr: false });
@@ -28,6 +29,7 @@ const SLOTS = [
 export default function DayDetailModal({ day, dayNumber, destination, onClose }: DayDetailModalProps) {
   const t = useTranslations('itinerary');
   const locale = useLocale();
+  const [currency] = useCurrency();
   const modalRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -150,7 +152,7 @@ export default function DayDetailModal({ day, dayNumber, destination, onClose }:
               <div className="border-t border-border pt-3 flex items-center justify-between">
                 <span className="text-xs text-muted-foreground">{t('dailyCostSummary')}</span>
                 <span className="text-sm font-semibold text-primary">
-                  {day.daily_cost_usd != null ? formatCurrency(day.daily_cost_usd, locale) : t('na')}
+                  {day.daily_cost_usd != null ? formatCurrency(day.daily_cost_usd, locale, undefined, currency) : t('na')}
                 </span>
               </div>
             </div>
