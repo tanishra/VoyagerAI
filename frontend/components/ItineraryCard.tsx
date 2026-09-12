@@ -31,6 +31,7 @@ export default function ItineraryCard({ itinerary, threadId, printMode = false }
   const [shareStatus, setShareStatus] = useState<'idle' | 'creating' | 'copied' | 'error'>('idle');
   const [mapExpanded, setMapExpanded] = useState(false);
   const [selectedDay, setSelectedDay] = useState<DayPlan | null>(null);
+  const [activeDay, setActiveDay] = useState<number | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -178,6 +179,11 @@ export default function ItineraryCard({ itinerary, threadId, printMode = false }
             days={days}
             destination={itinerary.destination}
             onDayClick={(day) => setSelectedDay(day)}
+            activeDay={activeDay}
+            onDayExpand={(day) => {
+              setActiveDay(day);
+              if (day !== null) setMapExpanded(true);
+            }}
           />
         ) : (
           <div className="space-y-2">
@@ -220,7 +226,13 @@ export default function ItineraryCard({ itinerary, threadId, printMode = false }
             </button>
             {mapExpanded && (
               <div className="mt-2">
-                <ItineraryMap days={days} destination={itinerary.destination} />
+                <ItineraryMap
+                  days={days}
+                  destination={itinerary.destination}
+                  activeDay={activeDay}
+                  onMarkerClick={(day) => setActiveDay(day)}
+                  onDaySelect={(day) => setActiveDay(day)}
+                />
               </div>
             )}
           </div>
