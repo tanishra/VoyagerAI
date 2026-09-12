@@ -1,6 +1,6 @@
 'use client';
 
-import { Globe, MoreHorizontal, Printer, FileJson, FileText, Share2, Check, Map as MapIcon, ChevronDown, Calendar, Wallet, Pencil } from 'lucide-react';
+import { Globe, MoreHorizontal, Printer, FileJson, FileText, Share2, Check, Map as MapIcon, ChevronDown, Calendar, Wallet, Pencil, ExternalLink } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import { useTranslations } from 'next-intl';
 import dynamic from 'next/dynamic';
@@ -94,6 +94,17 @@ export default function ItineraryCard({ itinerary, threadId, printMode = false, 
     setMenuOpen(false);
   }
 
+  async function handleOpenSharePage() {
+    if (!threadId) return;
+    try {
+      const { share_url } = await createShare(threadId);
+      window.open(share_url, '_blank');
+    } catch {
+      // silently fail
+    }
+    setMenuOpen(false);
+  }
+
   return (
     <div className="mt-3 rounded-xl border border-indigo-500/20 bg-indigo-500/5 overflow-hidden bg-card">
       <div className="px-4 py-3 border-b border-indigo-500/10 flex items-center justify-between">
@@ -178,6 +189,13 @@ export default function ItineraryCard({ itinerary, threadId, printMode = false, 
                       {t('shareLink')}
                     </>
                   )}
+                </button>
+                <button
+                  onClick={handleOpenSharePage}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-foreground hover:bg-muted transition-colors cursor-pointer"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  {t('openSharePage')}
                 </button>
               </div>
             )}
