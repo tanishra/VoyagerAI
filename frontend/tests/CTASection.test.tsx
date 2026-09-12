@@ -5,17 +5,17 @@ import CTASection from '@/components/CTASection';
 describe('CTASection', () => {
   it('renders heading', () => {
     render(<CTASection />);
-    expect(screen.getByText('Ready to Plan Your Next Adventure?')).toBeInTheDocument();
+    expect(screen.getByText('Where will you go next?')).toBeInTheDocument();
   });
 
   it('renders description', () => {
     render(<CTASection />);
-    expect(screen.getByText(/completely free/i)).toBeInTheDocument();
+    expect(screen.getByText(/A personalized itinerary/i)).toBeInTheDocument();
   });
 
   it('renders CTA button linking to /chat', () => {
     render(<CTASection />);
-    const btn = screen.getByText('Plan Your Trip Now');
+    const btn = screen.getByText('Plan Your Trip');
     expect(btn.closest('a')).toHaveAttribute('href', '/chat');
   });
 });
