@@ -54,14 +54,13 @@ describe('ItineraryCard', () => {
     expect(screen.getByText('Tokyo')).toBeInTheDocument();
   });
 
-  it('renders simplified day cards with theme and arrow line', () => {
+  it('renders timeline day bars with theme', () => {
     render(<ItineraryCard itinerary={makeItinerary()} threadId="t1" />);
     expect(screen.getByText(/Day 1 — Arrival/)).toBeInTheDocument();
     expect(screen.getByText(/Day 2 — Temples/)).toBeInTheDocument();
-    expect(screen.getByText(/Hotel check-in → Shibuya Crossing → Ramen dinner/)).toBeInTheDocument();
   });
 
-  it('does not show transport/stay/cost in collapsed view (non-print mode)', () => {
+  it('does not show transport/stay labels in collapsed view (non-print mode)', () => {
     render(<ItineraryCard itinerary={makeItinerary()} threadId="t1" />);
     expect(screen.queryByText(/Transport:/)).not.toBeInTheDocument();
     expect(screen.queryByText(/Stay:/)).not.toBeInTheDocument();
@@ -80,9 +79,18 @@ describe('ItineraryCard', () => {
     expect(screen.getByText('Comfortable shoes')).toBeInTheDocument();
   });
 
-  it('opens day detail modal when day card is clicked', () => {
+  it('expands day bar inline when clicked (accordion)', () => {
     render(<ItineraryCard itinerary={makeItinerary()} threadId="t1" />);
     fireEvent.click(screen.getByText(/Day 1 — Arrival/));
+    expect(screen.getByText('Hotel check-in')).toBeInTheDocument();
+    expect(screen.getByText('Shibuya Crossing')).toBeInTheDocument();
+    expect(screen.getByText('Ramen dinner')).toBeInTheDocument();
+  });
+
+  it('opens day detail modal via View Details button', () => {
+    render(<ItineraryCard itinerary={makeItinerary()} threadId="t1" />);
+    fireEvent.click(screen.getByText(/Day 1 — Arrival/));
+    fireEvent.click(screen.getByText('View Details'));
     expect(screen.getByText('Get a Suica card')).toBeInTheDocument();
     expect(screen.getByText('Avoid rush hour')).toBeInTheDocument();
   });
@@ -90,6 +98,7 @@ describe('ItineraryCard', () => {
   it('closes modal when close button is clicked', () => {
     render(<ItineraryCard itinerary={makeItinerary()} threadId="t1" />);
     fireEvent.click(screen.getByText(/Day 1 — Arrival/));
+    fireEvent.click(screen.getByText('View Details'));
     expect(screen.getByText('Get a Suica card')).toBeInTheDocument();
     fireEvent.click(screen.getByLabelText('Close day details'));
     expect(screen.queryByText('Get a Suica card')).not.toBeInTheDocument();
@@ -102,9 +111,8 @@ describe('ItineraryCard', () => {
     expect(screen.getAllByText(/Daily cost:/).length).toBe(2);
   });
 
-  it('does not show chevron in print mode', () => {
-    const { container } = render(<ItineraryCard itinerary={makeItinerary()} threadId="t1" printMode />);
-    const chevrons = container.querySelectorAll('.lucide-chevron-right');
-    expect(chevrons.length).toBe(0);
+  it('does not show View Details button in print mode', () => {
+    render(<ItineraryCard itinerary={makeItinerary()} threadId="t1" printMode />);
+    expect(screen.queryByText('View Details')).not.toBeInTheDocument();
   });
 });
