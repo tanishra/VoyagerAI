@@ -1,4 +1,5 @@
 import { defaultLocale, type Locale } from '@/lib/i18n-config';
+import { getStoredCurrency, type Currency } from '@/lib/currency';
 
 const CURRENCY_MAP: Record<Locale, string> = {
   en: 'USD',
@@ -13,8 +14,9 @@ export function formatCurrency(
   amount: number,
   locale: Locale = defaultLocale,
   options?: Intl.NumberFormatOptions,
+  currencyOverride?: Currency,
 ): string {
-  const currency = CURRENCY_MAP[locale] ?? 'USD';
+  const currency = currencyOverride ?? getStoredCurrency() ?? CURRENCY_MAP[locale] ?? 'USD';
   return new Intl.NumberFormat(locale, {
     style: 'currency',
     currency,
@@ -32,8 +34,8 @@ export function formatNumber(
   return new Intl.NumberFormat(locale, options).format(value);
 }
 
-export function getCurrencySymbol(locale: Locale = defaultLocale): string {
-  const currency = CURRENCY_MAP[locale] ?? 'USD';
+export function getCurrencySymbol(locale: Locale = defaultLocale, currencyOverride?: Currency): string {
+  const currency = currencyOverride ?? getStoredCurrency() ?? CURRENCY_MAP[locale] ?? 'USD';
   return new Intl.NumberFormat(locale, {
     style: 'currency',
     currency,
