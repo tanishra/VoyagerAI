@@ -177,7 +177,10 @@
     "dayN": "Day {n}",
     "openInMaps": "Open in Google Maps",
     "mapUnavailable": "Map unavailable — no coordinates for this itinerary",
-    "mapForDay": "Map for Day {day} in {destination}"
+    "mapForDay": "Map for Day {day} in {destination}",
+    "tips": "Tips",
+    "closeDayDetails": "Close day details",
+    "dailyCostSummary": "Daily Cost"
   },
   "comparison": {
     "title": "Compare Plans",
