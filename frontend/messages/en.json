@@ -181,7 +181,8 @@
     "tips": "Tips",
     "closeDayDetails": "Close day details",
     "dailyCostSummary": "Daily Cost",
-    "viewDetails": "View Details"
+    "viewDetails": "View Details",
+    "loadingDescription": "Loading description..."
   },
   "comparison": {
     "title": "Compare Plans",
