@@ -177,7 +177,10 @@
     "dayN": "Tag {n}",
     "openInMaps": "In Google Maps öffnen",
     "mapUnavailable": "Karte nicht verfügbar — keine Koordinaten für diese Reiseroute",
-    "mapForDay": "Karte für Tag {day} in {destination}"
+    "mapForDay": "Karte für Tag {day} in {destination}",
+    "tips": "Tipps",
+    "closeDayDetails": "Tagesdetails schließen",
+    "dailyCostSummary": "Tägliche Kosten"
   },
   "comparison": {
     "title": "Pläne vergleichen",
