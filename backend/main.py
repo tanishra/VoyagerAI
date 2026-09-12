@@ -34,6 +34,7 @@ from agents.deep_agent import (
     _strip_structured_tags,
     create_checkpointer,
     edit_chat_agent,
+    edit_itinerary_agent,
     regenerate_chat_agent,
 )
 from agents.prompts import (
@@ -206,7 +207,7 @@ async def csrf_middleware(request: Request, call_next):
     Reads the CSRF token from the cookie and compares it to the X-CSRF-Token header.
     SSE endpoints are exempt (they can't set custom headers easily in all browsers).
     """
-    if request.method in _CSRF_METHODS and request.url.path not in _CSRF_EXEMPT_PATHS:
+    if request.method in _CSRF_METHODS and request.url.path not in _CSRF_EXEMPT_PATHS and not request.url.path.endswith("/edit-itinerary"):
         cookie_token = request.cookies.get(CSRF_COOKIE_NAME)
         header_token = request.headers.get(CSRF_HEADER_NAME)
         if not cookie_token or not header_token or not hmac.compare_digest(cookie_token, header_token):
@@ -1635,6 +1636,119 @@ async def chat_edit(
                 )
             except Exception:  # noqa: BLE001
                 logger.warning("Failed to save thread metadata after edit", exc_info=True)
+
+    return EventSourceResponse(event_generator())
+
+
+@app.post(
+    "/chat/{thread_id}/edit-itinerary",
+    summary="Validate a user-edited itinerary via AI",
+    tags=["chat"],
+    dependencies=[Depends(verify_api_key)],
+    response_model=None,
+    responses={
+        200: {
+            "description": "Server-Sent Events stream of AI validation response",
+            "content": {"text/event-stream": {"example": "event: itinerary\ndata: {\"event\": \"itinerary\", \"data\": {\"destination\": \"...\"}}\n"}},
+        },
+        400: {"description": "Missing or invalid itinerary"},
+        401: {"description": "Missing or invalid API key"},
+    },
+)
+@limiter.limit("30/minute")
+async def chat_edit_itinerary(
+    request: Request,
+    thread_id: str,
+    body: dict,
+    user: dict = Depends(get_current_user),
+):
+    """Validate a user-edited itinerary.
+
+    Receives a modified itinerary JSON from the frontend editor, sends it
+    to the AI for validation (budget, route, feasibility), and streams
+    the validated itinerary back as SSE events.
+
+    **Request body:** `{"itinerary": {...}, "locale": "en", "timezone": "...", "currency": "USD"}`
+    """
+    itinerary_data = body.get("itinerary")
+    if not itinerary_data or not isinstance(itinerary_data, dict):
+        raise HTTPException(status_code=400, detail="itinerary object required")
+
+    user_id = user["user_id"]
+    scoped_thread_id = _scoped_chat_thread_id(thread_id, user_id)
+    locale = extract_locale(request, body.get("locale"))
+    timezone = body.get("timezone")
+    currency = body.get("currency")
+
+    # --- Phase 7.2: Daily cost cap + circuit breaker ---
+    within_budget, _spent, _cap = await cost_store.check_daily_budget(user_id)
+    if not within_budget:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Daily cost limit reached (${_spent:.2f}/${_cap:.2f}). Try again tomorrow.",
+        )
+    tripped, _p_spent, _p_cap = await cost_store.check_circuit_breaker()
+    if tripped:
+        raise HTTPException(
+            status_code=503,
+            detail="Platform temporarily unavailable due to high demand. Please try again shortly.",
+        )
+
+    logger.info("POST /chat/%s/edit-itinerary — user=%s", scoped_thread_id, user_id)
+
+    async def event_generator():
+        yield _sse("thread_id", {"thread_id": scoped_thread_id})
+        yield _sse("status", {"tool": "agent", "status": "thinking"})
+
+        cancel_event = register_cancel(scoped_thread_id)
+        active_tasks: dict[str, str] = {}
+        subagent_run_ids: set[str] = set()
+        stream_failed = False
+        stream_text = ""
+
+        try:
+            await thread_store.update_status(user_id, scoped_thread_id, "busy")
+        except Exception:  # noqa: BLE001, S110
+            pass
+
+        try:
+            async for event in edit_itinerary_agent(
+                thread_id=scoped_thread_id,
+                modified_itinerary=itinerary_data,
+                user_id=user_id,
+                locale=locale,
+                timezone=timezone,
+                currency=currency,
+                cancel_event=cancel_event,
+            ):
+                if cancel_event.is_set():
+                    yield _sse("cancelled", None)
+                    break
+                for payload in _parse_chat_event(event, active_tasks, subagent_run_ids):
+                    if payload.get("event") == "token":
+                        raw = json.loads(payload["data"])
+                        stream_text += raw.get("data", "")
+                    yield payload
+        except Exception as exc:  # noqa: BLE001
+            logger.error(
+                "Itinerary edit failed for thread=%s: %s",
+                scoped_thread_id,
+                exc,
+                exc_info=True,
+            )
+            stream_failed = True
+            yield _sse("error", get_error_message("streaming_failed", locale, error=str(exc)))
+        finally:
+            unregister_cancel(scoped_thread_id)
+            try:
+                final_status = "error" if stream_failed else "idle"
+                summary = await generate_summary("Edit itinerary", stream_text, locale=locale)
+                await thread_store.upsert_thread(
+                    user_id, scoped_thread_id, summary, status=final_status,
+                    search_text=f"Edit itinerary {stream_text[:500]}",
+                )
+            except Exception:  # noqa: BLE001
+                logger.warning("Failed to save thread metadata after itinerary edit", exc_info=True)
 
     return EventSourceResponse(event_generator())
 
