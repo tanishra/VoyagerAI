@@ -538,7 +538,7 @@ class _ModelStream:
         return ""
 
 
-async def create_chat_agent(checkpointer=None, store=None, user_id=None, locale=None, timezone=None):
+async def create_chat_agent(checkpointer=None, store=None, user_id=None, locale=None, timezone=None, currency=None):
     if checkpointer is None:
         checkpointer = await create_checkpointer()
 
@@ -571,7 +571,7 @@ async def create_chat_agent(checkpointer=None, store=None, user_id=None, locale=
         model=model,
         tools=get_orchestrator_tools(),
         subagents=subagents,
-        system_prompt=build_chat_agent_prompt(locale, user_id=uid, timezone=timezone),
+        system_prompt=build_chat_agent_prompt(locale, user_id=uid, timezone=timezone, currency=currency),
         checkpointer=checkpointer,
         store=store,
         permissions=[
@@ -840,10 +840,11 @@ async def stream_chat_agent(
     timezone: str | None = None,
     cancel_event=None,
     attachments: list[dict] | None = None,
+    currency: str | None = None,
 ):
     reset_orchestrator_search_count()
     set_current_thread_id(thread_id)
-    agent = await create_chat_agent(user_id=user_id, locale=locale, timezone=timezone)
+    agent = await create_chat_agent(user_id=user_id, locale=locale, timezone=timezone, currency=currency)
     config = {
         "configurable": {
             "thread_id": thread_id,
@@ -1040,13 +1041,14 @@ async def regenerate_chat_agent(
     locale: str | None = None,
     timezone: str | None = None,
     cancel_event=None,
+    currency: str | None = None,
 ):
     """Regenerate the last assistant response by forking the conversation.
 
     Finds the checkpoint before the last assistant message, creates a pure
     fork via aupdate_state, then streams a new response from that fork.
     """
-    agent = await create_chat_agent(user_id=user_id, locale=locale, timezone=timezone)
+    agent = await create_chat_agent(user_id=user_id, locale=locale, timezone=timezone, currency=currency)
     config = {
         "configurable": {
             "thread_id": thread_id,
@@ -1205,6 +1207,7 @@ async def edit_chat_agent(
     locale: str | None = None,
     timezone: str | None = None,
     cancel_event=None,
+    currency: str | None = None,
 ):
     """Edit the last user message and regenerate the assistant response.
 
@@ -1212,7 +1215,7 @@ async def edit_chat_agent(
     fork, then streams with the new edited content as a fresh user message.
     The original branch is preserved; this creates a new branch.
     """
-    agent = await create_chat_agent(user_id=user_id, locale=locale, timezone=timezone)
+    agent = await create_chat_agent(user_id=user_id, locale=locale, timezone=timezone, currency=currency)
     config = {
         "configurable": {
             "thread_id": thread_id,
