@@ -182,7 +182,8 @@
     "closeDayDetails": "Close day details",
     "dailyCostSummary": "Daily Cost",
     "viewDetails": "View Details",
-    "loadingDescription": "Loading description..."
+    "loadingDescription": "Loading description...",
+    "viewOnMaps": "View on Google Maps"
   },
   "comparison": {
     "title": "Compare Plans",
