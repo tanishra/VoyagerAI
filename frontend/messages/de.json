@@ -180,7 +180,8 @@
     "mapForDay": "Karte für Tag {day} in {destination}",
     "tips": "Tipps",
     "closeDayDetails": "Tagesdetails schließen",
-    "dailyCostSummary": "Tägliche Kosten"
+    "dailyCostSummary": "Tägliche Kosten",
+    "viewDetails": "Details ansehen"
   },
   "comparison": {
     "title": "Pläne vergleichen",
