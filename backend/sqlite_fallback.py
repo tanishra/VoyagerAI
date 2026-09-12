@@ -52,7 +52,8 @@ CREATE TABLE IF NOT EXISTS shares (
     destination TEXT,
     itinerary_json TEXT,
     created_at REAL,
-    expires_at REAL
+    expires_at REAL,
+    image_base64 TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_shares_user_tag ON shares(user_tag);
 
@@ -185,6 +186,10 @@ async def get_sqlite_connection() -> aiosqlite.Connection | None:
         await _conn.execute("PRAGMA journal_mode=WAL")
         await _conn.execute("PRAGMA synchronous=NORMAL")
         await _conn.executescript(_SCHEMA_SQL)
+        try:
+            await _conn.execute("ALTER TABLE shares ADD COLUMN image_base64 TEXT")
+        except Exception:
+            pass  # Column already exists
         await _conn.execute(f"PRAGMA user_version = {_SCHEMA_VERSION}")
         await _conn.commit()
         logger.info("SQLite fallback DB initialised at %s", path)
