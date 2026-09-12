@@ -416,6 +416,112 @@ export async function regenerateStream(
   return resolvedThreadId;
 }
 
+export async function editItinerary(
+  body: { thread_id: string; itinerary: Itinerary; locale?: string; timezone?: string; currency?: string },
+  callbacks: ChatStreamCallbacks,
+): Promise<string | undefined> {
+  const { onToken, onItinerary, onComparison, onImage, onChart, onStatus, onThreadId, onDone, onError, onAbort, onCancelled, signal, errorMessages, onThinking, onToolStart, onToolEnd, onToolError, onUsage, onSubagentProgress, onReconnecting } = callbacks;
+  let resolvedThreadId: string | undefined;
+
+  const url = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/chat/${body.thread_id}/edit-itinerary`;
+  const headers = {
+    'Content-Type': 'application/json',
+    Accept: 'text/event-stream',
+    ...(body.locale ? { 'Accept-Language': body.locale } : {}),
+  };
+  const bodyStr = JSON.stringify(body);
+
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: bodyStr,
+        signal,
+        credentials: 'include',
+      });
+
+      if (response.status === 401) {
+        window.location.href = '/login';
+        return undefined;
+      }
+
+      if (!response.ok || !response.body) {
+        if (attempt < MAX_RETRIES && isRetryableHttpStatus(response.status)) {
+          onReconnecting?.(attempt + 1, MAX_RETRIES);
+          await sleep(RETRY_DELAYS[attempt], signal);
+          continue;
+        }
+        onError?.(`HTTP ${response.status}`);
+        return undefined;
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        const lines = buffer.split('\n');
+        buffer = lines.pop() ?? '';
+
+        let currentEvent: string | undefined;
+        for (const line of lines) {
+          const parsed = parseSSELine(line);
+          if (!parsed) continue;
+          if (parsed.event) {
+            currentEvent = parsed.event;
+            continue;
+          }
+          if (parsed.data && currentEvent) {
+            let data: Record<string, unknown>;
+            try {
+              data = JSON.parse(parsed.data);
+            } catch {
+              data = { data: parsed.data };
+            }
+            if (currentEvent === 'thread_id') {
+              const tid = data.thread_id as string;
+              if (tid) {
+                resolvedThreadId = tid;
+                onThreadId?.(tid);
+              }
+            } else {
+              handleChatEvent(currentEvent, data, {
+                onToken, onItinerary, onComparison, onImage, onChart, onStatus, onThreadId, onDone, onError, onCancelled, onThinking, onToolStart, onToolEnd, onToolError, onUsage, onSubagentProgress,
+              });
+            }
+          }
+        }
+      }
+      return resolvedThreadId;
+    } catch (err) {
+      if (isAbortError(err)) {
+        onAbort?.();
+        return resolvedThreadId;
+      }
+      if (attempt < MAX_RETRIES) {
+        onReconnecting?.(attempt + 1, MAX_RETRIES);
+        try {
+          await sleep(RETRY_DELAYS[attempt], signal);
+        } catch (abortErr) {
+          if (isAbortError(abortErr)) {
+            onAbort?.();
+            return resolvedThreadId;
+          }
+        }
+        continue;
+      }
+      onError?.(err instanceof Error ? err.message : String(err));
+      return resolvedThreadId;
+    }
+  }
+  return resolvedThreadId;
+}
+
 export async function getBranches(threadId: string): Promise<BranchInfo[]> {
   try {
     const res = await fetch(
