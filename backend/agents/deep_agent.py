@@ -948,7 +948,7 @@ async def stream_chat_agent(
 
     if not has_tags:
         # Conversational response — no extraction needed
-        yield {"event": "done", "data": None}
+        yield {"event": "done", "data": {"budget_reached": stream._budget_reached}}
         return
 
     # Check for comparison (3-plan) output first
@@ -999,7 +999,7 @@ async def stream_chat_agent(
         elif itinerary is not None:
             itinerary = await _enrich_itinerary_with_coordinates(itinerary)
             yield {"event": "itinerary", "data": itinerary}
-        yield {"event": "done", "data": None}
+        yield {"event": "done", "data": {"budget_reached": stream._budget_reached}}
     except (ValueError, json.JSONDecodeError) as exc:
         yield {"event": "error", "data": str(exc)}
 
@@ -1110,7 +1110,7 @@ async def regenerate_chat_agent(
     ))
 
     if not has_tags:
-        yield {"event": "done", "data": None}
+        yield {"event": "done", "data": {"budget_reached": stream._budget_reached}}
         return
 
     # Same extraction logic as stream_chat_agent
@@ -1160,7 +1160,7 @@ async def regenerate_chat_agent(
         elif itinerary is not None:
             itinerary = await _enrich_itinerary_with_coordinates(itinerary)
             yield {"event": "itinerary", "data": itinerary}
-        yield {"event": "done", "data": None}
+        yield {"event": "done", "data": {"budget_reached": stream._budget_reached}}
     except (ValueError, json.JSONDecodeError) as exc:
         yield {"event": "error", "data": str(exc)}
 
@@ -1271,7 +1271,7 @@ async def edit_chat_agent(
     ))
 
     if not has_tags:
-        yield {"event": "done", "data": None}
+        yield {"event": "done", "data": {"budget_reached": stream._budget_reached}}
         return
 
     comparison = _extract_comparison_from_text(stream_text) if stream_text else None
@@ -1317,7 +1317,7 @@ async def edit_chat_agent(
         elif itinerary is not None:
             itinerary = await _enrich_itinerary_with_coordinates(itinerary)
             yield {"event": "itinerary", "data": itinerary}
-        yield {"event": "done", "data": None}
+        yield {"event": "done", "data": {"budget_reached": stream._budget_reached}}
     except (ValueError, json.JSONDecodeError) as exc:
         yield {"event": "error", "data": str(exc)}
 
@@ -1411,7 +1411,7 @@ async def edit_itinerary_agent(
     has_itinerary_tag = bool(stream_text and _ITINERARY_TAG_RE.search(stream_text))
 
     if not has_itinerary_tag:
-        yield {"event": "done", "data": None}
+        yield {"event": "done", "data": {"budget_reached": stream._budget_reached}}
         return
 
     itinerary = _extract_itinerary_from_text(stream_text) if stream_text else None
@@ -1448,6 +1448,6 @@ async def edit_itinerary_agent(
         if itinerary is not None:
             itinerary = await _enrich_itinerary_with_coordinates(itinerary)
             yield {"event": "itinerary", "data": itinerary}
-        yield {"event": "done", "data": None}
+        yield {"event": "done", "data": {"budget_reached": stream._budget_reached}}
     except (ValueError, json.JSONDecodeError) as exc:
         yield {"event": "error", "data": str(exc)}
