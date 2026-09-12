@@ -7,6 +7,7 @@ import { useTranslations } from 'next-intl';
 import type { ComparisonData, PlanTier } from '@/lib/types';
 import { useLocale } from '@/lib/useLocale';
 import { formatCurrency } from '@/lib/format';
+import { useCurrency } from '@/lib/useCurrency';
 
 const TIER_KEYS: Record<string, string> = {
   budget: 'budget',
@@ -24,6 +25,7 @@ function PlanCard({ plan, onSelect }: { plan: PlanTier; onSelect: (tier: string)
   const t = useTranslations('comparison');
   const tItin = useTranslations('itinerary');
   const locale = useLocale();
+  const [currency] = useCurrency();
   const [expanded, setExpanded] = useState(false);
   const tierKey = TIER_KEYS[plan.tier] ?? 'balanced';
   const cfg = TIER_CONFIG[plan.tier] ?? TIER_CONFIG.balanced;
@@ -43,9 +45,9 @@ function PlanCard({ plan, onSelect }: { plan: PlanTier; onSelect: (tier: string)
           </div>
           <span className="text-lg font-bold text-foreground">
             {itinerary.estimated_total_cost_usd != null
-              ? formatCurrency(itinerary.estimated_total_cost_usd, locale)
+              ? formatCurrency(itinerary.estimated_total_cost_usd, locale, undefined, currency)
               : breakdown?.total != null
-                ? formatCurrency(breakdown.total, locale)
+                ? formatCurrency(breakdown.total, locale, undefined, currency)
                 : tItin('na')}
           </span>
         </div>
@@ -57,19 +59,19 @@ function PlanCard({ plan, onSelect }: { plan: PlanTier; onSelect: (tier: string)
           <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
             <div className="flex justify-between">
               <span className="text-muted-foreground">{t('stayType')}</span>
-              <span className="text-foreground/80">{formatCurrency(breakdown.accommodation, locale)}</span>
+              <span className="text-foreground/80">{formatCurrency(breakdown.accommodation, locale, undefined, currency)}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">{t('foodStyle')}</span>
-              <span className="text-foreground/80">{formatCurrency(breakdown.food, locale)}</span>
+              <span className="text-foreground/80">{formatCurrency(breakdown.food, locale, undefined, currency)}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">{t('activities')}</span>
-              <span className="text-foreground/80">{formatCurrency(breakdown.activities, locale)}</span>
+              <span className="text-foreground/80">{formatCurrency(breakdown.activities, locale, undefined, currency)}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">{t('transportMode')}</span>
-              <span className="text-foreground/80">{formatCurrency(breakdown.transport, locale)}</span>
+              <span className="text-foreground/80">{formatCurrency(breakdown.transport, locale, undefined, currency)}</span>
             </div>
           </div>
         </div>
@@ -145,6 +147,7 @@ export default function ComparisonView({
 }) {
   const t = useTranslations('comparison');
   const locale = useLocale();
+  const [currency] = useCurrency();
   const matrix = data.comparison_matrix;
   const tiers = ['budget', 'balanced', 'premium'] as const;
 
@@ -182,7 +185,7 @@ export default function ComparisonView({
                   {tiers.map((t) => (
                     <td key={t} className="py-1.5 px-2 text-foreground/80">
                       {row.isCurrency && matrix[row.key]?.[t] != null
-                        ? formatCurrency(Number(matrix[row.key]?.[t]), locale)
+                        ? formatCurrency(Number(matrix[row.key]?.[t]), locale, undefined, currency)
                         : (matrix[row.key]?.[t] ?? '—')}
                     </td>
                   ))}
