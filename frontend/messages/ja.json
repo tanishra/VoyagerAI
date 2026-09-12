@@ -26,6 +26,7 @@
     "welcome": "こんにちは！私はAI旅行プランナーです。あなたが夢見ている旅行について教えてください — どこに行きたいですか、何日間で、予算はどのくらいですか？",
     "generationFailed": "⚠ 生成に失敗しました: {error}",
     "generationStopped": "⏹ 生成を停止しました。",
+    "partialResearchNote": "セッション予算制限のため、この回答は部分的な調査で生成されました。",
     "stopped": "停止しました",
     "imageGenerated": "生成された画像",
     "chartGenerated": "生成されたチャート",
