@@ -181,7 +181,8 @@
     "tips": "ヒント",
     "closeDayDetails": "日の詳細を閉じる",
     "dailyCostSummary": "1日の費用",
-    "viewDetails": "詳細を見る"
+    "viewDetails": "詳細を見る",
+    "loadingDescription": "説明を読み込み中..."
   },
   "comparison": {
     "title": "プランを比較",
