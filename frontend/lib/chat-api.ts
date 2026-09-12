@@ -109,9 +109,9 @@ export async function streamChat(
                   onThreadId?.(tid);
                 },
                 onError,
-                onDone: () => {
+                onDone: (data) => {
                   sawDone = true;
-                  onDone?.();
+                  onDone?.(data);
                 },
                 onCancelled,
                 onThinking,
@@ -217,7 +217,7 @@ function handleChatEvent(
     onStatus?: (status: { tool: string; status: string }) => void;
     onThreadId?: (threadId: string) => void;
     onError?: (error: string) => void;
-    onDone?: () => void;
+    onDone?: (data?: { budget_reached?: boolean }) => void;
     onCancelled?: () => void;
     onThinking?: (text: string) => void;
     onToolStart?: (tool: { name: string; input?: string; run_id: string; parent_run_id?: string }) => void;
@@ -270,7 +270,8 @@ function handleChatEvent(
       break;
     }
     case 'done': {
-      onDone?.();
+      const data = parsed.data as { budget_reached?: boolean } | null;
+      onDone?.(data ?? undefined);
       break;
     }
     case 'cancelled': {
