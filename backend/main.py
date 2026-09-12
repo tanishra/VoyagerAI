@@ -46,6 +46,7 @@ from auth import verify_api_key
 from cache import cache_client
 from cancel_registry import cancel_stream, register_cancel, unregister_cancel
 from config import REQUEST_TIMEOUT_SECONDS, logger, settings
+from logging_config import generate_request_id, set_request_context
 from models import (
     AuthLogoutResponse,
     AuthMeResponse,
@@ -179,6 +180,17 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 from rate_limiter import RateLimitMiddleware  # noqa: E402
 
 app.add_middleware(RateLimitMiddleware)
+
+# --- Request context middleware for structured logging (Phase 7.4) ---
+
+@app.middleware("http")
+async def request_context_middleware(request: Request, call_next):
+    """Generate request ID and set logging context for every request."""
+    request_id = request.headers.get("X-Request-ID") or generate_request_id()
+    set_request_context(request_id=request_id)
+    response = await call_next(request)
+    response.headers["X-Request-ID"] = request_id
+    return response
 
 # --- CSRF Protection (double-submit cookie pattern) ---
 CSRF_COOKIE_NAME = "voyager_csrf"
@@ -663,6 +675,52 @@ async def get_platform_cost_summary(
         "hourly_cap": cap,
         "circuit_breaker_enabled": settings.CIRCUIT_BREAKER_ENABLED,
         "circuit_breaker_tripped": tripped,
+    })
+
+
+@app.get(
+    "/admin/costs/live",
+    summary="Get live cost breakdown for last N hours (Phase 7.4)",
+    tags=["admin"],
+    dependencies=[Depends(verify_api_key)],
+    response_model=None,
+    responses={
+        200: {
+            "description": "Live cost breakdown",
+            "content": {"application/json": {"example": {
+                "hours": 24,
+                "total_spend": 3.45,
+                "per_hour": [
+                    {"hour": "2024-01-15T14:00", "cost": 0.12, "requests": 3, "tokens_in": 1200, "tokens_out": 800}
+                ],
+                "alert": {"level": "ok", "daily_spend": 3.45, "daily_cap": 50.0, "percentage": 6.9, "message": "Spend within normal range"}
+            }}},
+        },
+        401: {"description": "Missing or invalid API key"},
+        403: {"description": "User is not in ADMIN_EMAILS allowlist"},
+    },
+)
+@limiter.limit("10/minute")
+async def get_live_costs(
+    request: Request,
+    hours: int = 24,
+    admin: dict = Depends(verify_admin),
+) -> JSONResponse:
+    """Get live per-hour cost breakdown for the last N hours.
+
+    **Query parameters:**
+    - `hours`: Number of hours to look back (default: 24, max: 168)
+
+    **Requires:** Admin privileges.
+    """
+    hours = min(max(hours, 1), 168)
+    live_data = await cost_store.get_live_costs(hours=hours)
+    alert = await cost_store.check_platform_alerts()
+    return JSONResponse(content={
+        "hours": hours,
+        "total_spend": round(sum(h["cost"] for h in live_data), 6),
+        "per_hour": live_data,
+        "alert": alert,
     })
 
 
@@ -2448,6 +2506,19 @@ async def _start_thread_cleanup_task() -> None:
                 logger.warning("SQLite fallback cleanup task error", exc_info=True)
 
     asyncio.create_task(_cleanup_loop())
+
+
+# --- Prometheus metrics endpoint (Phase 7.4) ---
+
+if settings.PROMETHEUS_ENABLED:
+    from prometheus_fastapi_instrumentator import Instrumentator
+
+    Instrumentator(
+        should_group_status_codes=True,
+        should_ignore_untemplated=True,
+        should_respect_env_var=False,
+        excluded_handlers=["/metrics"],
+    ).instrument(app).expose(app, endpoint="/metrics", include_in_schema=False)
 
 
 if __name__ == "__main__":
