@@ -183,7 +183,16 @@
     "dailyCostSummary": "Costo diario",
     "viewDetails": "Ver detalles",
     "loadingDescription": "Cargando descripción...",
-    "viewOnMaps": "Ver en Google Maps"
+    "viewOnMaps": "Ver en Google Maps",
+    "total": "Total",
+    "accommodation": "Alojamiento",
+    "food": "Comida",
+    "activities": "Actividades",
+    "averageCost": "Prom",
+    "withinBudget": "Dentro del presupuesto",
+    "overBudget": "Sobre el presupuesto",
+    "underBudget": "Bajo el presupuesto",
+    "budgetBreakdown": "Desglose del presupuesto"
   },
   "comparison": {
     "title": "Comparar Planes",
