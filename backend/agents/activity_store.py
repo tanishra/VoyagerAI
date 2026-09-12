@@ -39,6 +39,8 @@ async def save_activity(
                 "usage": activity.get("usage", []),
                 "total_input_tokens": activity.get("total_input_tokens", 0),
                 "total_output_tokens": activity.get("total_output_tokens", 0),
+                "images": activity.get("images", []),
+                "charts": activity.get("charts", []),
             }
             await store.aput(_ACTIVITY_NAMESPACE, key, all_activity)
         else:
@@ -52,6 +54,8 @@ async def save_activity(
                     "usage": activity.get("usage", []),
                     "total_input_tokens": activity.get("total_input_tokens", 0),
                     "total_output_tokens": activity.get("total_output_tokens", 0),
+                    "images": activity.get("images", []),
+                    "charts": activity.get("charts", []),
                 },
             )
     except Exception:
