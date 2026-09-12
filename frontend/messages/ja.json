@@ -177,7 +177,10 @@
     "dayN": "{n}日目",
     "openInMaps": "Google Mapsで開く",
     "mapUnavailable": "地図利用不可 — この旅程の座標がありません",
-    "mapForDay": "{day}日目の地図 — {destination}"
+    "mapForDay": "{day}日目の地図 — {destination}",
+    "tips": "ヒント",
+    "closeDayDetails": "日の詳細を閉じる",
+    "dailyCostSummary": "1日の費用"
   },
   "comparison": {
     "title": "プランを比較",
