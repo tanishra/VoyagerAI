@@ -3,8 +3,23 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import ItineraryCard from '@/components/ItineraryCard';
 import type { Itinerary } from '@/lib/types';
 
+const { MockMap } = vi.hoisted(() => {
+  const React = require('react');
+  return {
+    MockMap: ({ activeDay, onMarkerClick, onDaySelect }: { activeDay?: number | null; onMarkerClick?: (d: number) => void; onDaySelect?: (d: number) => void }) =>
+      React.createElement('div', { 'data-testid': 'itinerary-map', 'data-active-day': activeDay ?? null },
+        React.createElement('button', { 'data-testid': 'map-marker-click', onClick: () => onMarkerClick?.(2) }, 'Marker Day 2'),
+        React.createElement('button', { 'data-testid': 'map-day-select', onClick: () => onDaySelect?.(1) }, 'Select Day 1'),
+      ),
+  };
+});
+
+vi.mock('next/dynamic', () => ({
+  default: () => MockMap,
+}));
+
 vi.mock('@/components/ItineraryMap', () => ({
-  default: () => <div data-testid="itinerary-map">Map</div>,
+  default: MockMap,
 }));
 
 vi.mock('@/lib/share-api', () => ({
@@ -114,5 +129,29 @@ describe('ItineraryCard', () => {
   it('does not show View Details button in print mode', () => {
     render(<ItineraryCard itinerary={makeItinerary()} threadId="t1" printMode />);
     expect(screen.queryByText('View Details')).not.toBeInTheDocument();
+  });
+
+  it('expanding a day in timeline sets activeDay on map', () => {
+    render(<ItineraryCard itinerary={makeItinerary()} threadId="t1" />);
+    fireEvent.click(screen.getByText(/Day 1 — Arrival/));
+    const map = screen.getByTestId('itinerary-map');
+    expect(map.getAttribute('data-active-day')).toBe('1');
+  });
+
+  it('map marker click sets activeDay and expands corresponding day', () => {
+    render(<ItineraryCard itinerary={makeItinerary()} threadId="t1" />);
+    fireEvent.click(screen.getByText('Map'));
+    fireEvent.click(screen.getByTestId('map-marker-click'));
+    expect(screen.getByText('Senso-ji Temple')).toBeInTheDocument();
+    const map = screen.getByTestId('itinerary-map');
+    expect(map.getAttribute('data-active-day')).toBe('2');
+  });
+
+  it('map day select click sets activeDay', () => {
+    render(<ItineraryCard itinerary={makeItinerary()} threadId="t1" />);
+    fireEvent.click(screen.getByText('Map'));
+    fireEvent.click(screen.getByTestId('map-day-select'));
+    const map = screen.getByTestId('itinerary-map');
+    expect(map.getAttribute('data-active-day')).toBe('1');
   });
 });
