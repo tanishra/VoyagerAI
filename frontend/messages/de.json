@@ -181,7 +181,8 @@
     "tips": "Tipps",
     "closeDayDetails": "Tagesdetails schließen",
     "dailyCostSummary": "Tägliche Kosten",
-    "viewDetails": "Details ansehen"
+    "viewDetails": "Details ansehen",
+    "loadingDescription": "Beschreibung wird geladen..."
   },
   "comparison": {
     "title": "Pläne vergleichen",
