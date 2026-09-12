@@ -177,7 +177,10 @@
     "dayN": "दिन {n}",
     "openInMaps": "Google Maps में खोलें",
     "mapUnavailable": "नक्शा उपलब्ध नहीं — इस यात्रा कार्यक्रम के लिए निर्देशांक नहीं हैं",
-    "mapForDay": "दिन {day} का नक्शा — {destination}"
+    "mapForDay": "दिन {day} का नक्शा — {destination}",
+    "tips": "सुझाव",
+    "closeDayDetails": "दिन विवरण बंद करें",
+    "dailyCostSummary": "दैनिक लागत"
   },
   "comparison": {
     "title": "योजनाएँ तुलना करें",
