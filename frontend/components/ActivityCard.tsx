@@ -9,6 +9,7 @@ import dynamic from 'next/dynamic';
 import type { TimeSlot } from '@/lib/types';
 import { useLocale } from '@/lib/useLocale';
 import { formatCurrency } from '@/lib/format';
+import { useCurrency } from '@/lib/useCurrency';
 import { fetchWikimediaImage } from '@/lib/wikimedia';
 import { fetchWikipediaDescription } from '@/lib/wikipedia';
 
@@ -29,6 +30,7 @@ const SLOT_COLORS: Record<string, string> = {
 export default function ActivityCard({ slot, slotKey, destination }: ActivityCardProps) {
   const t = useTranslations('itinerary');
   const locale = useLocale();
+  const [currency] = useCurrency();
   const [expanded, setExpanded] = useState(false);
 
   const { data: imageUrl, isLoading: imageLoading } = useSWR(
@@ -88,9 +90,9 @@ export default function ActivityCard({ slot, slotKey, destination }: ActivityCar
                 </span>
               )}
               {slot.cost_usd != null && slot.cost_usd > 0 && (
-                <span className="flex items-center gap-1">
-                  <DollarSign className="w-3 h-3" />
-                  {formatCurrency(slot.cost_usd, locale)}
+                <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-medium ${SLOT_COLORS[slotKey]} bg-current/5`}>
+                  <DollarSign className="w-2.5 h-2.5" />
+                  {formatCurrency(slot.cost_usd, locale, undefined, currency)}
                 </span>
               )}
             </div>
