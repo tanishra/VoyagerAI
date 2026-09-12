@@ -182,7 +182,8 @@
     "closeDayDetails": "Tagesdetails schließen",
     "dailyCostSummary": "Tägliche Kosten",
     "viewDetails": "Details ansehen",
-    "loadingDescription": "Beschreibung wird geladen..."
+    "loadingDescription": "Beschreibung wird geladen...",
+    "viewOnMaps": "Auf Google Maps ansehen"
   },
   "comparison": {
     "title": "Pläne vergleichen",
