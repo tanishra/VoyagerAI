@@ -2,7 +2,7 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Send, Square, RotateCcw, Globe, Search, ShieldAlert, ListChecks, Loader2, PanelLeft, ChevronDown, ChevronLeft, ChevronRight, Clock, Sparkles, Copy, Check, Pencil, X, Mic, Paperclip, FileText } from 'lucide-react';
+import { Send, Square, RotateCcw, Globe, Search, ShieldAlert, ListChecks, Loader2, PanelLeft, ChevronDown, ChevronLeft, ChevronRight, Clock, Sparkles, Copy, Check, Pencil, X, Mic, Paperclip, FileText, Info } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useLocale } from '@/lib/useLocale';
 import { streamChat, cancelStream, regenerateStream, editStream, editItinerary } from '@/lib/chat-api';
@@ -77,6 +77,7 @@ export default function ChatPage() {
   const [streamingComparison, setStreamingComparison] = useState<ComparisonData | null>(null);
   const [streamingImages, setStreamingImages] = useState<GeneratedImage[]>([]);
   const [streamingCharts, setStreamingCharts] = useState<GeneratedChart[]>([]);
+  const [partialResearch, setPartialResearch] = useState(false);
   const [streamingActivity, setStreamingActivity] = useState<ActivityData | null>(null);
   const [activeWorkers, setActiveWorkers] = useState<string[]>([]);
   const [progressMap, setProgressMap] = useState<Record<string, string>>({});
@@ -334,6 +335,7 @@ export default function ChatPage() {
     setStreamingComparison(null);
     setStreamingImages([]);
     setStreamingCharts([]);
+    setPartialResearch(false);
     setStreamingActivity(null);
     streamingActivityRef.current = null;
     setActiveWorkers([]);
@@ -511,6 +513,9 @@ export default function ChatPage() {
             aborted = true;
             setReconnecting(null);
           },
+          onDone: (doneData) => {
+            setPartialResearch(doneData?.budget_reached ?? false);
+          },
           errorMessages: {
             serverResponse: (status, detail) => t('errorServerResponse', { status, detail }),
             responseBody: t('errorResponseBody'),
@@ -555,6 +560,7 @@ export default function ChatPage() {
               activity: finalActivity ?? undefined,
               images: accumulatedImages.length > 0 ? accumulatedImages : undefined,
               charts: accumulatedCharts.length > 0 ? accumulatedCharts : undefined,
+              partialResearch: partialResearch || undefined,
             };
           }
         }
@@ -635,7 +641,8 @@ export default function ChatPage() {
             accumulatedItinerary = itinerary;
             setStreamingItinerary(itinerary);
           },
-          onDone: () => {
+          onDone: (doneData) => {
+            setPartialResearch(doneData?.budget_reached ?? false);
             setMessages((prev) => {
               const updated = [...prev];
               const newMsg: ChatMessage = {
@@ -643,6 +650,7 @@ export default function ChatPage() {
                 role: 'assistant',
                 content: stripStructuredTags(accumulatedText),
                 itinerary: accumulatedItinerary ?? undefined,
+                partialResearch: doneData?.budget_reached || undefined,
               };
               updated.push(newMsg);
               return updated;
@@ -675,6 +683,7 @@ export default function ChatPage() {
     setStreamingComparison(null);
     setStreamingImages([]);
     setStreamingCharts([]);
+    setPartialResearch(false);
     setStreamingActivity(null);
     streamingActivityRef.current = null;
     setActiveWorkers([]);
@@ -819,7 +828,7 @@ export default function ChatPage() {
             aborted = true;
             setReconnecting(null);
           },
-          onDone: () => {},
+          onDone: (doneData) => { setPartialResearch(doneData?.budget_reached ?? false); },
         },
       );
     } finally {
@@ -848,6 +857,7 @@ export default function ChatPage() {
                 itinerary: accumulatedItinerary ?? undefined,
                 comparison: accumulatedComparison ?? undefined,
                 activity: finalActivity ?? undefined,
+                partialResearch: partialResearch || undefined,
               };
             }
             break;
@@ -923,6 +933,7 @@ export default function ChatPage() {
     setStreamingComparison(null);
     setStreamingImages([]);
     setStreamingCharts([]);
+    setPartialResearch(false);
     setStreamingActivity(null);
     streamingActivityRef.current = null;
     setActiveWorkers([]);
@@ -1055,7 +1066,7 @@ export default function ChatPage() {
           },
           onAbort: () => { aborted = true; setReconnecting(null); },
           onCancelled: () => { aborted = true; setReconnecting(null); },
-          onDone: () => {},
+          onDone: (doneData) => { setPartialResearch(doneData?.budget_reached ?? false); },
         },
       );
     } finally {
@@ -1091,6 +1102,7 @@ export default function ChatPage() {
                 itinerary: accumulatedItinerary ?? undefined,
                 comparison: accumulatedComparison ?? undefined,
                 activity: finalActivity ?? undefined,
+                partialResearch: partialResearch || undefined,
               };
             }
             break;
@@ -1670,6 +1682,12 @@ export default function ChatPage() {
                     {msg.charts && msg.charts.map((chart, i) => (
                       <GeneratedChartCard key={i} chart={chart} />
                     ))}
+                    {msg.partialResearch && (
+                      <div className="flex items-center gap-1.5 mt-2 text-xs text-muted-foreground">
+                        <Info className="w-3.5 h-3.5 shrink-0" />
+                        <span>{t('partialResearchNote')}</span>
+                      </div>
+                    )}
                   </div>
                   {/* Copy + Regenerate + Branch navigation buttons */}
                   {msg.content && (
@@ -1794,6 +1812,12 @@ export default function ChatPage() {
                 {streamingCharts.map((chart, i) => (
                   <GeneratedChartCard key={i} chart={chart} />
                 ))}
+                {partialResearch && (
+                  <div className="flex items-center gap-1.5 mt-2 text-xs text-muted-foreground">
+                    <Info className="w-3.5 h-3.5 shrink-0" />
+                    <span>{t('partialResearchNote')}</span>
+                  </div>
+                )}
               </div>
             </motion.div>
           )}
