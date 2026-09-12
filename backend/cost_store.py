@@ -622,5 +622,190 @@ class CostStore:
         cap = settings.HOURLY_PLATFORM_CAP_USD
         return (spent >= cap, round(spent, 6), cap)
 
+    # ------------------------------------------------------------------
+    # Phase 7.4: Live cost monitoring + alerting
+    # ------------------------------------------------------------------
+
+    async def get_live_costs(self, hours: int = 24) -> list[dict]:
+        """Return per-hour cost breakdown for the last N hours.
+
+        Each entry: ``{hour: "2024-01-15T14:00", cost: 0.12, requests: 3,
+        tokens_in: 1200, tokens_out: 800}``.
+        """
+        now = time.time()
+        start_ts = now - (hours * 3600)
+
+        r = await self._get_redis()
+        if r is not None:
+            try:
+                thread_ids = await r.zrange("costs:index", 0, -1)
+                if not thread_ids:
+                    return []
+
+                pipe = r.pipeline()
+                for tid in thread_ids:
+                    pipe.hgetall(f"costs:session:{tid}")
+                sessions_raw = await pipe.execute()
+
+                # Group by hour
+                hour_buckets: dict[str, dict] = {}
+                for tid, data in zip(thread_ids, sessions_raw, strict=False):
+                    if not data:
+                        continue
+                    created = float(data.get("created_at", 0))
+                    if created < start_ts:
+                        continue
+                    hour_key = time.strftime("%Y-%m-%dT%H:00", time.gmtime(created))
+                    bucket = hour_buckets.setdefault(hour_key, {
+                        "hour": hour_key,
+                        "cost": 0.0,
+                        "requests": 0,
+                        "tokens_in": 0,
+                        "tokens_out": 0,
+                    })
+                    bucket["cost"] += float(data.get("total_cost_usd", 0.0))
+                    bucket["requests"] += 1
+                    bucket["tokens_in"] += int(data.get("total_input_tokens", 0))
+                    bucket["tokens_out"] += int(data.get("total_output_tokens", 0))
+
+                result = sorted(hour_buckets.values(), key=lambda x: x["hour"])
+                for entry in result:
+                    entry["cost"] = round(entry["cost"], 6)
+                return result
+            except (RedisError, RuntimeError) as exc:
+                logger.warning("CostStore get_live_costs Redis error: %s", exc)
+
+        # SQLite fallback
+        db = await get_sqlite_connection()
+        if db is not None:
+            try:
+                cur = await db.execute(
+                    "SELECT total_cost_usd, total_input_tokens, total_output_tokens, created_at "
+                    "FROM costs_session WHERE created_at >= ? ORDER BY created_at",
+                    (start_ts,),
+                )
+                rows = await cur.fetchall()
+                hour_buckets: dict[str, dict] = {}
+                for row in rows:
+                    cost, tokens_in, tokens_out, created = row
+                    hour_key = time.strftime("%Y-%m-%dT%H:00", time.gmtime(float(created)))
+                    bucket = hour_buckets.setdefault(hour_key, {
+                        "hour": hour_key,
+                        "cost": 0.0,
+                        "requests": 0,
+                        "tokens_in": 0,
+                        "tokens_out": 0,
+                    })
+                    bucket["cost"] += float(cost or 0.0)
+                    bucket["requests"] += 1
+                    bucket["tokens_in"] += int(tokens_in or 0)
+                    bucket["tokens_out"] += int(tokens_out or 0)
+
+                result = sorted(hour_buckets.values(), key=lambda x: x["hour"])
+                for entry in result:
+                    entry["cost"] = round(entry["cost"], 6)
+                return result
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("CostStore get_live_costs SQLite error: %s", exc)
+
+        # In-memory fallback
+        hour_buckets: dict[str, dict] = {}
+        for tid, data in self._mem_sessions.items():
+            created = float(data.get("created_at", 0))
+            if created < start_ts:
+                continue
+            hour_key = time.strftime("%Y-%m-%dT%H:00", time.gmtime(created))
+            bucket = hour_buckets.setdefault(hour_key, {
+                "hour": hour_key,
+                "cost": 0.0,
+                "requests": 0,
+                "tokens_in": 0,
+                "tokens_out": 0,
+            })
+            bucket["cost"] += float(data.get("total_cost_usd", 0.0))
+            bucket["requests"] += 1
+            bucket["tokens_in"] += int(data.get("total_input_tokens", 0))
+            bucket["tokens_out"] += int(data.get("total_output_tokens", 0))
+
+        result = sorted(hour_buckets.values(), key=lambda x: x["hour"])
+        for entry in result:
+            entry["cost"] = round(entry["cost"], 6)
+        return result
+
+    async def check_platform_alerts(self) -> dict:
+        """Check daily platform spend against alert thresholds.
+
+        Returns ``{level, daily_spend, daily_cap, percentage, message}``.
+        Level is "ok", "warning", or "critical".
+        """
+        # Daily cap = hourly cap * 24 (approximate daily platform cap)
+        daily_cap = settings.HOURLY_PLATFORM_CAP_USD * 24
+        now = time.time()
+        today_str = time.strftime("%Y-%m-%d", time.gmtime(now))
+        start_of_day = time.mktime(time.strptime(today_str, "%Y-%m-%d"))
+
+        r = await self._get_redis()
+        daily_spend = 0.0
+
+        if r is not None:
+            try:
+                thread_ids = await r.zrange("costs:index", 0, -1)
+                if thread_ids:
+                    pipe = r.pipeline()
+                    for tid in thread_ids:
+                        pipe.hgetall(f"costs:session:{tid}")
+                    sessions = await pipe.execute()
+                    for tid, data in zip(thread_ids, sessions, strict=False):
+                        if not data:
+                            continue
+                        created = float(data.get("created_at", 0))
+                        if created >= start_of_day:
+                            daily_spend += float(data.get("total_cost_usd", 0.0))
+            except (RedisError, RuntimeError) as exc:
+                logger.warning("CostStore check_platform_alerts Redis error: %s", exc)
+
+        if r is None:
+            # Try SQLite fallback first
+            db = await get_sqlite_connection()
+            if db is not None:
+                try:
+                    cur = await db.execute(
+                        "SELECT total_cost_usd, created_at FROM costs_session WHERE created_at >= ?",
+                        (start_of_day,),
+                    )
+                    rows = await cur.fetchall()
+                    for row in rows:
+                        daily_spend += float(row["total_cost_usd"] or 0.0)
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("CostStore check_platform_alerts SQLite error: %s", exc)
+            else:
+                # Use in-memory fallback
+                for tid, data in self._mem_sessions.items():
+                    created = float(data.get("created_at", 0))
+                    if created >= start_of_day:
+                        daily_spend += float(data.get("total_cost_usd", 0.0))
+
+        daily_spend = round(daily_spend, 6)
+        percentage = (daily_spend / daily_cap * 100) if daily_cap > 0 else 0.0
+        threshold = settings.ALERT_DAILY_THRESHOLD_PCT
+
+        if percentage >= 100:
+            level = "critical"
+            message = f"Daily platform spend ${daily_spend:.2f} has exceeded the cap ${daily_cap:.2f}"
+        elif percentage >= threshold * 100:
+            level = "warning"
+            message = f"Daily platform spend ${daily_spend:.2f} has reached {percentage:.1f}% of the cap ${daily_cap:.2f}"
+        else:
+            level = "ok"
+            message = "Spend within normal range"
+
+        return {
+            "level": level,
+            "daily_spend": daily_spend,
+            "daily_cap": daily_cap,
+            "percentage": round(percentage, 1),
+            "message": message,
+        }
+
 
 cost_store = CostStore()
