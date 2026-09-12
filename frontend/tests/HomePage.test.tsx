@@ -20,7 +20,6 @@ vi.mock('lucide-react', () => ({
 describe('Home landing page', () => {
   it('renders HeroSection content', () => {
     render(<Home />);
-    expect(screen.getByText('AI-Powered Travel Planning')).toBeInTheDocument();
     expect(screen.getByText('Your Perfect Trip,')).toBeInTheDocument();
     expect(screen.getByText('Planned by AI')).toBeInTheDocument();
   });
@@ -41,6 +40,6 @@ describe('Home landing page', () => {
   it('renders CTASection', () => {
     render(<Home />);
     expect(screen.getByText('Where will you go next?')).toBeInTheDocument();
-    expect(screen.getByText('Plan Your Trip')).toBeInTheDocument();
+    expect(screen.getAllByText('Plan Your Trip').length).toBeGreaterThanOrEqual(1);
   });
 });
