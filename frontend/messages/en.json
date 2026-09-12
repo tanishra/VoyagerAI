@@ -26,6 +26,7 @@
     "welcome": "Hi! I'm your AI travel planner. Tell me about the trip you're dreaming of — where would you like to go, for how long, and what's your budget?",
     "generationFailed": "⚠ Generation failed: {error}",
     "generationStopped": "⏹ Generation stopped.",
+    "partialResearchNote": "This response was generated with partial research due to session budget limits.",
     "stopped": "Stopped",
     "imageGenerated": "Generated image",
     "chartGenerated": "Generated chart",
