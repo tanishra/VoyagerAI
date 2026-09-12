@@ -180,7 +180,8 @@
     "mapForDay": "Map for Day {day} in {destination}",
     "tips": "Tips",
     "closeDayDetails": "Close day details",
-    "dailyCostSummary": "Daily Cost"
+    "dailyCostSummary": "Daily Cost",
+    "viewDetails": "View Details"
   },
   "comparison": {
     "title": "Compare Plans",
