@@ -1,6 +1,6 @@
 'use client';
 
-import { Globe, MoreHorizontal, Printer, FileJson, FileText, Share2, Check, Map as MapIcon, ChevronDown, Calendar } from 'lucide-react';
+import { Globe, MoreHorizontal, Printer, FileJson, FileText, Share2, Check, Map as MapIcon, ChevronDown, Calendar, Wallet } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import { useTranslations } from 'next-intl';
 import dynamic from 'next/dynamic';
@@ -10,6 +10,11 @@ import { useLocale } from '@/lib/useLocale';
 import { formatCurrency } from '@/lib/format';
 import DayDetailModal from './DayDetailModal';
 import TimelineView from './TimelineView';
+import BudgetDonut from './BudgetDonut';
+import DailyCostChart from './DailyCostChart';
+import BudgetStatus from './BudgetStatus';
+import { computeCostBreakdown } from '@/lib/budget-utils';
+import { useCurrency } from '@/lib/useCurrency';
 
 const ItineraryMap = dynamic(() => import('./ItineraryMap'), { ssr: false });
 
@@ -32,6 +37,8 @@ export default function ItineraryCard({ itinerary, threadId, printMode = false }
   const [mapExpanded, setMapExpanded] = useState(false);
   const [selectedDay, setSelectedDay] = useState<DayPlan | null>(null);
   const [activeDay, setActiveDay] = useState<number | null>(null);
+  const [budgetExpanded, setBudgetExpanded] = useState(false);
+  const [currency] = useCurrency();
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -171,7 +178,10 @@ export default function ItineraryCard({ itinerary, threadId, printMode = false }
           </div>
           <div>
             <span className="text-muted-foreground">{t('budget')}</span>
-            <p className="text-foreground font-medium">{cost === null ? t('na') : formatCurrency(cost, locale)}</p>
+            <div className="flex items-center gap-2">
+              <p className="text-foreground font-medium">{cost === null ? t('na') : formatCurrency(cost, locale, undefined, currency)}</p>
+              <BudgetStatus status={itinerary.budget_status} totalCost={cost} currency={currency} />
+            </div>
           </div>
         </div>
         {!printMode ? (
@@ -198,7 +208,7 @@ export default function ItineraryCard({ itinerary, threadId, printMode = false }
                 <div className="mt-1.5 text-xs text-muted-foreground space-y-0.5">
                   <p>{t('transport')}: {day.transport ?? t('na')}</p>
                   <p>{t('stay')}: {day.accommodation ?? t('na')}</p>
-                  <p>{t('dailyCost')}: {day.daily_cost_usd != null ? formatCurrency(day.daily_cost_usd, locale) : t('na')}</p>
+                  <p>{t('dailyCost')}: {day.daily_cost_usd != null ? formatCurrency(day.daily_cost_usd, locale, undefined, currency) : t('na')}</p>
                   {day.tips && day.tips.length > 0 && (
                     <div className="space-y-0.5">
                       {day.tips.map((tip, i) => (
@@ -209,6 +219,27 @@ export default function ItineraryCard({ itinerary, threadId, printMode = false }
                 </div>
               </div>
             ))}
+          </div>
+        )}
+        {/* Budget breakdown section — hidden in print mode */}
+        {!printMode && (
+          <div className="print-hidden">
+            <button
+              onClick={() => setBudgetExpanded(!budgetExpanded)}
+              className="w-full flex items-center justify-between px-3 py-2 rounded-lg bg-muted border border-border text-sm text-foreground hover:bg-muted/80 transition-colors cursor-pointer"
+            >
+              <span className="flex items-center gap-2">
+                <Wallet className="w-4 h-4 text-primary" />
+                {t('budgetBreakdown')}
+              </span>
+              <ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform ${budgetExpanded ? 'rotate-180' : ''}`} />
+            </button>
+            {budgetExpanded && (
+              <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-4 p-3 rounded-lg bg-muted/50 border border-border">
+                <BudgetDonut breakdown={computeCostBreakdown(itinerary)} currency={currency} />
+                <DailyCostChart days={days} currency={currency} onBarClick={(day) => setSelectedDay(day)} />
+              </div>
+            )}
           </div>
         )}
         {/* Map section — hidden in print mode */}
