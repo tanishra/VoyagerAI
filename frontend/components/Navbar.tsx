@@ -11,6 +11,7 @@ import { getSession, logout, getLoginUrl, type SessionUser } from '@/lib/auth';
 import { useLocale } from '@/lib/useLocale';
 import InstallPrompt from './InstallPrompt';
 import LanguageSwitcher from './LanguageSwitcher';
+import CurrencySwitcher from './CurrencySwitcher';
 
 const navLinkKeys = ['home', 'chat', 'preferences', 'about'] as const;
 const navHrefs: Record<string, string> = {
@@ -192,6 +193,7 @@ export default function Navbar() {
             </a>
           ) : null}
           <LanguageSwitcher />
+          <CurrencySwitcher />
           <InstallPrompt />
         </div>
 
