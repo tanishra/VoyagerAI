@@ -26,6 +26,7 @@
     "welcome": "Hallo! Ich bin Ihr KI-Reiseplaner. Erzählen Sie mir von der Reise, von der Sie träumen — wohin möchten Sie, für wie lange und wie hoch ist Ihr Budget?",
     "generationFailed": "⚠ Generierung fehlgeschlagen: {error}",
     "generationStopped": "⏹ Generierung gestoppt.",
+    "partialResearchNote": "Diese Antwort wurde aufgrund von Sitzungsbudgetlimits mit teilweiser Recherche generiert.",
     "stopped": "Gestoppt",
     "imageGenerated": "Generiertes Bild",
     "chartGenerated": "Generiertes Diagramm",
