@@ -183,7 +183,16 @@
     "dailyCostSummary": "दैनिक लागत",
     "viewDetails": "विवरण देखें",
     "loadingDescription": "विवरण लोड हो रहा है...",
-    "viewOnMaps": "Google Maps पर देखें"
+    "viewOnMaps": "Google Maps पर देखें",
+    "total": "कुल",
+    "accommodation": "आवास",
+    "food": "भोजन",
+    "activities": "गतिविधियाँ",
+    "averageCost": "औसत",
+    "withinBudget": "बजट के भीतर",
+    "overBudget": "बजट से अधिक",
+    "underBudget": "बजट से कम",
+    "budgetBreakdown": "बजट विवरण"
   },
   "comparison": {
     "title": "योजनाएँ तुलना करें",
