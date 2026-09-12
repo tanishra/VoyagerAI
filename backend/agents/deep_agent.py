@@ -26,6 +26,14 @@ from config import settings as _cfg_settings
 from config.settings import settings
 from cost_store import cost_store
 from pricing import IMAGE_GENERATION_COST_USD, calculate_cost
+from metrics import (
+    LLM_CALLS_TOTAL,
+    LLM_TOKENS_TOTAL,
+    LLM_COST_TOTAL,
+    DAILY_PLATFORM_SPEND,
+    HOURLY_PLATFORM_SPEND,
+    CIRCUIT_BREAKER_STATUS,
+)
 from geocode_service import geocode
 from langchain.agents.middleware import ModelCallLimitMiddleware
 from sanitize import scan_text_for_injection
@@ -496,6 +504,26 @@ class _ModelStream:
             budget_limit_usd=_cfg_settings.SESSION_BUDGET_LIMIT_USD,
             budget_reached=summary["budget_reached"],
         )
+
+        # --- Prometheus metrics (Phase 7.4) ---
+        for name, data in summary["subagent_costs"].items():
+            LLM_CALLS_TOTAL.labels(model=data["model"], subagent=name).inc()
+            LLM_TOKENS_TOTAL.labels(model=data["model"], direction="input").inc(data["input_tokens"])
+            LLM_TOKENS_TOTAL.labels(model=data["model"], direction="output").inc(data["output_tokens"])
+            LLM_COST_TOTAL.labels(model=data["model"]).inc(data["cost"])
+
+        # Update Prometheus gauges for platform spend
+        try:
+            hourly = await cost_store.get_hourly_platform_spend()
+            HOURLY_PLATFORM_SPEND.set(hourly)
+            alerts = await cost_store.check_platform_alerts()
+            DAILY_PLATFORM_SPEND.set(alerts["daily_spend"])
+            if alerts["level"] == "warning":
+                logger.warning("Platform cost alert: %s", alerts["message"])
+            elif alerts["level"] == "critical":
+                logger.error("Platform cost alert: %s", alerts["message"])
+        except Exception:  # noqa: BLE001
+            pass
 
     def last_text(self) -> str:
         for run_id in reversed(self._order):
