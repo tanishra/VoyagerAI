@@ -182,7 +182,8 @@
     "closeDayDetails": "दिन विवरण बंद करें",
     "dailyCostSummary": "दैनिक लागत",
     "viewDetails": "विवरण देखें",
-    "loadingDescription": "विवरण लोड हो रहा है..."
+    "loadingDescription": "विवरण लोड हो रहा है...",
+    "viewOnMaps": "Google Maps पर देखें"
   },
   "comparison": {
     "title": "योजनाएँ तुलना करें",
