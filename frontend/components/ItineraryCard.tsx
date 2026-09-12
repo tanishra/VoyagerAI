@@ -1,6 +1,6 @@
 'use client';
 
-import { Globe, MoreHorizontal, Printer, FileJson, FileText, Share2, Check, Map as MapIcon, ChevronDown, Calendar, Wallet } from 'lucide-react';
+import { Globe, MoreHorizontal, Printer, FileJson, FileText, Share2, Check, Map as MapIcon, ChevronDown, Calendar, Wallet, Pencil } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import { useTranslations } from 'next-intl';
 import dynamic from 'next/dynamic';
@@ -15,6 +15,7 @@ import DailyCostChart from './DailyCostChart';
 import BudgetStatus from './BudgetStatus';
 import { computeCostBreakdown } from '@/lib/budget-utils';
 import { useCurrency } from '@/lib/useCurrency';
+import ItineraryEditor from './ItineraryEditor';
 
 const ItineraryMap = dynamic(() => import('./ItineraryMap'), { ssr: false });
 
@@ -22,9 +23,10 @@ interface ItineraryCardProps {
   itinerary: Itinerary;
   threadId?: string;
   printMode?: boolean;
+  onEditItinerary?: (modifiedItinerary: Itinerary) => void;
 }
 
-export default function ItineraryCard({ itinerary, threadId, printMode = false }: ItineraryCardProps) {
+export default function ItineraryCard({ itinerary, threadId, printMode = false, onEditItinerary }: ItineraryCardProps) {
   const t = useTranslations('itinerary');
   const locale = useLocale();
   const days = itinerary.days ?? [];
@@ -38,6 +40,7 @@ export default function ItineraryCard({ itinerary, threadId, printMode = false }
   const [selectedDay, setSelectedDay] = useState<DayPlan | null>(null);
   const [activeDay, setActiveDay] = useState<number | null>(null);
   const [budgetExpanded, setBudgetExpanded] = useState(false);
+  const [editing, setEditing] = useState(false);
   const [currency] = useCurrency();
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -99,6 +102,17 @@ export default function ItineraryCard({ itinerary, threadId, printMode = false }
           {itinerary.destination}
         </h3>
         {!printMode && threadId && (
+          <div className="flex items-center gap-1">
+          {onEditItinerary && (
+            <button
+              onClick={() => setEditing(true)}
+              className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer"
+              aria-label={t('editItinerary')}
+              title={t('editItinerary')}
+            >
+              <Pencil className="w-4 h-4" />
+            </button>
+          )}
           <div className="relative" ref={menuRef}>
             <button
               onClick={() => setMenuOpen(!menuOpen)}
@@ -167,6 +181,7 @@ export default function ItineraryCard({ itinerary, threadId, printMode = false }
                 </button>
               </div>
             )}
+          </div>
           </div>
         )}
       </div>
@@ -292,6 +307,17 @@ export default function ItineraryCard({ itinerary, threadId, printMode = false }
           dayNumber={selectedDay.day}
           destination={itinerary.destination}
           onClose={() => setSelectedDay(null)}
+        />
+      )}
+      {editing && threadId && onEditItinerary && (
+        <ItineraryEditor
+          itinerary={itinerary}
+          threadId={threadId}
+          onClose={() => setEditing(false)}
+          onSave={(modified) => {
+            onEditItinerary(modified);
+            setEditing(false);
+          }}
         />
       )}
     </div>
