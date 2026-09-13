@@ -72,7 +72,7 @@ export function SecurityTab() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <Loader2 className="w-6 h-6 animate-spin text-neutral-500" />
+        <Loader2 className="w-6 h-6 animate-spin text-primary" />
       </div>
     );
   }
@@ -80,8 +80,8 @@ export function SecurityTab() {
   if (error) {
     return (
       <div className="text-center py-12">
-        <AlertCircle className="w-6 h-6 text-red-400 mx-auto mb-2" />
-        <p className="text-neutral-400 text-sm">{error}</p>
+        <AlertCircle className="w-6 h-6 text-destructive mx-auto mb-2" />
+        <p className="text-muted-foreground text-sm">{error}</p>
       </div>
     );
   }
@@ -90,51 +90,51 @@ export function SecurityTab() {
     <div className="space-y-6">
       {/* Summary */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-4">
-          <div className="flex items-center gap-2 text-neutral-400 mb-2">
+        <div className="bg-card border border-border rounded-xl p-4">
+          <div className="flex items-center gap-2 text-muted-foreground mb-2">
             <ShieldAlert className="w-5 h-5" />
             <span className="text-sm">{t('securityFlags')}</span>
           </div>
-          <p className="text-lg font-semibold">{flags.length}</p>
+          <p className="text-lg font-semibold text-foreground">{flags.length}</p>
         </div>
-        <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-4">
-          <div className="flex items-center gap-2 text-neutral-400 mb-2">
+        <div className="bg-card border border-border rounded-xl p-4">
+          <div className="flex items-center gap-2 text-muted-foreground mb-2">
             <Clock className="w-5 h-5" />
             <span className="text-sm">{t('activeCooldowns')}</span>
           </div>
-          <p className="text-lg font-semibold">{cooldowns.length}</p>
+          <p className="text-lg font-semibold text-foreground">{cooldowns.length}</p>
         </div>
       </div>
 
       {/* Security flags */}
-      <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-6">
-        <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
-          <Shield className="w-5 h-5 text-neutral-400" />
+      <div className="bg-card border border-border rounded-xl p-6">
+        <h2 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
+          <Shield className="w-5 h-5 text-muted-foreground" />
           {t('securityFlags')}
         </h2>
         {flags.length === 0 ? (
-          <p className="text-neutral-500 text-sm">{t('noFlags')}</p>
+          <p className="text-muted-foreground text-sm">{t('noFlags')}</p>
         ) : (
           <div className="space-y-3">
             {flags.map((flag) => (
-              <div key={flag.flag_id} className="border border-neutral-800 rounded-lg p-3">
+              <div key={flag.flag_id} className="border border-border rounded-lg p-3">
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-2">
                     <span className={`inline-block px-2 py-0.5 rounded text-xs border ${
                       flag.confidence === 'high'
-                        ? 'bg-red-950/50 text-red-300 border-red-800'
-                        : 'bg-yellow-950/50 text-yellow-300 border-yellow-800'
+                        ? 'bg-destructive/10 text-destructive border-destructive/30'
+                        : 'bg-accent text-accent-foreground border-accent-foreground/30'
                     }`}>
                       {flag.confidence}
                     </span>
-                    <span className="text-xs text-neutral-400 font-mono">{flag.category}</span>
+                    <span className="text-xs text-muted-foreground font-mono">{flag.category}</span>
                   </div>
-                  <span className="text-xs text-neutral-500">
+                  <span className="text-xs text-muted-foreground">
                     {new Date(flag.created_at * 1000).toLocaleString()}
                   </span>
                 </div>
-                <p className="text-xs text-neutral-300">{flag.reasoning_snippet}</p>
-                <p className="text-xs text-neutral-600 mt-1 font-mono">
+                <p className="text-xs text-foreground">{flag.reasoning_snippet}</p>
+                <p className="text-xs text-muted-foreground/60 mt-1 font-mono">
                   user: {flag.user_hash} · thread: {flag.thread_id}
                 </p>
               </div>
@@ -144,26 +144,26 @@ export function SecurityTab() {
       </div>
 
       {/* Active cooldowns */}
-      <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-6">
-        <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
-          <UserX className="w-5 h-5 text-neutral-400" />
+      <div className="bg-card border border-border rounded-xl p-6">
+        <h2 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
+          <UserX className="w-5 h-5 text-muted-foreground" />
           {t('activeCooldowns')}
         </h2>
         {cooldowns.length === 0 ? (
-          <p className="text-neutral-500 text-sm">{t('noCooldowns')}</p>
+          <p className="text-muted-foreground text-sm">{t('noCooldowns')}</p>
         ) : (
           <div className="space-y-2">
             {cooldowns.map((cd) => (
-              <div key={cd.user_hash} className="flex items-center justify-between border border-neutral-800 rounded-lg p-3">
+              <div key={cd.user_hash} className="flex items-center justify-between border border-border rounded-lg p-3">
                 <div>
-                  <span className="text-sm text-neutral-300 font-mono">{cd.user_hash}</span>
-                  <p className="text-xs text-neutral-500 mt-0.5">
+                  <span className="text-sm text-foreground font-mono">{cd.user_hash}</span>
+                  <p className="text-xs text-muted-foreground mt-0.5">
                     Until {new Date(cd.cooldown_until * 1000).toLocaleString()}
                   </p>
                 </div>
                 <button
                   onClick={() => removeCooldown(cd.user_hash)}
-                  className="px-3 py-1 bg-neutral-800 hover:bg-red-900 text-neutral-300 hover:text-red-300 rounded-lg text-xs transition-colors"
+                  className="px-3 py-1 bg-muted hover:bg-destructive/20 text-foreground hover:text-destructive rounded-lg text-xs transition-colors"
                 >
                   Remove
                 </button>
