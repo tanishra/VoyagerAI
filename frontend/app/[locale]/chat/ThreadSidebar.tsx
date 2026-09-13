@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Plus, Trash2, MessageSquare, Loader2, ChevronDown, Link2, Copy as CopyIcon, Check, X, LogOut, Home, Settings, MoreHorizontal, Search, ArrowLeft, Bookmark, BookmarkCheck } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
@@ -245,8 +246,13 @@ export default function ThreadSidebar({
     const isActive = thread.thread_id === activeThreadId;
     const isConfirming = confirmDelete === thread.thread_id;
     return (
-      <div
+      <motion.div
         key={thread.thread_id}
+        layout
+        initial={{ opacity: 0, height: 0 }}
+        animate={{ opacity: 1, height: 'auto' }}
+        exit={{ opacity: 0, height: 0 }}
+        transition={{ duration: 0.2 }}
         onClick={() => onSelect(thread.thread_id)}
         onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') {
@@ -256,7 +262,7 @@ export default function ThreadSidebar({
         }}
         role="button"
         tabIndex={0}
-        className={`group relative px-3 py-2 rounded-lg cursor-pointer transition-colors focus:outline-none focus:ring-2 focus:ring-primary/40 ${
+        className={`group relative px-3 py-2 rounded-lg cursor-pointer transition-colors focus:outline-none focus:ring-2 focus:ring-primary/40 overflow-hidden ${
           isActive ? 'bg-muted' : 'hover:bg-muted/50'
         }`}
       >
@@ -338,7 +344,7 @@ export default function ThreadSidebar({
             <Loader2 className="w-4 h-4 animate-spin text-primary" />
           </div>
         )}
-      </div>
+      </motion.div>
     );
   };
 
@@ -359,7 +365,7 @@ export default function ThreadSidebar({
       <div className="p-2.5 shrink-0">
         <button
           onClick={onNewChat}
-          className="w-full flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-muted text-sm font-medium text-foreground transition-colors cursor-pointer"
+          className="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg border border-border hover:border-primary/30 hover:bg-primary/5 text-sm font-medium text-foreground transition-all cursor-pointer"
         >
           <Plus className="w-4 h-4" />
           {t('newChat')}
@@ -493,7 +499,9 @@ export default function ThreadSidebar({
             }
             return (
               <div className="space-y-0.5">
-                {filtered.map((thread) => renderThreadItem(thread))}
+                <AnimatePresence>
+                  {filtered.map((thread) => renderThreadItem(thread))}
+                </AnimatePresence>
               </div>
             );
           })()
@@ -514,7 +522,9 @@ export default function ThreadSidebar({
                         {t('pinned')}
                       </p>
                       <div className="space-y-0.5">
-                        {pinnedThreads.map((thread) => renderThreadItem(thread))}
+                        <AnimatePresence>
+                          {pinnedThreads.map((thread) => renderThreadItem(thread))}
+                        </AnimatePresence>
                       </div>
                     </div>
                   )}
@@ -524,7 +534,9 @@ export default function ThreadSidebar({
                         {t(group.label)}
                       </p>
                       <div className="space-y-0.5">
-                        {group.threads.map((thread) => renderThreadItem(thread))}
+                        <AnimatePresence>
+                          {group.threads.map((thread) => renderThreadItem(thread))}
+                        </AnimatePresence>
                       </div>
                     </div>
                   ))}

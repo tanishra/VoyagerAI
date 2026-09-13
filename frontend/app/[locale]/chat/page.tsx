@@ -51,6 +51,16 @@ const TOOL_ICONS: Record<string, React.ReactNode> = {
   quality_scorer: <ListChecks className="w-3 h-3" />,
 };
 
+function mergeThreads(prev: ThreadMeta[], next: ThreadMeta[]): ThreadMeta[] {
+  const nextIds = new Set(next.map(t => t.thread_id));
+  const updated = prev
+    .filter(t => nextIds.has(t.thread_id))
+    .map(t => next.find(nt => nt.thread_id === t.thread_id) ?? t);
+  const existingIds = new Set(prev.map(t => t.thread_id));
+  const newThreads = next.filter(t => !existingIds.has(t.thread_id));
+  return [...newThreads, ...updated];
+}
+
 export default function ChatPage() {
   const t = useTranslations('chat');
   const tStatus = useTranslations('status');
@@ -132,7 +142,7 @@ export default function ChatPage() {
       setCurrentUser(user);
       setAuthChecked(true);
       listThreads().then((res) => {
-        setThreads(res.threads);
+        setThreads(prev => mergeThreads(prev, res.threads));
         setHasMoreThreads(res.has_more);
       });
     });
@@ -413,6 +423,11 @@ export default function ChatPage() {
           onThreadId: (tid) => {
             if (sessionResetRef.current) return;
             setThreadId(tid);
+            setThreads((prev) => prev.map((t) =>
+              t.thread_id.startsWith('optimistic-')
+                ? { ...t, thread_id: tid, status: 'busy' }
+                : t
+            ));
             try {
               localStorage.setItem(THREAD_STORAGE_KEY, tid);
             } catch {
@@ -586,7 +601,7 @@ export default function ChatPage() {
     setProgressMap({});
       sendingRef.current = false;
       listThreads().then((res) => {
-        setThreads(res.threads);
+        setThreads(prev => mergeThreads(prev, res.threads));
         setHasMoreThreads(res.has_more);
       });
     }
@@ -883,7 +898,7 @@ export default function ChatPage() {
       }
 
       listThreads().then((res) => {
-        setThreads(res.threads);
+        setThreads(prev => mergeThreads(prev, res.threads));
         setHasMoreThreads(res.has_more);
       });
     }
@@ -1127,7 +1142,7 @@ export default function ChatPage() {
       }
 
       listThreads().then((res) => {
-        setThreads(res.threads);
+        setThreads(prev => mergeThreads(prev, res.threads));
         setHasMoreThreads(res.has_more);
       });
     }
@@ -1200,6 +1215,11 @@ export default function ChatPage() {
               onThreadId: (tid) => {
                 if (sessionResetRef.current) return;
                 setThreadId(tid);
+                setThreads((prev) => prev.map((t) =>
+                  t.thread_id.startsWith('optimistic-')
+                    ? { ...t, thread_id: tid, status: 'busy' }
+                    : t
+                ));
                 try {
                   localStorage.setItem(THREAD_STORAGE_KEY, tid);
                 } catch {
@@ -1310,7 +1330,7 @@ export default function ChatPage() {
         setReplaying(false);
         if (sentCount > 0) {
           listThreads().then((res) => {
-            setThreads(res.threads);
+            setThreads(prev => mergeThreads(prev, res.threads));
             setHasMoreThreads(res.has_more);
           });
         }
