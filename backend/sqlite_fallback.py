@@ -161,6 +161,60 @@ CREATE TABLE IF NOT EXISTS rate_limits (
     timestamp REAL NOT NULL,
     PRIMARY KEY (key, timestamp)
 );
+
+-- ObservabilityStore (Phase 5.7)
+CREATE TABLE IF NOT EXISTS observability_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    thread_id TEXT NOT NULL,
+    event_type TEXT NOT NULL,
+    run_id TEXT,
+    name TEXT,
+    parent_run_id TEXT,
+    input TEXT,
+    output TEXT,
+    error TEXT,
+    tokens_in INTEGER DEFAULT 0,
+    tokens_out INTEGER DEFAULT 0,
+    cost_usd REAL DEFAULT 0,
+    duration_ms INTEGER DEFAULT 0,
+    model TEXT,
+    timestamp REAL NOT NULL,
+    expires_at REAL
+);
+CREATE INDEX IF NOT EXISTS idx_obs_events_thread ON observability_events(thread_id);
+CREATE INDEX IF NOT EXISTS idx_obs_events_type ON observability_events(event_type);
+CREATE INDEX IF NOT EXISTS idx_obs_events_expires ON observability_events(expires_at);
+
+CREATE TABLE IF NOT EXISTS observability_sessions (
+    thread_id TEXT PRIMARY KEY,
+    user_hash TEXT NOT NULL,
+    start_time REAL NOT NULL,
+    end_time REAL,
+    duration_seconds REAL,
+    status TEXT DEFAULT 'running',
+    subagent_count INTEGER DEFAULT 0,
+    tool_call_count INTEGER DEFAULT 0,
+    total_tokens_in INTEGER DEFAULT 0,
+    total_tokens_out INTEGER DEFAULT 0,
+    total_cost_usd REAL DEFAULT 0,
+    model_used TEXT,
+    expires_at REAL
+);
+CREATE INDEX IF NOT EXISTS idx_obs_sessions_start ON observability_sessions(start_time DESC);
+CREATE INDEX IF NOT EXISTS idx_obs_sessions_status ON observability_sessions(status);
+
+CREATE TABLE IF NOT EXISTS observability_errors (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    thread_id TEXT NOT NULL,
+    subagent_name TEXT,
+    tool_name TEXT,
+    error_message TEXT,
+    timestamp REAL NOT NULL,
+    expires_at REAL
+);
+CREATE INDEX IF NOT EXISTS idx_obs_errors_thread ON observability_errors(thread_id);
+CREATE INDEX IF NOT EXISTS idx_obs_errors_timestamp ON observability_errors(timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_obs_errors_expires ON observability_errors(expires_at);
 """
 
 _conn: aiosqlite.Connection | None = None
@@ -211,7 +265,8 @@ async def cleanup_expired() -> int:
     now = time.time()
     total = 0
     try:
-        for table in ("shares", "sessions", "research_cache", "files"):
+        for table in ("shares", "sessions", "research_cache", "files",
+                       "observability_events", "observability_errors", "observability_sessions"):
             cur = await db.execute(
                 f"DELETE FROM {table} WHERE expires_at < ?", (now,)
             )
