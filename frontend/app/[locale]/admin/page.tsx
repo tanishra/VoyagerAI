@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { ArrowLeft, AlertCircle, DollarSign, Shield, ListTree, GitBranch, BarChart3 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
+import { AdminGuard } from '@/components/admin/AdminGuard';
 import { SessionsTable } from '@/components/admin/SessionsTable';
 import { TraceWaterfall } from '@/components/admin/TraceWaterfall';
 import { ErrorsPanel } from '@/components/admin/ErrorsPanel';
@@ -22,7 +23,7 @@ const TABS: { id: Tab; icon: React.ReactNode; labelKey: string }[] = [
   { id: 'security', icon: <Shield className="w-4 h-4" />, labelKey: 'tabSecurity' },
 ];
 
-export default function AdminPage() {
+function AdminContent() {
   const t = useTranslations('admin');
   const [activeTab, setActiveTab] = useState<Tab>('sessions');
   const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
@@ -33,28 +34,29 @@ export default function AdminPage() {
   }
 
   return (
-    <div className="min-h-screen bg-neutral-950 text-white p-6">
+    <div className="min-h-screen bg-background text-foreground p-6">
       <div className="max-w-6xl mx-auto">
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-3">
-            <Link href="/" className="text-neutral-400 hover:text-white">
+            <Link href="/" className="text-muted-foreground hover:text-foreground transition-colors">
               <ArrowLeft className="w-5 h-5" />
             </Link>
-            <h1 className="text-2xl font-bold">{t('title')}</h1>
+            <span className="w-1 h-6 bg-primary rounded-full" />
+            <h1 className="text-2xl font-bold tracking-tight">{t('title')}</h1>
           </div>
         </div>
 
         {/* Tab bar */}
-        <div className="flex gap-1 mb-6 border-b border-neutral-800 overflow-x-auto">
+        <div className="flex gap-1 mb-6 border-b border-border overflow-x-auto">
           {TABS.map((tab) => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
               className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${
                 activeTab === tab.id
-                  ? 'border-blue-500 text-white'
-                  : 'border-transparent text-neutral-400 hover:text-white'
+                  ? 'border-primary text-primary'
+                  : 'border-transparent text-muted-foreground hover:text-foreground'
               }`}
             >
               {tab.icon}
@@ -78,5 +80,13 @@ export default function AdminPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function AdminPage() {
+  return (
+    <AdminGuard>
+      <AdminContent />
+    </AdminGuard>
   );
 }
