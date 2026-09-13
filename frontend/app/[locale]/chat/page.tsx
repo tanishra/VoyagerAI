@@ -1555,7 +1555,8 @@ export default function ChatPage() {
           >
           {messages.map((msg, msgIndex) => {
             const isLastAssistant = msg.role === 'assistant' && msgIndex === messages.length - 1;
-            const isLastUser = msg.role === 'user' && msgIndex === messages.length - 1;
+            const lastUserIndex = messages.map(m => m.role).lastIndexOf('user');
+            const isLastUser = msg.role === 'user' && msgIndex === lastUserIndex;
             const prevUserMsg = msgIndex > 0 && messages[msgIndex - 1].role === 'user' ? messages[msgIndex - 1] : null;
             return (
             <motion.div
