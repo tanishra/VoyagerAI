@@ -12,7 +12,7 @@ interface ConditionalChromeProps {
 
 export default function ConditionalChrome({ children, locale }: ConditionalChromeProps) {
   const pathname = usePathname();
-  const isChatOrPrefs = pathname.includes('/chat') || pathname.includes('/preferences');
+  const isChatOrPrefs = pathname.includes('/chat') || pathname.includes('/preferences') || pathname.includes('/login');
 
   if (isChatOrPrefs) {
     return <>{children}</>;

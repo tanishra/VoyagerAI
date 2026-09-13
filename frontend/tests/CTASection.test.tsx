@@ -13,9 +13,9 @@ describe('CTASection', () => {
     expect(screen.getByText(/A personalized itinerary/i)).toBeInTheDocument();
   });
 
-  it('renders CTA button linking to /chat', () => {
+  it('renders CTA button linking to /login', () => {
     render(<CTASection />);
     const btn = screen.getByText('Plan Your Trip');
-    expect(btn.closest('a')).toHaveAttribute('href', '/chat');
+    expect(btn.closest('a')).toHaveAttribute('href', '/login');
   });
 });

@@ -7,7 +7,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { getSession, logout, getLoginUrl, type SessionUser } from '@/lib/auth';
+import { getSession, logout, type SessionUser } from '@/lib/auth';
 import { useLocale } from '@/lib/useLocale';
 import InstallPrompt from './InstallPrompt';
 import LanguageSwitcher from './LanguageSwitcher';
@@ -199,13 +199,13 @@ export default function Navbar() {
               </AnimatePresence>
             </div>
           ) : !userLoading ? (
-            <a
-              href={getLoginUrl()}
+            <Link
+              href={`/${locale}/login`}
               className="ml-2 inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-all duration-200 hover:shadow-md hover:shadow-primary/20"
             >
               {t('signIn')}
               <ArrowRight className="w-3.5 h-3.5" />
-            </a>
+            </Link>
           ) : null}
           <LanguageSwitcher />
           <CurrencySwitcher />
@@ -280,12 +280,12 @@ export default function Navbar() {
                   </button>
                 </div>
               ) : !userLoading ? (
-                <a
-                  href={getLoginUrl()}
+                <Link
+                  href={`/${locale}/login`}
                   className="block mt-2 px-4 py-2.5 text-sm rounded-lg bg-primary text-primary-foreground font-medium text-center"
                 >
                   {t('signInWithGoogle')} →
-                </a>
+                </Link>
               ) : null}
             </div>
           </motion.div>

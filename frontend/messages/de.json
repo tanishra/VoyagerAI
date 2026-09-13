@@ -253,6 +253,9 @@
   "auth": {
     "signInPrompt": "Melden Sie sich an, um mit der Planung Ihrer Reisen mit KI-generierten Reiserouten zu beginnen.",
     "signInWithGoogle": "Mit Google anmelden",
+    "loginHeadline": "Ihre nächste Reise",
+    "loginHeadlineAccent": "beginnt hier",
+    "loginSubtext": "Melden Sie sich mit Google an, um Ihre Reise mit KI-generierten Reiserouten zu planen.",
     "privacyNote": "Mit der Anmeldung stimmen Sie zu, dass VoyagerAI auf Ihre Google-E-Mail und Ihr Profil zugreift.",
     "loading": "Laden..."
   },

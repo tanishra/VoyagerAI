@@ -253,6 +253,9 @@
   "auth": {
     "signInPrompt": "Connectez-vous pour commencer à planifier vos voyages avec des itinéraires générés par IA.",
     "signInWithGoogle": "Se connecter avec Google",
+    "loginHeadline": "Votre prochain voyage",
+    "loginHeadlineAccent": "commence ici",
+    "loginSubtext": "Connectez-vous avec Google pour planifier votre voyage avec des itinéraires générés par IA.",
     "privacyNote": "En vous connectant, vous acceptez que VoyagerAI accède à votre e-mail et profil Google.",
     "loading": "Chargement..."
   },

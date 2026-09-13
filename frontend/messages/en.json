@@ -253,6 +253,9 @@
   "auth": {
     "signInPrompt": "Sign in to start planning your trips with AI-powered itineraries.",
     "signInWithGoogle": "Sign in with Google",
+    "loginHeadline": "Your next journey",
+    "loginHeadlineAccent": "starts here",
+    "loginSubtext": "Sign in with Google to plan your trip with AI-powered itineraries.",
     "privacyNote": "By signing in, you agree to let VoyagerAI access your Google email and profile.",
     "loading": "Loading..."
   },

@@ -253,6 +253,9 @@
   "auth": {
     "signInPrompt": "Inicia sesión para comenzar a planificar tus viajes con itinerarios impulsados por IA.",
     "signInWithGoogle": "Iniciar sesión con Google",
+    "loginHeadline": "Tu próximo viaje",
+    "loginHeadlineAccent": "comienza aquí",
+    "loginSubtext": "Inicia sesión con Google para planificar tu viaje con itinerarios impulsados por IA.",
     "privacyNote": "Al iniciar sesión, aceptas que VoyagerAI acceda a tu correo y perfil de Google.",
     "loading": "Cargando..."
   },
