@@ -889,6 +889,515 @@
         }
       }
     },
+    "/admin/observability/sessions": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Get paginated list of observability sessions",
+        "description": "Get paginated list of observability sessions with filters.\n\n**Query parameters:**\n- `from_ts`: Unix timestamp start (default: 0 = all)\n- `to_ts`: Unix timestamp end (default: 0 = now)\n- `status`: Filter by status (running, completed, error, cancelled)\n- `limit`: Page size (default: 50, max: 200)\n- `offset`: Page offset (default: 0)\n\n**Requires:** Admin privileges.",
+        "operationId": "get_observability_sessions_admin_observability_sessions_get",
+        "parameters": [
+          {
+            "name": "from_ts",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "default": 0,
+              "title": "From Ts"
+            }
+          },
+          {
+            "name": "to_ts",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "default": 0,
+              "title": "To Ts"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Status"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "title": "Offset"
+            }
+          },
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated session list",
+            "content": {
+              "application/json": {
+                "schema": {},
+                "example": {
+                  "sessions": [],
+                  "total": 0,
+                  "limit": 50,
+                  "offset": 0
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key"
+          },
+          "403": {
+            "description": "User is not in ADMIN_EMAILS allowlist"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/observability/sessions/{thread_id}": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Get session detail with event timeline",
+        "description": "Get full session detail including event timeline for waterfall rendering.\n\n**Path parameters:**\n- `thread_id`: The thread ID to inspect\n\n**Requires:** Admin privileges.",
+        "operationId": "get_observability_session_detail_admin_observability_sessions__thread_id__get",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          },
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Session detail with events",
+            "content": {
+              "application/json": {
+                "schema": {},
+                "example": {
+                  "session": {},
+                  "events": []
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key"
+          },
+          "403": {
+            "description": "User is not in ADMIN_EMAILS allowlist"
+          },
+          "404": {
+            "description": "Session not found"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/observability/sessions/{thread_id}/events": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Get raw event list for a session",
+        "description": "Get raw event list for a session (for waterfall rendering).\n\n**Path parameters:**\n- `thread_id`: The thread ID to inspect\n\n**Requires:** Admin privileges.",
+        "operationId": "get_observability_session_events_admin_observability_sessions__thread_id__events_get",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          },
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Ordered event list",
+            "content": {
+              "application/json": {
+                "schema": {},
+                "example": []
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key"
+          },
+          "403": {
+            "description": "User is not in ADMIN_EMAILS allowlist"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/observability/errors": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Get error events with filters",
+        "description": "Get error events with filters.\n\n**Query parameters:**\n- `from_ts`: Unix timestamp start (default: 0 = all)\n- `to_ts`: Unix timestamp end (default: 0 = now)\n- `subagent`: Filter by subagent name\n- `tool`: Filter by tool name\n- `limit`: Max results (default: 50, max: 500)\n\n**Requires:** Admin privileges.",
+        "operationId": "get_observability_errors_admin_observability_errors_get",
+        "parameters": [
+          {
+            "name": "from_ts",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "default": 0,
+              "title": "From Ts"
+            }
+          },
+          {
+            "name": "to_ts",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "default": 0,
+              "title": "To Ts"
+            }
+          },
+          {
+            "name": "subagent",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Subagent"
+            }
+          },
+          {
+            "name": "tool",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Tool"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Error list",
+            "content": {
+              "application/json": {
+                "schema": {},
+                "example": []
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key"
+          },
+          "403": {
+            "description": "User is not in ADMIN_EMAILS allowlist"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/observability/errors/summary": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Get error summary with counts and trends",
+        "description": "Get error counts grouped by subagent+tool, plus error rate trend.\n\n**Query parameters:**\n- `from_ts`: Unix timestamp start (default: 0 = all)\n- `to_ts`: Unix timestamp end (default: 0 = now)\n\n**Requires:** Admin privileges.",
+        "operationId": "get_observability_error_summary_admin_observability_errors_summary_get",
+        "parameters": [
+          {
+            "name": "from_ts",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "default": 0,
+              "title": "From Ts"
+            }
+          },
+          {
+            "name": "to_ts",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "default": 0,
+              "title": "To Ts"
+            }
+          },
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Error summary",
+            "content": {
+              "application/json": {
+                "schema": {},
+                "example": {
+                  "total_errors": 0,
+                  "by_subagent": [],
+                  "by_tool": [],
+                  "per_day": []
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key"
+          },
+          "403": {
+            "description": "User is not in ADMIN_EMAILS allowlist"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/observability/usage": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Get aggregated token/cost usage analytics",
+        "description": "Get aggregated token/cost usage per day, per subagent, per user.\n\n**Query parameters:**\n- `from_ts`: Unix timestamp start (default: 0 = all)\n- `to_ts`: Unix timestamp end (default: 0 = now)\n\n**Requires:** Admin privileges.",
+        "operationId": "get_observability_usage_admin_observability_usage_get",
+        "parameters": [
+          {
+            "name": "from_ts",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "default": 0,
+              "title": "From Ts"
+            }
+          },
+          {
+            "name": "to_ts",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "default": 0,
+              "title": "To Ts"
+            }
+          },
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Usage analytics",
+            "content": {
+              "application/json": {
+                "schema": {},
+                "example": {
+                  "per_day": [],
+                  "per_subagent": [],
+                  "per_user": [],
+                  "totals": {}
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key"
+          },
+          "403": {
+            "description": "User is not in ADMIN_EMAILS allowlist"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/preferences": {
       "get": {
         "tags": [
@@ -2488,6 +2997,12 @@
             "type": "string",
             "title": "Email",
             "description": "User's email address."
+          },
+          "is_admin": {
+            "type": "boolean",
+            "title": "Is Admin",
+            "description": "Whether the user has admin privileges.",
+            "default": false
           }
         },
         "type": "object",
