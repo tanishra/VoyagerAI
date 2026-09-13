@@ -14,24 +14,24 @@ interface Props {
 }
 
 const EVENT_COLORS: Record<string, string> = {
-  token: 'bg-blue-600',
-  tool_start: 'bg-yellow-600',
-  tool_end: 'bg-green-600',
-  tool_error: 'bg-red-600',
-  error: 'bg-red-600',
-  done: 'bg-green-600',
-  cancelled: 'bg-yellow-600',
-  status: 'bg-neutral-600',
-  usage: 'bg-purple-600',
-  thinking: 'bg-indigo-600',
-  subagent_progress: 'bg-cyan-600',
+  token: 'bg-primary',
+  tool_start: 'bg-accent-foreground',
+  tool_end: 'bg-chart-2',
+  tool_error: 'bg-destructive',
+  error: 'bg-destructive',
+  done: 'bg-chart-2',
+  cancelled: 'bg-accent-foreground',
+  status: 'bg-muted-foreground',
+  usage: 'bg-chart-3',
+  thinking: 'bg-chart-4',
+  subagent_progress: 'bg-chart-1',
 };
 
 const STATUS_BADGE: Record<string, string> = {
-  done: 'text-green-400',
-  error: 'text-red-400',
-  running: 'text-blue-400',
-  cancelled: 'text-yellow-400',
+  done: 'text-chart-2',
+  error: 'text-destructive',
+  running: 'text-primary',
+  cancelled: 'text-accent-foreground',
 };
 
 export function TraceWaterfall({ threadId }: Props) {
@@ -72,7 +72,7 @@ export function TraceWaterfall({ threadId }: Props) {
 
   if (!threadId) {
     return (
-      <div className="text-center py-12 text-neutral-500 text-sm">
+      <div className="text-center py-12 text-muted-foreground text-sm">
         {t('selectSessionPrompt')}
       </div>
     );
@@ -81,7 +81,7 @@ export function TraceWaterfall({ threadId }: Props) {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <Loader2 className="w-6 h-6 animate-spin text-neutral-500" />
+        <Loader2 className="w-6 h-6 animate-spin text-primary" />
       </div>
     );
   }
@@ -89,8 +89,8 @@ export function TraceWaterfall({ threadId }: Props) {
   if (error) {
     return (
       <div className="text-center py-12">
-        <AlertCircle className="w-6 h-6 text-red-400 mx-auto mb-2" />
-        <p className="text-neutral-400 text-sm">{error}</p>
+        <AlertCircle className="w-6 h-6 text-destructive mx-auto mb-2" />
+        <p className="text-muted-foreground text-sm">{error}</p>
       </div>
     );
   }
@@ -105,12 +105,12 @@ export function TraceWaterfall({ threadId }: Props) {
     <div className="space-y-4">
       {/* Session summary */}
       {session && (
-        <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-4">
+        <div className="bg-card border border-border rounded-xl p-4">
           <div className="flex items-center justify-between mb-3">
-            <h2 className="text-sm font-semibold text-neutral-300">
+            <h2 className="text-sm font-semibold text-foreground">
               {t('traceWaterfall')}
             </h2>
-            <div className="flex items-center gap-3 text-xs text-neutral-400">
+            <div className="flex items-center gap-3 text-xs text-muted-foreground">
               <span className="flex items-center gap-1">
                 <Clock className="w-3.5 h-3.5" />
                 {session.duration_seconds ? `${session.duration_seconds.toFixed(1)}s` : '—'}
@@ -127,14 +127,14 @@ export function TraceWaterfall({ threadId }: Props) {
                 href={`https://smith.langchain.com/o/default/projects/p/${process.env.NEXT_PUBLIC_LANGSMITH_PROJECT || 'voyagerai'}/sessions?thread_id=${encodeURIComponent(threadId)}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex items-center gap-1 text-blue-400 hover:text-blue-300"
+                className="flex items-center gap-1 text-primary hover:text-primary/80"
               >
                 {t('traceViewLangSmith')}
                 <ExternalLink className="w-3 h-3" />
               </a>
             </div>
           </div>
-          <div className="text-xs text-neutral-500 font-mono">
+          <div className="text-xs text-muted-foreground font-mono">
             {threadId}
           </div>
         </div>
@@ -142,15 +142,15 @@ export function TraceWaterfall({ threadId }: Props) {
 
       {/* Waterfall */}
       {events.length === 0 ? (
-        <div className="text-center py-12 text-neutral-500 text-sm">
+        <div className="text-center py-12 text-muted-foreground text-sm">
           {t('noEvents')}
         </div>
       ) : (
-        <div className="bg-neutral-900 border border-neutral-800 rounded-xl overflow-hidden">
+        <div className="bg-card border border-border rounded-xl overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
               <thead>
-                <tr className="text-neutral-400 border-b border-neutral-800 bg-neutral-900/50">
+                <tr className="text-muted-foreground border-b border-border bg-muted/30">
                   <th className="text-left py-2 px-3 font-medium w-8"></th>
                   <th className="text-left py-2 px-2 font-medium">{t('traceName')}</th>
                   <th className="text-left py-2 px-2 font-medium">{t('traceType')}</th>
@@ -173,25 +173,25 @@ export function TraceWaterfall({ threadId }: Props) {
                   return (
                     <Fragment key={idx}>
                       <tr
-                        className={`border-b border-neutral-800/30 hover:bg-neutral-800/30 ${hasDetail ? 'cursor-pointer' : ''}`}
+                        className={`border-b border-border/30 hover:bg-muted/30 ${hasDetail ? 'cursor-pointer' : ''}`}
                         onClick={() => hasDetail && toggleRow(idx)}
                       >
                         <td className="py-1.5 px-3">
                           {hasDetail && (
-                            isExpanded ? <ChevronDown className="w-3.5 h-3.5 text-neutral-500" /> : <ChevronRight className="w-3.5 h-3.5 text-neutral-500" />
+                            isExpanded ? <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" /> : <ChevronRight className="w-3.5 h-3.5 text-muted-foreground" />
                           )}
                         </td>
-                        <td className="py-1.5 px-2 text-neutral-300 font-mono">
+                        <td className="py-1.5 px-2 text-foreground font-mono">
                           {evt.name || evt.event_type}
                         </td>
                         <td className="py-1.5 px-2">
-                          <span className={`inline-block w-2 h-2 rounded-full ${EVENT_COLORS[evt.event_type] || 'bg-neutral-600'}`} />
-                          <span className="ml-2 text-neutral-400">{evt.event_type}</span>
+                          <span className={`inline-block w-2 h-2 rounded-full ${EVENT_COLORS[evt.event_type] || 'bg-muted-foreground'}`} />
+                          <span className="ml-2 text-muted-foreground">{evt.event_type}</span>
                         </td>
                         <td className="py-1.5 px-2">
-                          <div className="relative h-4 bg-neutral-800 rounded">
+                          <div className="relative h-4 bg-muted rounded">
                             <div
-                              className={`absolute h-full rounded ${EVENT_COLORS[evt.event_type] || 'bg-neutral-600'}`}
+                              className={`absolute h-full rounded ${EVENT_COLORS[evt.event_type] || 'bg-muted-foreground'}`}
                               style={{
                                 left: `${Math.min(barWidth, 100)}%`,
                                 width: `${Math.max(barSize, 2)}%`,
@@ -200,45 +200,45 @@ export function TraceWaterfall({ threadId }: Props) {
                             />
                           </div>
                         </td>
-                        <td className="py-1.5 px-2 text-right text-neutral-400">
+                        <td className="py-1.5 px-2 text-right text-muted-foreground">
                           {evt.duration_ms > 0 ? `${evt.duration_ms}ms` : '—'}
                         </td>
-                        <td className="py-1.5 px-2 text-right text-neutral-400">
+                        <td className="py-1.5 px-2 text-right text-muted-foreground">
                           {evt.tokens_in + evt.tokens_out > 0 ? `${evt.tokens_in}/${evt.tokens_out}` : '—'}
                         </td>
-                        <td className="py-1.5 px-2 text-right text-neutral-400">
+                        <td className="py-1.5 px-2 text-right text-muted-foreground">
                           {evt.cost_usd > 0 ? `$${evt.cost_usd.toFixed(4)}` : '—'}
                         </td>
                         <td className="py-1.5 px-2">
-                          <span className={`text-xs ${STATUS_BADGE[status] || 'text-neutral-400'}`}>
+                          <span className={`text-xs ${STATUS_BADGE[status] || 'text-muted-foreground'}`}>
                             {status}
                           </span>
                         </td>
                       </tr>
                       {isExpanded && hasDetail && (
-                        <tr className="border-b border-neutral-800/30 bg-neutral-950/50">
+                        <tr className="border-b border-border/30 bg-muted/20">
                           <td colSpan={8} className="py-2 px-6">
                             <div className="space-y-2 text-xs">
                               {evt.input && (
                                 <div>
-                                  <span className="text-neutral-500 font-medium">{t('traceInput')}:</span>
-                                  <pre className="mt-1 p-2 bg-neutral-900 rounded text-neutral-300 overflow-x-auto max-h-40">
+                                  <span className="text-muted-foreground font-medium">{t('traceInput')}:</span>
+                                  <pre className="mt-1 p-2 bg-card rounded text-foreground overflow-x-auto max-h-40">
                                     {typeof evt.input === 'string' ? evt.input : JSON.stringify(evt.input, null, 2)}
                                   </pre>
                                 </div>
                               )}
                               {evt.output && (
                                 <div>
-                                  <span className="text-neutral-500 font-medium">{t('traceOutput')}:</span>
-                                  <pre className="mt-1 p-2 bg-neutral-900 rounded text-neutral-300 overflow-x-auto max-h-40">
+                                  <span className="text-muted-foreground font-medium">{t('traceOutput')}:</span>
+                                  <pre className="mt-1 p-2 bg-card rounded text-foreground overflow-x-auto max-h-40">
                                     {evt.output}
                                   </pre>
                                 </div>
                               )}
                               {evt.error && (
                                 <div>
-                                  <span className="text-red-400 font-medium">Error:</span>
-                                  <pre className="mt-1 p-2 bg-red-950/30 rounded text-red-300 overflow-x-auto max-h-40">
+                                  <span className="text-destructive font-medium">Error:</span>
+                                  <pre className="mt-1 p-2 bg-destructive/10 rounded text-destructive overflow-x-auto max-h-40">
                                     {evt.error}
                                   </pre>
                                 </div>
