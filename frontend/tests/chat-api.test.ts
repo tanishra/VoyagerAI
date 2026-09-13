@@ -99,6 +99,7 @@ describe('streamChat — retry logic', () => {
     Object.defineProperty(window, 'location', {
       value: { href: '' },
       writable: true,
+      configurable: true,
     });
 
     const onReconnecting = vi.fn();

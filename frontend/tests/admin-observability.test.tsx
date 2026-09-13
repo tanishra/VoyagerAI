@@ -76,6 +76,7 @@ Object.defineProperty(window, 'location', {
     set href(v: string) { mockLocationHref(v); },
   },
   writable: true,
+  configurable: true,
 });
 
 // Import after mocks
