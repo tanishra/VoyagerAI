@@ -51,6 +51,8 @@ export default function AgentFlowDiagram() {
     mass: 0.3,
   });
 
+  const lineOpacity = useTransform(lineProgress, [0, 0.1, 0.9, 1], [0, 1, 1, 0.6]);
+
   return (
     <section ref={containerRef} className="relative mb-20">
       <motion.div
@@ -91,7 +93,7 @@ export default function AgentFlowDiagram() {
                 strokeDasharray="4 4"
                 style={{
                   pathLength: lineProgress,
-                  opacity: useTransform(lineProgress, [0, 0.1, 0.9, 1], [0, 1, 1, 0.6]),
+                  opacity: lineOpacity,
                 }}
               />
             );

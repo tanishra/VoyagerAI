@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo, type RefObject } from 'react';
+import { useState, useMemo, type RefObject } from 'react';
 import { motion } from 'framer-motion';
 import { Sparkles, Send, Compass, UtensilsCrossed, Users, Wallet, Crown, Landmark } from 'lucide-react';
 
@@ -60,12 +60,10 @@ export default function SuggestionPrompts({
     return map;
   }, [t]);
 
-  const [displayedSuggestions, setDisplayedSuggestions] = useState<string[]>([]);
-
-  useEffect(() => {
-    const pool = allSuggestions[selectedCategory] ?? [];
-    setDisplayedSuggestions(pickRandom(pool, SUGGESTION_COUNT));
-  }, [selectedCategory, allSuggestions]);
+  const displayedSuggestions = useMemo(
+    () => pickRandom(allSuggestions[selectedCategory] ?? [], SUGGESTION_COUNT),
+    [selectedCategory, allSuggestions],
+  );
 
   const selectedCat = CATEGORIES.find((c) => c.id === selectedCategory)!;
 

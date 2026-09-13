@@ -5,10 +5,13 @@ export function useThrottledValue<T>(value: T, enabled: boolean): T {
   const rafRef = useRef<number | null>(null);
   const latestRef = useRef(value);
 
-  latestRef.current = value;
+  useEffect(() => {
+    latestRef.current = value;
+  });
 
   useEffect(() => {
     if (!enabled) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setThrottled(value);
       return;
     }

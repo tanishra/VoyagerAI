@@ -3,7 +3,7 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import ItineraryCard from '@/components/ItineraryCard';
 import type { Itinerary } from '@/lib/types';
 
-const mockSwrData: Record<string, { data: any; isLoading: boolean }> = {};
+const mockSwrData: Record<string, { data: unknown; isLoading: boolean }> = {};
 
 vi.mock('swr', () => ({
   default: (key: string | null) => {
@@ -13,6 +13,7 @@ vi.mock('swr', () => ({
 }));
 
 const { MockMap } = vi.hoisted(() => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   const React = require('react');
   return {
     MockMap: ({ activeDay, onMarkerClick, onDaySelect }: { activeDay?: number | null; onMarkerClick?: (d: number) => void; onDaySelect?: (d: number) => void }) =>

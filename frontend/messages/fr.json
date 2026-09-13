@@ -314,7 +314,9 @@
     "flowSubtitle": "L'orchestrateur distribue des sous-agents spécialisés en parallèle pour une efficacité maximale",
     "flowOrchestrator": "Orchestrateur",
     "flowParallelBatch": "Lot de distribution parallèle",
-    "outro": "Construit sur le framework deepagents avec LangGraph pour la gestion d'état, LiteLLM pour l'accès multi-fournisseur LLM et Tavily pour la recherche internet en temps réel — le tout dans une interface premium et responsive."
+    "aboutCtaTitle": "Prêt à commencer ?",
+    "aboutCtaDesc": "Votre prochaine aventure n'est qu'à une conversation.",
+    "aboutCtaButton": "Planifiez votre voyage"
   },
   "home": {
     "badge": "Planification de Voyage par IA",

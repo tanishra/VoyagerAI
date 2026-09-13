@@ -11,13 +11,25 @@ const LOCALE_MAP: Record<string, string> = {
   ja: 'ja-JP',
 };
 
+interface SpeechRecognitionInstance {
+  lang: string;
+  continuous: boolean;
+  interimResults: boolean;
+  onresult: ((event: { results: ArrayLike<ArrayLike<{ transcript: string }> & { isFinal: boolean }> }) => void) | null;
+  onerror: ((event: { error: string }) => void) | null;
+  onend: (() => void) | null;
+  start(): void;
+  stop(): void;
+  abort(): void;
+}
+
 type SpeechRecognitionType = typeof window extends { SpeechRecognition: infer T }
   ? T
-  : any;
+  : unknown;
 
-function getSpeechRecognition(): SpeechRecognitionType | null {
+function getSpeechRecognition(): (new () => SpeechRecognitionInstance) | null {
   if (typeof window === 'undefined') return null;
-  return (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition || null;
+  return (window as { SpeechRecognition?: new () => SpeechRecognitionInstance }).SpeechRecognition || (window as { webkitSpeechRecognition?: new () => SpeechRecognitionInstance }).webkitSpeechRecognition || null;
 }
 
 interface UseVoiceInputOptions {
@@ -36,7 +48,7 @@ interface UseVoiceInputReturn {
 export function useVoiceInput({ locale, onTranscript }: UseVoiceInputOptions): UseVoiceInputReturn {
   const [isRecording, setIsRecording] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const recognitionRef = useRef<any>(null);
+  const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
   const finalTranscriptRef = useRef<string>('');
   const onTranscriptRef = useRef(onTranscript);
 
@@ -57,7 +69,7 @@ export function useVoiceInput({ locale, onTranscript }: UseVoiceInputOptions): U
     recognition.continuous = true;
     recognition.interimResults = true;
 
-    recognition.onresult = (event: any) => {
+    recognition.onresult = (event: { results: ArrayLike<ArrayLike<{ transcript: string }> & { isFinal: boolean }> }) => {
       let finalText = '';
       for (let i = 0; i < event.results.length; i++) {
         if (event.results[i].isFinal) {
@@ -69,7 +81,7 @@ export function useVoiceInput({ locale, onTranscript }: UseVoiceInputOptions): U
       }
     };
 
-    recognition.onerror = (event: any) => {
+    recognition.onerror = (event: { error: string }) => {
       if (event.error === 'no-speech') {
         setError('no-speech');
       } else if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {

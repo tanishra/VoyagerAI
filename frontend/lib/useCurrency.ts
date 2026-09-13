@@ -14,6 +14,7 @@ export function useCurrency(): [Currency, (currency: Currency) => void] {
   const [currency, setCurrencyState] = useState<Currency>(() => getDefaultCurrencyForLocale(locale));
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setCurrencyState(getEffectiveCurrency(locale));
   }, [locale]);
 

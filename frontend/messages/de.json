@@ -314,7 +314,9 @@
     "flowSubtitle": "Der Orchestrator verteilt spezialisierte Subagenten parallel für maximale Effizienz",
     "flowOrchestrator": "Orchestrator",
     "flowParallelBatch": "Parallele Verteilungs-Charge",
-    "outro": "Basierend auf dem deepagents-Framework mit LangGraph für Zustandsverwaltung, LiteLLM für Multi-Provider-LLM-Zugriff und Tavily für Echtzeit-Internetsuche — alles in einer premium, responsiven Oberfläche."
+    "aboutCtaTitle": "Bereit zu beginnen?",
+    "aboutCtaDesc": "Ihr nächstes Abenteuer ist nur ein Gespräch entfernt.",
+    "aboutCtaButton": "Reise planen"
   },
   "home": {
     "badge": "KI-gestützte Reiseplanung",

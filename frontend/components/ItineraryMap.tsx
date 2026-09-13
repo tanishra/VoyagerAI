@@ -209,9 +209,9 @@ export default function ItineraryMap({ days, destination, activeDay, onMarkerCli
           const from = currentMarkers[i];
           const to = currentMarkers[i + 1];
           features.push({
-            type: 'Feature',
+            type: 'Feature' as const,
             geometry: {
-              type: 'LineString',
+              type: 'LineString' as const,
               coordinates: [[from.lng, from.lat], [to.lng, to.lat]],
             },
             properties: {
@@ -222,7 +222,7 @@ export default function ItineraryMap({ days, destination, activeDay, onMarkerCli
 
         map.addSource('route', {
           type: 'geojson',
-          data: { type: 'FeatureCollection', features } as any,
+          data: { type: 'FeatureCollection' as const, features },
         });
         map.addLayer({
           id: 'route',

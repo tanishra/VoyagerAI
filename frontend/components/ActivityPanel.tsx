@@ -48,8 +48,10 @@ export default function ActivityPanel({
   useEffect(() => {
     if (userOverride) return;
     if (isStreaming && !hasText && hasActivity) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setExpanded(true);
     } else if (isStreaming && hasText && !prevHasText.current) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setExpanded(false);
     }
     prevHasText.current = hasText;
@@ -58,6 +60,7 @@ export default function ActivityPanel({
   // Reset user override when streaming ends
   useEffect(() => {
     if (!isStreaming) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setUserOverride(false);
     }
   }, [isStreaming]);

@@ -41,6 +41,7 @@ export function TraceWaterfall({ threadId }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [expandedRows, setExpandedRows] = useState<Set<number>>(new Set());
+  const [nowTime, setNowTime] = useState(() => Date.now() / 1000);
 
   const fetchDetail = useCallback(async () => {
     if (!threadId) return;
@@ -58,8 +59,14 @@ export function TraceWaterfall({ threadId }: Props) {
   }, [threadId, t]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchDetail();
   }, [fetchDetail]);
+
+  useEffect(() => {
+    const interval = setInterval(() => setNowTime(Date.now() / 1000), 1000);
+    return () => clearInterval(interval);
+  }, []);
 
   function toggleRow(idx: number) {
     setExpandedRows((prev) => {
@@ -98,7 +105,7 @@ export function TraceWaterfall({ threadId }: Props) {
   // Calculate max duration for bar scaling
   const maxDuration = Math.max(...events.map((e) => e.duration_ms || 0), 1);
   const sessionStart = session?.start_time || 0;
-  const sessionEnd = session?.end_time || Date.now() / 1000;
+  const sessionEnd = session?.end_time || nowTime;
   const totalDuration = (sessionEnd - sessionStart) * 1000; // ms
 
   return (

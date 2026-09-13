@@ -99,7 +99,7 @@ describe('useThrottledValue', () => {
     expect(screen.getByTestId('result').textContent).toBe('first');
 
     act(() => {
-      (globalThis as any).__flushFrames();
+      (globalThis as unknown as Record<string, () => void>).__flushFrames();
     });
     expect(screen.getByTestId('result').textContent).toBe('second');
   });

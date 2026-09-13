@@ -56,6 +56,7 @@ export function SessionsTable({ onSelectSession }: Props) {
   }, [statusFilter, page, search, t]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchSessions();
   }, [fetchSessions]);
 

@@ -42,7 +42,17 @@ export default function BudgetDonut({ breakdown, currency }: BudgetDonutProps) {
   const total = breakdown.total;
   const radius = 60;
   const circumference = 2 * Math.PI * radius;
-  let offset = 0;
+  const segmentData = segments.reduce(
+    (acc, seg) => {
+      const fraction = seg.value / total;
+      const dash = fraction * circumference;
+      const result = { seg, dash, offset: acc.currentOffset };
+      acc.items.push(result);
+      acc.currentOffset += dash;
+      return acc;
+    },
+    { items: [] as { seg: (typeof segments)[number]; dash: number; offset: number }[], currentOffset: 0 },
+  ).items;
 
   return (
     <div className="flex flex-col items-center gap-4">
@@ -56,26 +66,20 @@ export default function BudgetDonut({ breakdown, currency }: BudgetDonutProps) {
             stroke="var(--color-muted)"
             strokeWidth="16"
           />
-          {segments.map((seg) => {
-            const fraction = seg.value / total;
-            const dash = fraction * circumference;
-            const circle = (
-              <circle
-                key={seg.key}
-                cx="80"
-                cy="80"
-                r={radius}
-                fill="none"
-                stroke={seg.color}
-                strokeWidth="16"
-                strokeDasharray={`${dash} ${circumference - dash}`}
-                strokeDashoffset={-offset}
-                style={{ transition: 'stroke-dasharray 0.6s ease' }}
-              />
-            );
-            offset += dash;
-            return circle;
-          })}
+          {segmentData.map(({ seg, dash, offset }) => (
+            <circle
+              key={seg.key}
+              cx="80"
+              cy="80"
+              r={radius}
+              fill="none"
+              stroke={seg.color}
+              strokeWidth="16"
+              strokeDasharray={`${dash} ${circumference - dash}`}
+              strokeDashoffset={-offset}
+              style={{ transition: 'stroke-dasharray 0.6s ease' }}
+            />
+          ))}
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center">
           <span className="text-xs text-muted-foreground">{t('total')}</span>

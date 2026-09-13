@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 
-const mockSwrData: Record<string, { data: any; isLoading: boolean }> = {};
+const mockSwrData: Record<string, { data: unknown; isLoading: boolean }> = {};
 
 vi.mock('swr', () => ({
   default: (key: string | null) => {
@@ -15,12 +16,11 @@ vi.mock('@/components/ItineraryMap', () => ({
 }));
 
 vi.mock('next/dynamic', () => ({
-  default: (fn: () => Promise<any>) => {
-    let Comp: any = null;
+  default: (fn: () => Promise<{ default: React.ComponentType }>) => {
+    let Comp: React.ComponentType | null = null;
     fn().then((m) => { Comp = m.default; });
-    return function DynamicComponent(props: any) {
+    return function DynamicComponent(props: Record<string, unknown>) {
       if (!Comp) return null;
-      const React = require('react');
       return React.createElement(Comp, props);
     };
   },
@@ -37,7 +37,7 @@ const makeSlot = (overrides?: Partial<TimeSlot>): TimeSlot => ({
   ...overrides,
 });
 
-const setMock = (key: string, value: { data: any; isLoading: boolean }) => {
+const setMock = (key: string, value: { data: unknown; isLoading: boolean }) => {
   mockSwrData[key] = value;
 };
 

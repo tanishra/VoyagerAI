@@ -6,7 +6,7 @@ export async function fetchWikimediaImage(searchQuery: string): Promise<string |
     const pages = data?.query?.pages;
     if (!pages) return null;
 
-    const page = Object.values(pages)[0] as any;
+    const page = Object.values(pages)[0] as { imageinfo?: [{ thumburl?: string }] } | undefined;
     return page?.imageinfo?.[0]?.thumburl ?? null;
   } catch {
     return null;

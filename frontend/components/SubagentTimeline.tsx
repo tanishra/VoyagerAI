@@ -25,8 +25,6 @@ const SUBAGENT_NAMES = new Set([
 ]);
 
 export default function SubagentTimeline({ toolCalls, progressMap, isStreaming }: SubagentTimelineProps) {
-  if (toolCalls.length === 0) return null;
-
   const { topLevel, nestedByParent } = useMemo(() => {
     const topLevel: ToolCallEntry[] = [];
     const nestedByParent: Map<string, ToolCallEntry[]> = new Map();
@@ -41,6 +39,8 @@ export default function SubagentTimeline({ toolCalls, progressMap, isStreaming }
     }
     return { topLevel, nestedByParent };
   }, [toolCalls]);
+
+  if (toolCalls.length === 0) return null;
 
   return (
     <div className="my-2">

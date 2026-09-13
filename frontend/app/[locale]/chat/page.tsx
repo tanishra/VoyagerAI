@@ -106,7 +106,7 @@ export default function ChatPage() {
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [editContent, setEditContent] = useState('');
   const [reconnecting, setReconnecting] = useState<{ attempt: number; max: number } | null>(null);
-  const lastSentMessageRef = useRef<{ message: string; attachments?: UploadedFile[] } | null>(null);
+  const [lastSentMessage, setLastSentMessage] = useState<{ message: string; attachments?: UploadedFile[] } | null>(null);
   const lastRegenerateRef = useRef(false);
   const lastEditRef = useRef<{ threadId: string; message: string } | null>(null);
 
@@ -351,7 +351,7 @@ export default function ChatPage() {
     const sentAttachments = pendingAttachments;
     setPendingAttachments([]);
 
-    lastSentMessageRef.current = { message: text, attachments: sentAttachments.length > 0 ? sentAttachments : undefined };
+    setLastSentMessage({ message: text, attachments: sentAttachments.length > 0 ? sentAttachments : undefined });
 
     // Optimistic thread title — immediately show in sidebar before AI response completes
     if (!threadId) {
@@ -598,9 +598,9 @@ export default function ChatPage() {
   }, [input, loading, threadId, isOnline]);
 
   const handleRetry = useCallback(() => {
-    if (!lastSentMessageRef.current || loading) return;
+    if (!lastSentMessage || loading) return;
     setError(null);
-    handleSend(lastSentMessageRef.current.message);
+    handleSend(lastSentMessage.message);
   }, [loading, handleSend]);
 
   const handleEditItinerary = useCallback(async (modifiedItinerary: Itinerary, messageId?: string) => {
@@ -1529,7 +1529,7 @@ export default function ChatPage() {
               className="p-3 mt-2 rounded-lg bg-destructive/10 border border-destructive/20 relative flex items-center justify-between gap-3"
             >
               <p className="text-destructive text-sm">{error}</p>
-              {lastSentMessageRef.current && (
+              {lastSentMessage && (
                 <button
                   onClick={handleRetry}
                   className="text-sm font-medium text-destructive hover:text-destructive/80 underline shrink-0 cursor-pointer"

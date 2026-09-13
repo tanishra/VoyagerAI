@@ -3,12 +3,14 @@ import React from 'react';
 import { render, act } from '@testing-library/react';
 import { useVoiceInput } from '@/lib/useVoiceInput';
 
+type VoiceInputResult = ReturnType<typeof useVoiceInput>;
+
 class MockSpeechRecognition {
   lang = '';
   continuous = false;
   interimResults = false;
-  onresult: ((event: any) => void) | null = null;
-  onerror: ((event: any) => void) | null = null;
+  onresult: ((event: { results: ArrayLike<ArrayLike<{ transcript: string }> & { isFinal: boolean }> }) => void) | null = null;
+  onerror: ((event: { error: string }) => void) | null = null;
   onend: (() => void) | null = null;
   private _started = false;
 
@@ -28,8 +30,8 @@ class MockSpeechRecognition {
   }
 }
 
-function renderHook(fn: () => any) {
-  const result: { current: any } = { current: {} };
+function renderHook(fn: () => VoiceInputResult) {
+  const result: { current: VoiceInputResult } = { current: {} as VoiceInputResult };
   function TestComponent() {
     result.current = fn();
     return null;
@@ -44,8 +46,8 @@ describe('useVoiceInput', () => {
   });
 
   afterEach(() => {
-    delete (window as any).SpeechRecognition;
-    delete (window as any).webkitSpeechRecognition;
+    delete (window as unknown as Record<string, unknown>).SpeechRecognition;
+    delete (window as unknown as Record<string, unknown>).webkitSpeechRecognition;
   });
 
   it('isSupported is false when SpeechRecognition is not available', () => {
@@ -56,7 +58,7 @@ describe('useVoiceInput', () => {
   });
 
   it('isSupported is true when SpeechRecognition is available', () => {
-    (window as any).SpeechRecognition = MockSpeechRecognition;
+    (window as unknown as Record<string, unknown>).SpeechRecognition = MockSpeechRecognition;
     const result = renderHook(() =>
       useVoiceInput({ locale: 'en', onTranscript: vi.fn() })
     );
@@ -64,7 +66,7 @@ describe('useVoiceInput', () => {
   });
 
   it('start sets isRecording to true', () => {
-    (window as any).SpeechRecognition = MockSpeechRecognition;
+    (window as unknown as Record<string, unknown>).SpeechRecognition = MockSpeechRecognition;
     const result = renderHook(() =>
       useVoiceInput({ locale: 'en', onTranscript: vi.fn() })
     );
@@ -75,7 +77,7 @@ describe('useVoiceInput', () => {
   });
 
   it('stop sets isRecording to false', () => {
-    (window as any).SpeechRecognition = MockSpeechRecognition;
+    (window as unknown as Record<string, unknown>).SpeechRecognition = MockSpeechRecognition;
     const result = renderHook(() =>
       useVoiceInput({ locale: 'en', onTranscript: vi.fn() })
     );
@@ -90,7 +92,7 @@ describe('useVoiceInput', () => {
   });
 
   it('sets lang based on locale and starts recording', () => {
-    (window as any).SpeechRecognition = MockSpeechRecognition;
+    (window as unknown as Record<string, unknown>).SpeechRecognition = MockSpeechRecognition;
     const result = renderHook(() =>
       useVoiceInput({ locale: 'ja', onTranscript: vi.fn() })
     );

@@ -314,7 +314,9 @@
     "flowSubtitle": "オーケストレーターが最大効率のために専門サブエージェントを並列でディスパッチ",
     "flowOrchestrator": "オーケストレーター",
     "flowParallelBatch": "並列ディスパッチバッチ",
-    "outro": "deepagentsフレームワーク上に構築、LangGraphで状態管理、LiteLLMでマルチプロバイダーLLMアクセス、Tavilyでリアルタイムインターネット検索 — すべてプレミアムでレスポンシブなUIに包まれています。"
+    "aboutCtaTitle": "始める準備はできましたか？",
+    "aboutCtaDesc": "次の冒険は、ひとつの会話から。",
+    "aboutCtaButton": "旅を計画する"
   },
   "home": {
     "badge": "AI搭載旅行プランニング",

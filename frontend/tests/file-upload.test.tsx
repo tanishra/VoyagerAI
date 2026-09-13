@@ -70,7 +70,7 @@ describe('uploadFile', () => {
         size: 100,
       }),
     });
-    global.fetch = mockFetch as any;
+    global.fetch = mockFetch as typeof global.fetch;
 
     const file = new File(['hello'], 'test.png', { type: 'image/png' });
     const result = await uploadFile(file);
@@ -90,7 +90,7 @@ describe('uploadFile', () => {
       ok: false,
       json: async () => ({ detail: 'File is too large (max 10MB).' }),
     });
-    global.fetch = mockFetch as any;
+    global.fetch = mockFetch as typeof global.fetch;
 
     const file = new File(['hello'], 'big.png', { type: 'image/png' });
     await expect(uploadFile(file)).rejects.toThrow('File is too large');
@@ -103,7 +103,7 @@ describe('uploadFile', () => {
       ok: false,
       json: async () => ({ detail: 'Unsupported file type.' }),
     });
-    global.fetch = mockFetch as any;
+    global.fetch = mockFetch as typeof global.fetch;
 
     const file = new File(['hello'], 'test.txt', { type: 'text/plain' });
     await expect(uploadFile(file)).rejects.toThrow('Unsupported file type');

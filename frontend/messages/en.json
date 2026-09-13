@@ -314,7 +314,9 @@
     "flowSubtitle": "The orchestrator dispatches specialized subagents in parallel for maximum efficiency",
     "flowOrchestrator": "Orchestrator",
     "flowParallelBatch": "Parallel dispatch batch",
-    "outro": "Built on the deepagents framework with LangGraph for state management, LiteLLM for multi-provider LLM access, and Tavily for real-time internet search — all wrapped in a premium, responsive UI."
+    "aboutCtaTitle": "Ready to begin?",
+    "aboutCtaDesc": "Your next adventure is one conversation away.",
+    "aboutCtaButton": "Plan Your Trip"
   },
   "home": {
     "badge": "AI-Powered Travel Planning",

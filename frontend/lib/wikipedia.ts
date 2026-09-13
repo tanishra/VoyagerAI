@@ -6,7 +6,7 @@ export async function fetchWikipediaDescription(searchQuery: string): Promise<st
     const pages = data?.query?.pages;
     if (!pages) return null;
 
-    const page = Object.values(pages)[0] as any;
+    const page = Object.values(pages)[0] as { extract?: string } | undefined;
     return page?.extract ?? null;
   } catch {
     return null;
