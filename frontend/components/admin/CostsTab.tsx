@@ -108,8 +108,8 @@ export function CostsTab() {
               onClick={() => setPeriod(p)}
               className={`flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-sm transition-colors ${
                 period === p
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-neutral-800 text-neutral-400 hover:text-white'
+                  ? 'bg-primary text-primary-foreground'
+                  : 'bg-muted text-muted-foreground hover:text-foreground'
               }`}
             >
               {p === 'live' ? (
@@ -125,7 +125,7 @@ export function CostsTab() {
         </div>
         <button
           onClick={handleExport}
-          className="flex items-center gap-2 px-4 py-2 bg-neutral-800 hover:bg-neutral-700 rounded-lg text-sm transition-colors"
+          className="flex items-center gap-2 px-4 py-2 bg-muted hover:bg-muted/70 rounded-lg text-sm transition-colors text-foreground"
         >
           <Download className="w-4 h-4" />
           {t('exportCsv')}
@@ -134,12 +134,12 @@ export function CostsTab() {
 
       {loading ? (
         <div className="flex items-center justify-center py-20">
-          <Loader2 className="w-8 h-8 animate-spin text-neutral-500" />
+          <Loader2 className="w-8 h-8 animate-spin text-primary" />
         </div>
       ) : error ? (
         <div className="text-center py-20">
-          <AlertCircle className="w-8 h-8 text-red-400 mx-auto mb-2" />
-          <p className="text-neutral-400">{error}</p>
+          <AlertCircle className="w-8 h-8 text-destructive mx-auto mb-2" />
+          <p className="text-muted-foreground">{error}</p>
         </div>
       ) : period === 'live' && liveData ? (
         <motion.div
@@ -151,10 +151,10 @@ export function CostsTab() {
             <div
               className={`rounded-xl p-4 border flex items-center gap-3 ${
                 liveData.alert.level === 'critical'
-                  ? 'bg-red-950/50 border-red-800 text-red-200'
+                  ? 'bg-destructive/10 border-destructive/30 text-destructive'
                   : liveData.alert.level === 'warning'
-                  ? 'bg-yellow-950/50 border-yellow-800 text-yellow-200'
-                  : 'bg-green-950/50 border-green-800 text-green-200'
+                  ? 'bg-accent border-accent-foreground/30 text-accent-foreground'
+                  : 'bg-chart-2/10 border-chart-2/30 text-chart-2'
               }`}
             >
               <AlertTriangle className="w-5 h-5 flex-shrink-0" />
@@ -176,27 +176,27 @@ export function CostsTab() {
             <SummaryCard icon={<MessageSquare className="w-5 h-5" />} label="Requests (24h)" value={liveData.per_hour.reduce((sum, h) => sum + h.requests, 0).toString()} />
           </div>
 
-          <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-6">
-            <h2 className="text-lg font-semibold mb-4">Hourly Cost Breakdown (Last 24h)</h2>
+          <div className="bg-card border border-border rounded-xl p-6">
+            <h2 className="text-lg font-semibold text-foreground mb-4">Hourly Cost Breakdown (Last 24h)</h2>
             {liveData.per_hour.length > 0 ? (
               <div className="space-y-2">
                 {liveData.per_hour.map((hour) => (
                   <div key={hour.hour} className="flex items-center gap-3">
-                    <span className="text-xs text-neutral-400 w-20 font-mono">{hour.hour.slice(11)}</span>
-                    <div className="flex-1 bg-neutral-800 rounded-full h-6 overflow-hidden">
+                    <span className="text-xs text-muted-foreground w-20 font-mono">{hour.hour.slice(11)}</span>
+                    <div className="flex-1 bg-muted rounded-full h-6 overflow-hidden">
                       <div
-                        className="bg-blue-600 h-full rounded-full flex items-center justify-end pr-2"
+                        className="bg-primary h-full rounded-full flex items-center justify-end pr-2"
                         style={{ width: `${Math.min((hour.cost / Math.max(...liveData.per_hour.map(h => h.cost), 0.01)) * 100, 100)}%` }}
                       >
-                        {hour.cost > 0.001 && <span className="text-xs text-white font-medium">${hour.cost.toFixed(3)}</span>}
+                        {hour.cost > 0.001 && <span className="text-xs text-primary-foreground font-medium">${hour.cost.toFixed(3)}</span>}
                       </div>
                     </div>
-                    <span className="text-xs text-neutral-500 w-16 text-right">{hour.requests} req</span>
+                    <span className="text-xs text-muted-foreground w-16 text-right">{hour.requests} req</span>
                   </div>
                 ))}
               </div>
             ) : (
-              <p className="text-neutral-500 text-sm">No cost data in the last 24 hours.</p>
+              <p className="text-muted-foreground text-sm">No cost data in the last 24 hours.</p>
             )}
           </div>
         </motion.div>
@@ -221,12 +221,12 @@ export function CostsTab() {
 
 function SummaryCard({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
   return (
-    <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-4">
-      <div className="flex items-center gap-2 text-neutral-400 mb-2">
+    <div className="bg-card border border-border rounded-xl p-4">
+      <div className="flex items-center gap-2 text-muted-foreground mb-2">
         {icon}
         <span className="text-sm">{label}</span>
       </div>
-      <p className="text-lg font-semibold">{value}</p>
+      <p className="text-lg font-semibold text-foreground">{value}</p>
     </div>
   );
 }
