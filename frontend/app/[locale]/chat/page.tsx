@@ -1878,11 +1878,10 @@ export default function ChatPage() {
                     cancelStream(threadId ?? '');
                     abortRef.current?.abort();
                   }}
-                  className="shrink-0 inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-muted hover:bg-accent border border-border text-foreground text-xs font-medium transition-all cursor-pointer"
+                  className="shrink-0 p-2 rounded-lg bg-muted hover:bg-accent border border-border text-foreground transition-all cursor-pointer"
                   aria-label={t('stop')}
                 >
                   <Square className="w-3 h-3 fill-current" />
-                  {t('stop')}
                 </button>
               )}
               <button
