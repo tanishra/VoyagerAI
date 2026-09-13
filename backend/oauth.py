@@ -197,18 +197,18 @@ async def verify_admin(user: dict = Depends(get_current_user)) -> dict:
     Checks the user's email against the ADMIN_EMAILS setting (comma-separated).
     Raises 403 if admin emails are not configured or the user is not an admin.
     """
-    admin_emails = [e.strip().lower() for e in settings.ADMIN_EMAILS.split(",") if e.strip()]
-    if not admin_emails:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Admin access not configured",
-        )
-
-    user_email = (user.get("email") or "").lower()
-    if user_email not in admin_emails:
+    if not is_admin_email(user.get("email") or ""):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin access required",
         )
 
     return user
+
+
+def is_admin_email(email: str) -> bool:
+    """Check whether an email address is in the ADMIN_EMAILS allowlist."""
+    admin_emails = [e.strip().lower() for e in settings.ADMIN_EMAILS.split(",") if e.strip()]
+    if not admin_emails:
+        return False
+    return email.lower() in admin_emails
