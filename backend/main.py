@@ -99,6 +99,7 @@ from ical_generator import generate_ics
 from file_store import file_store
 from guard import classify_injection_risk
 from security_store import security_store
+from observability_store import observability_store
 
 ALLOWED_ORIGINS: list[str] = [
     orig.strip()
@@ -1005,6 +1006,253 @@ async def remove_cooldown(
     return {"status": "ok" if removed else "not_found", "user_hash": user_hash}
 
 
+# --- Admin observability endpoints (Phase 5.7) ---
+
+@app.get(
+    "/admin/observability/sessions",
+    summary="Get paginated list of observability sessions",
+    tags=["admin"],
+    dependencies=[Depends(verify_api_key)],
+    response_model=None,
+    responses={
+        200: {
+            "description": "Paginated session list",
+            "content": {"application/json": {"example": {
+                "sessions": [],
+                "total": 0,
+                "limit": 50,
+                "offset": 0,
+            }}},
+        },
+        401: {"description": "Missing or invalid API key"},
+        403: {"description": "User is not in ADMIN_EMAILS allowlist"},
+    },
+)
+@limiter.limit("10/minute")
+async def get_observability_sessions(
+    request: Request,
+    from_ts: float = 0,
+    to_ts: float = 0,
+    status: str = "",
+    limit: int = 50,
+    offset: int = 0,
+    admin: dict = Depends(verify_admin),
+) -> JSONResponse:
+    """Get paginated list of observability sessions with filters.
+
+    **Query parameters:**
+    - `from_ts`: Unix timestamp start (default: 0 = all)
+    - `to_ts`: Unix timestamp end (default: 0 = now)
+    - `status`: Filter by status (running, completed, error, cancelled)
+    - `limit`: Page size (default: 50, max: 200)
+    - `offset`: Page offset (default: 0)
+
+    **Requires:** Admin privileges.
+    """
+    limit = min(max(limit, 1), 200)
+    result = await observability_store.get_sessions(
+        from_ts=from_ts, to_ts=to_ts, status=status, limit=limit, offset=offset,
+    )
+    return JSONResponse(content=result)
+
+
+@app.get(
+    "/admin/observability/sessions/{thread_id}",
+    summary="Get session detail with event timeline",
+    tags=["admin"],
+    dependencies=[Depends(verify_api_key)],
+    response_model=None,
+    responses={
+        200: {
+            "description": "Session detail with events",
+            "content": {"application/json": {"example": {
+                "session": {},
+                "events": [],
+            }}},
+        },
+        401: {"description": "Missing or invalid API key"},
+        403: {"description": "User is not in ADMIN_EMAILS allowlist"},
+        404: {"description": "Session not found"},
+    },
+)
+@limiter.limit("10/minute")
+async def get_observability_session_detail(
+    request: Request,
+    thread_id: str,
+    admin: dict = Depends(verify_admin),
+) -> JSONResponse:
+    """Get full session detail including event timeline for waterfall rendering.
+
+    **Path parameters:**
+    - `thread_id`: The thread ID to inspect
+
+    **Requires:** Admin privileges.
+    """
+    sessions = await observability_store.get_sessions(limit=10000)
+    session = None
+    for s in sessions["sessions"]:
+        if s["thread_id"] == thread_id:
+            session = s
+            break
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+    events = await observability_store.get_session_events(thread_id)
+    return JSONResponse(content={"session": session, "events": events})
+
+
+@app.get(
+    "/admin/observability/sessions/{thread_id}/events",
+    summary="Get raw event list for a session",
+    tags=["admin"],
+    dependencies=[Depends(verify_api_key)],
+    response_model=None,
+    responses={
+        200: {
+            "description": "Ordered event list",
+            "content": {"application/json": {"example": []}},
+        },
+        401: {"description": "Missing or invalid API key"},
+        403: {"description": "User is not in ADMIN_EMAILS allowlist"},
+    },
+)
+@limiter.limit("10/minute")
+async def get_observability_session_events(
+    request: Request,
+    thread_id: str,
+    admin: dict = Depends(verify_admin),
+) -> JSONResponse:
+    """Get raw event list for a session (for waterfall rendering).
+
+    **Path parameters:**
+    - `thread_id`: The thread ID to inspect
+
+    **Requires:** Admin privileges.
+    """
+    events = await observability_store.get_session_events(thread_id)
+    return JSONResponse(content=events)
+
+
+@app.get(
+    "/admin/observability/errors",
+    summary="Get error events with filters",
+    tags=["admin"],
+    dependencies=[Depends(verify_api_key)],
+    response_model=None,
+    responses={
+        200: {
+            "description": "Error list",
+            "content": {"application/json": {"example": []}},
+        },
+        401: {"description": "Missing or invalid API key"},
+        403: {"description": "User is not in ADMIN_EMAILS allowlist"},
+    },
+)
+@limiter.limit("10/minute")
+async def get_observability_errors(
+    request: Request,
+    from_ts: float = 0,
+    to_ts: float = 0,
+    subagent: str = "",
+    tool: str = "",
+    limit: int = 50,
+    admin: dict = Depends(verify_admin),
+) -> JSONResponse:
+    """Get error events with filters.
+
+    **Query parameters:**
+    - `from_ts`: Unix timestamp start (default: 0 = all)
+    - `to_ts`: Unix timestamp end (default: 0 = now)
+    - `subagent`: Filter by subagent name
+    - `tool`: Filter by tool name
+    - `limit`: Max results (default: 50, max: 500)
+
+    **Requires:** Admin privileges.
+    """
+    limit = min(max(limit, 1), 500)
+    errors = await observability_store.get_errors(
+        from_ts=from_ts, to_ts=to_ts, subagent=subagent, tool=tool, limit=limit,
+    )
+    return JSONResponse(content=errors)
+
+
+@app.get(
+    "/admin/observability/errors/summary",
+    summary="Get error summary with counts and trends",
+    tags=["admin"],
+    dependencies=[Depends(verify_api_key)],
+    response_model=None,
+    responses={
+        200: {
+            "description": "Error summary",
+            "content": {"application/json": {"example": {
+                "total_errors": 0,
+                "by_subagent": [],
+                "by_tool": [],
+                "per_day": [],
+            }}},
+        },
+        401: {"description": "Missing or invalid API key"},
+        403: {"description": "User is not in ADMIN_EMAILS allowlist"},
+    },
+)
+@limiter.limit("10/minute")
+async def get_observability_error_summary(
+    request: Request,
+    from_ts: float = 0,
+    to_ts: float = 0,
+    admin: dict = Depends(verify_admin),
+) -> JSONResponse:
+    """Get error counts grouped by subagent+tool, plus error rate trend.
+
+    **Query parameters:**
+    - `from_ts`: Unix timestamp start (default: 0 = all)
+    - `to_ts`: Unix timestamp end (default: 0 = now)
+
+    **Requires:** Admin privileges.
+    """
+    summary = await observability_store.get_error_summary(from_ts=from_ts, to_ts=to_ts)
+    return JSONResponse(content=summary)
+
+
+@app.get(
+    "/admin/observability/usage",
+    summary="Get aggregated token/cost usage analytics",
+    tags=["admin"],
+    dependencies=[Depends(verify_api_key)],
+    response_model=None,
+    responses={
+        200: {
+            "description": "Usage analytics",
+            "content": {"application/json": {"example": {
+                "per_day": [],
+                "per_subagent": [],
+                "per_user": [],
+                "totals": {},
+            }}},
+        },
+        401: {"description": "Missing or invalid API key"},
+        403: {"description": "User is not in ADMIN_EMAILS allowlist"},
+    },
+)
+@limiter.limit("10/minute")
+async def get_observability_usage(
+    request: Request,
+    from_ts: float = 0,
+    to_ts: float = 0,
+    admin: dict = Depends(verify_admin),
+) -> JSONResponse:
+    """Get aggregated token/cost usage per day, per subagent, per user.
+
+    **Query parameters:**
+    - `from_ts`: Unix timestamp start (default: 0 = all)
+    - `to_ts`: Unix timestamp end (default: 0 = now)
+
+    **Requires:** Admin privileges.
+    """
+    usage = await observability_store.get_usage(from_ts=from_ts, to_ts=to_ts)
+    return JSONResponse(content=usage)
+
+
 def _sanitize_preferences_sections(content: str) -> str:
     """Sanitize the <user_instructions> section of preferences content.
 
@@ -1320,6 +1568,14 @@ async def chat_stream(
         stream_text = ""
         was_cancelled = False
 
+        # Start observability session
+        try:
+            asyncio.create_task(observability_store.start_session(
+                thread_id, user_id, locale=locale, timezone=chat_req.timezone or "",
+            ))
+        except Exception:  # noqa: BLE001, S110
+            pass
+
         # Mark thread as busy at the start of the stream
         try:
             await thread_store.update_status(user_id, thread_id, "busy")
@@ -1346,6 +1602,24 @@ async def chat_stream(
                         raw = json.loads(payload["data"])
                         stream_text += raw.get("data", "")
                     yield payload
+                    # Record event for observability (fire-and-forget)
+                    try:
+                        evt_data = json.loads(payload["data"]) if payload.get("data") else {}
+                        asyncio.create_task(observability_store.record_event(
+                            thread_id=thread_id,
+                            event_type=payload["event"],
+                            name=evt_data.get("name", "") if isinstance(evt_data, dict) else "",
+                            run_id=evt_data.get("run_id", "") if isinstance(evt_data, dict) else "",
+                            parent_run_id=evt_data.get("parent_run_id", "") if isinstance(evt_data, dict) else "",
+                            input_data=evt_data.get("input") if isinstance(evt_data, dict) else None,
+                            output=evt_data.get("output", "") if isinstance(evt_data, dict) else "",
+                            error=evt_data.get("error", "") if isinstance(evt_data, dict) else "",
+                            tokens_in=evt_data.get("input_tokens", 0) if isinstance(evt_data, dict) else 0,
+                            tokens_out=evt_data.get("output_tokens", 0) if isinstance(evt_data, dict) else 0,
+                            model=evt_data.get("model", "") if isinstance(evt_data, dict) else "",
+                        ))
+                    except Exception:  # noqa: BLE001, S110
+                        pass
         except Exception as exc:  # noqa: BLE001 (intentional fallback handler)
             logger.error(
                 "Chat stream failed for thread=%s: %s",
@@ -1355,8 +1629,22 @@ async def chat_stream(
             )
             stream_failed = True
             yield _sse("error", get_error_message("streaming_failed", locale, error=str(exc)))
+            try:
+                asyncio.create_task(observability_store.record_event(
+                    thread_id=thread_id, event_type="error", error=str(exc)[:500],
+                ))
+            except Exception:  # noqa: BLE001, S110
+                pass
         finally:
             unregister_cancel(thread_id)
+            # Finalize observability session
+            try:
+                final_obs_status = "cancelled" if was_cancelled else ("error" if stream_failed else "completed")
+                asyncio.create_task(observability_store.finalize_session(
+                    thread_id, final_obs_status,
+                ))
+            except Exception:  # noqa: BLE001, S110
+                pass
             # Save/update thread metadata with AI summary and status — never blocks stream
             try:
                 final_status = "error" if stream_failed else "idle"
@@ -1479,6 +1767,14 @@ async def chat_regenerate(
         stream_failed = False
         stream_text = ""
 
+        # Start observability session
+        try:
+            asyncio.create_task(observability_store.start_session(
+                thread_id, user_id, locale=locale, timezone=timezone or "",
+            ))
+        except Exception:  # noqa: BLE001, S110
+            pass
+
         try:
             await thread_store.update_status(user_id, thread_id, "busy")
         except Exception:  # noqa: BLE001, S110
@@ -1501,6 +1797,24 @@ async def chat_regenerate(
                         raw = json.loads(payload["data"])
                         stream_text += raw.get("data", "")
                     yield payload
+                    # Record event for observability (fire-and-forget)
+                    try:
+                        evt_data = json.loads(payload["data"]) if payload.get("data") else {}
+                        asyncio.create_task(observability_store.record_event(
+                            thread_id=thread_id,
+                            event_type=payload["event"],
+                            name=evt_data.get("name", "") if isinstance(evt_data, dict) else "",
+                            run_id=evt_data.get("run_id", "") if isinstance(evt_data, dict) else "",
+                            parent_run_id=evt_data.get("parent_run_id", "") if isinstance(evt_data, dict) else "",
+                            input_data=evt_data.get("input") if isinstance(evt_data, dict) else None,
+                            output=evt_data.get("output", "") if isinstance(evt_data, dict) else "",
+                            error=evt_data.get("error", "") if isinstance(evt_data, dict) else "",
+                            tokens_in=evt_data.get("input_tokens", 0) if isinstance(evt_data, dict) else 0,
+                            tokens_out=evt_data.get("output_tokens", 0) if isinstance(evt_data, dict) else 0,
+                            model=evt_data.get("model", "") if isinstance(evt_data, dict) else "",
+                        ))
+                    except Exception:  # noqa: BLE001, S110
+                        pass
         except Exception as exc:  # noqa: BLE001
             logger.error(
                 "Chat regenerate failed for thread=%s: %s",
@@ -1510,8 +1824,22 @@ async def chat_regenerate(
             )
             stream_failed = True
             yield _sse("error", get_error_message("streaming_failed", locale, error=str(exc)))
+            try:
+                asyncio.create_task(observability_store.record_event(
+                    thread_id=thread_id, event_type="error", error=str(exc)[:500],
+                ))
+            except Exception:  # noqa: BLE001, S110
+                pass
         finally:
             unregister_cancel(thread_id)
+            # Finalize observability session
+            try:
+                final_obs_status = "error" if stream_failed else "completed"
+                asyncio.create_task(observability_store.finalize_session(
+                    thread_id, final_obs_status,
+                ))
+            except Exception:  # noqa: BLE001, S110
+                pass
             try:
                 final_status = "error" if stream_failed else "idle"
                 summary = await generate_summary("", stream_text, locale=locale)
@@ -1594,6 +1922,14 @@ async def chat_edit(
         stream_failed = False
         stream_text = ""
 
+        # Start observability session
+        try:
+            asyncio.create_task(observability_store.start_session(
+                thread_id, user_id, locale=locale, timezone=timezone or "",
+            ))
+        except Exception:  # noqa: BLE001, S110
+            pass
+
         try:
             await thread_store.update_status(user_id, thread_id, "busy")
         except Exception:  # noqa: BLE001, S110
@@ -1617,6 +1953,24 @@ async def chat_edit(
                         raw = json.loads(payload["data"])
                         stream_text += raw.get("data", "")
                     yield payload
+                    # Record event for observability (fire-and-forget)
+                    try:
+                        evt_data = json.loads(payload["data"]) if payload.get("data") else {}
+                        asyncio.create_task(observability_store.record_event(
+                            thread_id=thread_id,
+                            event_type=payload["event"],
+                            name=evt_data.get("name", "") if isinstance(evt_data, dict) else "",
+                            run_id=evt_data.get("run_id", "") if isinstance(evt_data, dict) else "",
+                            parent_run_id=evt_data.get("parent_run_id", "") if isinstance(evt_data, dict) else "",
+                            input_data=evt_data.get("input") if isinstance(evt_data, dict) else None,
+                            output=evt_data.get("output", "") if isinstance(evt_data, dict) else "",
+                            error=evt_data.get("error", "") if isinstance(evt_data, dict) else "",
+                            tokens_in=evt_data.get("input_tokens", 0) if isinstance(evt_data, dict) else 0,
+                            tokens_out=evt_data.get("output_tokens", 0) if isinstance(evt_data, dict) else 0,
+                            model=evt_data.get("model", "") if isinstance(evt_data, dict) else "",
+                        ))
+                    except Exception:  # noqa: BLE001, S110
+                        pass
         except Exception as exc:  # noqa: BLE001
             logger.error(
                 "Chat edit failed for thread=%s: %s",
@@ -1626,8 +1980,22 @@ async def chat_edit(
             )
             stream_failed = True
             yield _sse("error", get_error_message("streaming_failed", locale, error=str(exc)))
+            try:
+                asyncio.create_task(observability_store.record_event(
+                    thread_id=thread_id, event_type="error", error=str(exc)[:500],
+                ))
+            except Exception:  # noqa: BLE001, S110
+                pass
         finally:
             unregister_cancel(thread_id)
+            # Finalize observability session
+            try:
+                final_obs_status = "error" if stream_failed else "completed"
+                asyncio.create_task(observability_store.finalize_session(
+                    thread_id, final_obs_status,
+                ))
+            except Exception:  # noqa: BLE001, S110
+                pass
             try:
                 final_status = "error" if stream_failed else "idle"
                 summary = await generate_summary(new_message, stream_text, locale=locale)
