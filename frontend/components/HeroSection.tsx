@@ -18,16 +18,13 @@ export default function HeroSection() {
           fill
           priority
           sizes="(max-width: 768px) 100vw, 50vw"
-          className="object-cover"
+          className="object-cover" style={{ objectPosition: 'right center' }}
         />
       </div>
 
-      {/* The gutter seam — cinnabar hairline rule */}
-      <div className="hidden md:block w-px bg-primary/40 shrink-0" />
-
       {/* Right: editorial text */}
       <div className="flex-1 flex items-center">
-        <div className="px-6 md:px-12 lg:px-16 py-16 md:py-24 flex flex-col justify-center w-full max-w-xl md:ml-auto">
+        <div className="px-6 md:px-2 lg:px-4 py-16 md:py-24 flex flex-col justify-center w-full max-w-xl md:ml-auto">
           <motion.h1
             initial={{ opacity: 0, y: 24 }}
             animate={{ opacity: 1, y: 0 }}
