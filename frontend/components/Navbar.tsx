@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Menu, X, ArrowRight, LogOut, ChevronDown, Shield } from 'lucide-react';
+import { Menu, X, ArrowRight, LogOut, ChevronDown, Shield, Settings } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
@@ -13,11 +13,9 @@ import InstallPrompt from './InstallPrompt';
 import LanguageSwitcher from './LanguageSwitcher';
 import CurrencySwitcher from './CurrencySwitcher';
 
-const navLinkKeys = ['home', 'chat', 'preferences', 'about'] as const;
+const navLinkKeys = ['home', 'about'] as const;
 const navHrefs: Record<string, string> = {
   home: '',
-  chat: '/chat',
-  preferences: '/preferences',
   about: '/about',
 };
 
@@ -182,6 +180,13 @@ export default function Navbar() {
                         {t('adminDashboard')}
                       </Link>
                     )}
+                    <Link
+                      href={`/${locale}/preferences`}
+                      className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-foreground hover:bg-muted transition-colors"
+                    >
+                      <Settings className="w-4 h-4" />
+                      {t('preferences')}
+                    </Link>
                     <button
                       onClick={handleLogout}
                       className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-foreground hover:bg-muted transition-colors cursor-pointer"
@@ -259,6 +264,13 @@ export default function Navbar() {
                       </span>
                     )}
                   </div>
+                  <Link
+                    href={`/${locale}/preferences`}
+                    className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-foreground hover:bg-muted rounded-lg transition-colors"
+                  >
+                    <Settings className="w-4 h-4" />
+                    {t('preferences')}
+                  </Link>
                   <button
                     onClick={handleLogout}
                     className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-foreground hover:bg-muted rounded-lg transition-colors cursor-pointer"

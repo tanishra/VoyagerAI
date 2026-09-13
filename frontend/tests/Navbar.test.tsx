@@ -16,7 +16,6 @@ describe('Navbar', () => {
   it('renders desktop nav links', () => {
     render(<Navbar />);
     expect(screen.getByText('Home')).toBeInTheDocument();
-    expect(screen.getByText('Chat')).toBeInTheDocument();
     expect(screen.getByText('About')).toBeInTheDocument();
   });
 
