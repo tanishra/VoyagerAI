@@ -282,6 +282,7 @@ class AuthMeResponse(BaseModel):
     display_name: str = Field(..., description="User's display name.")
     avatar_url: str | None = Field(None, description="URL to user's avatar image.")
     email: str = Field(..., description="User's email address.")
+    is_admin: bool = Field(False, description="Whether the user has admin privileges.")
 
 
 class AuthLogoutResponse(BaseModel):
