@@ -1,13 +1,15 @@
 'use client';
 
-import { Globe, MoreHorizontal, Printer, FileJson, FileText, Share2, Check, Map as MapIcon, ChevronDown, Calendar, Wallet, Pencil, ExternalLink } from 'lucide-react';
+import { MoreHorizontal, Printer, FileJson, FileText, Share2, Check, Map as MapIcon, ChevronDown, Calendar, Wallet, Pencil, ExternalLink } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import { useTranslations } from 'next-intl';
 import dynamic from 'next/dynamic';
+import useSWR from 'swr';
 import type { Itinerary, DayPlan } from '@/lib/types';
 import { createShare, exportItinerary } from '@/lib/share-api';
 import { useLocale } from '@/lib/useLocale';
 import { formatCurrency } from '@/lib/format';
+import { fetchWikimediaImage } from '@/lib/wikimedia';
 import DayDetailModal from './DayDetailModal';
 import TimelineView from './TimelineView';
 import BudgetDonut from './BudgetDonut';
@@ -43,6 +45,12 @@ export default function ItineraryCard({ itinerary, threadId, printMode = false, 
   const [editing, setEditing] = useState(false);
   const [currency] = useCurrency();
   const menuRef = useRef<HTMLDivElement>(null);
+
+  const { data: destImage, isLoading: destImageLoading } = useSWR(
+    `wikimedia:${itinerary.destination}`,
+    () => fetchWikimediaImage(itinerary.destination),
+    { revalidateOnFocus: false, dedupingInterval: 600000 }
+  );
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -107,11 +115,28 @@ export default function ItineraryCard({ itinerary, threadId, printMode = false, 
 
   return (
     <div className="mt-3 rounded-xl border border-indigo-500/20 bg-indigo-500/5 overflow-hidden bg-card">
-      <div className="px-4 py-3 border-b border-indigo-500/10 flex items-center justify-between">
-        <h3 className="font-semibold text-foreground flex items-center gap-2">
-          <Globe className="w-4 h-4 text-primary" />
-          {itinerary.destination}
-        </h3>
+      {/* Destination banner image */}
+      <div className="relative w-full" style={{ aspectRatio: '16 / 6' }}>
+        {destImageLoading ? (
+          <div className="w-full h-full animate-pulse bg-muted" />
+        ) : destImage ? (
+          <>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={destImage} alt={itinerary.destination} className="w-full h-full object-cover" />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
+            <h3 className="absolute bottom-3 left-4 text-xl font-bold text-white drop-shadow-lg">
+              {itinerary.destination}
+            </h3>
+          </>
+        ) : (
+          <div className="w-full h-full bg-accent flex items-center justify-center">
+            <span className="text-2xl font-bold text-accent-foreground tracking-tight">
+              {itinerary.destination}
+            </span>
+          </div>
+        )}
+      </div>
+      <div className="px-4 py-3 border-b border-indigo-500/10 flex items-center justify-end">
         {!printMode && threadId && (
           <div className="flex items-center gap-1">
           {onEditItinerary && (
