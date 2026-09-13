@@ -19,9 +19,6 @@ import ItineraryCard from '@/components/ItineraryCard';
 import GeneratedImageCard from '@/components/GeneratedImageCard';
 import GeneratedChartCard from '@/components/GeneratedChartCard';
 import OfflineBanner from '@/components/OfflineBanner';
-import ThinkingBlock from '@/components/ThinkingBlock';
-import ToolCallCard from '@/components/ToolCallCard';
-import SubagentTimeline from '@/components/SubagentTimeline';
 import ActivityPanel from '@/components/ActivityPanel';
 import ComparisonView from './ComparisonView';
 import FeedbackButtons from '@/components/FeedbackButtons';
@@ -1645,6 +1642,10 @@ export default function ChatPage() {
                       activeWorkers={[]}
                       isStreaming={false}
                       hasText={!!msg.content}
+                      workerIcons={TOOL_ICONS}
+                      workerLabels={Object.fromEntries(
+                        Object.entries(TOOL_LABEL_KEYS).map(([k, v]) => [k, tStatus(v)]),
+                      )}
                     />
                     <MarkdownRenderer content={msg.content} />
                     {msg.wasStopped && (

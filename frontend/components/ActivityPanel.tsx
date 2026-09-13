@@ -70,7 +70,7 @@ export default function ActivityPanel({
     setExpanded((v) => !v);
   };
 
-  if (!hasActivity && !isStreaming) return null;
+  if (!hasActivity && !isStreaming && totalTokens === 0) return null;
 
   // Build collapsed summary
   const summaryParts: string[] = [];
