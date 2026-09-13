@@ -1,7 +1,16 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import ItineraryCard from '@/components/ItineraryCard';
 import type { Itinerary } from '@/lib/types';
+
+const mockSwrData: Record<string, { data: any; isLoading: boolean }> = {};
+
+vi.mock('swr', () => ({
+  default: (key: string | null) => {
+    if (key === null) return { data: undefined, isLoading: false };
+    return mockSwrData[key] ?? { data: undefined, isLoading: true };
+  },
+}));
 
 const { MockMap } = vi.hoisted(() => {
   const React = require('react');
@@ -64,6 +73,11 @@ const makeItinerary = (overrides?: Partial<Itinerary>): Itinerary => ({
 });
 
 describe('ItineraryCard', () => {
+  beforeEach(() => {
+    for (const key of Object.keys(mockSwrData)) delete mockSwrData[key];
+    mockSwrData['wikimedia:Tokyo'] = { data: 'https://example.com/tokyo.jpg', isLoading: false };
+  });
+
   it('renders destination and budget', () => {
     render(<ItineraryCard itinerary={makeItinerary()} threadId="t1" />);
     expect(screen.getByText('Tokyo')).toBeInTheDocument();
@@ -178,5 +192,29 @@ describe('ItineraryCard', () => {
   it('does not show budget breakdown toggle in print mode', () => {
     render(<ItineraryCard itinerary={makeItinerary()} threadId="t1" printMode />);
     expect(screen.queryByText('Budget Breakdown')).not.toBeInTheDocument();
+  });
+
+  it('shows destination banner image when loaded', () => {
+    render(<ItineraryCard itinerary={makeItinerary()} threadId="t1" />);
+    expect(screen.getByAltText('Tokyo')).toBeInTheDocument();
+  });
+
+  it('shows skeleton while destination image is loading', () => {
+    mockSwrData['wikimedia:Tokyo'] = { data: undefined, isLoading: true };
+    const { container } = render(<ItineraryCard itinerary={makeItinerary()} threadId="t1" />);
+    expect(container.querySelector('.animate-pulse')).toBeInTheDocument();
+  });
+
+  it('shows gradient fallback when no destination image', () => {
+    mockSwrData['wikimedia:Tokyo'] = { data: null, isLoading: false };
+    render(<ItineraryCard itinerary={makeItinerary()} threadId="t1" />);
+    expect(screen.getByText('Tokyo')).toBeInTheDocument();
+    expect(screen.queryByAltText('Tokyo')).not.toBeInTheDocument();
+  });
+
+  it('shows destination name overlaid on banner image', () => {
+    render(<ItineraryCard itinerary={makeItinerary()} threadId="t1" />);
+    expect(screen.getByText('Tokyo')).toBeInTheDocument();
+    expect(screen.getByAltText('Tokyo')).toBeInTheDocument();
   });
 });
