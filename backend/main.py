@@ -84,6 +84,7 @@ from oauth import (
     create_session,
     delete_session,
     get_current_user,
+    is_admin_email,
     oauth,
     verify_admin,
 )
@@ -2650,7 +2651,13 @@ async def auth_me(user: dict = Depends(get_current_user)) -> AuthMeResponse:
 
     Requires a valid session cookie.
     """
-    return user
+    return AuthMeResponse(
+        user_id=user["user_id"],
+        display_name=user.get("display_name", ""),
+        avatar_url=user.get("avatar_url"),
+        email=user.get("email", user["user_id"]),
+        is_admin=is_admin_email(user.get("email") or user.get("user_id") or ""),
+    )
 
 
 # ─── Share & Export endpoints ───────────────────────────────────
