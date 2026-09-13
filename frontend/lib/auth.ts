@@ -6,6 +6,7 @@ export interface SessionUser {
   display_name: string;
   avatar_url: string | null;
   email: string;
+  is_admin: boolean;
 }
 
 let cachedUser: SessionUser | null = null;
