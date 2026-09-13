@@ -61,6 +61,23 @@ vi.mock('@/lib/feedback-api', () => ({
 const mockFetch = vi.fn();
 global.fetch = mockFetch as unknown as typeof fetch;
 
+// Mock getSession for AdminGuard
+const mockGetSession = vi.fn();
+vi.mock('@/lib/auth', () => ({
+  getSession: (...args: unknown[]) => mockGetSession(...args),
+}));
+
+// Mock window.location.href for redirect tests
+const mockLocationHref = vi.fn();
+delete (window as Partial<Window>).location;
+Object.defineProperty(window, 'location', {
+  value: {
+    get href() { return ''; },
+    set href(v: string) { mockLocationHref(v); },
+  },
+  writable: true,
+});
+
 // Import after mocks
 import AdminPage from '@/app/[locale]/admin/page';
 import { SessionsTable } from '@/components/admin/SessionsTable';
@@ -178,11 +195,20 @@ describe('AdminPage', () => {
     mockGetErrorSummary.mockResolvedValue(mockErrorSummary);
     mockGetUsage.mockResolvedValue(mockUsageData);
     mockFetch.mockResolvedValue({ ok: true, json: async () => ({}) });
+    mockGetSession.mockResolvedValue({
+      user_id: 'admin@example.com',
+      display_name: 'Admin',
+      avatar_url: null,
+      email: 'admin@example.com',
+      is_admin: true,
+    });
   });
 
-  it('renders tab bar with all tabs', () => {
+  it('renders tab bar with all tabs', async () => {
     render(<AdminPage />);
-    expect(screen.getByText('admin.tabSessions')).toBeDefined();
+    await waitFor(() => {
+      expect(screen.getByText('admin.tabSessions')).toBeDefined();
+    });
     expect(screen.getByText('admin.tabTrace')).toBeDefined();
     expect(screen.getByText('admin.tabErrors')).toBeDefined();
     expect(screen.getByText('admin.tabUsage')).toBeDefined();
@@ -194,6 +220,28 @@ describe('AdminPage', () => {
     render(<AdminPage />);
     await waitFor(() => {
       expect(mockGetSessions).toHaveBeenCalled();
+    });
+  });
+
+  it('shows access denied when user is not admin', async () => {
+    mockGetSession.mockResolvedValue({
+      user_id: 'user@example.com',
+      display_name: 'User',
+      avatar_url: null,
+      email: 'user@example.com',
+      is_admin: false,
+    });
+    render(<AdminPage />);
+    await waitFor(() => {
+      expect(screen.getByText('Access Denied')).toBeDefined();
+    });
+  });
+
+  it('redirects to login when not authenticated', async () => {
+    mockGetSession.mockResolvedValue(null);
+    render(<AdminPage />);
+    await waitFor(() => {
+      expect(mockLocationHref).toHaveBeenCalledWith('/login');
     });
   });
 
@@ -212,8 +260,10 @@ describe('AdminPage', () => {
 
   it('switches to errors tab', async () => {
     render(<AdminPage />);
-    const errorsTab = screen.getAllByText('admin.tabErrors')[0];
-    fireEvent.click(errorsTab);
+    await waitFor(() => {
+      expect(screen.getByText('admin.tabErrors')).toBeDefined();
+    });
+    fireEvent.click(screen.getByText('admin.tabErrors'));
     await waitFor(() => {
       expect(mockGetErrorSummary).toHaveBeenCalled();
       expect(mockGetErrors).toHaveBeenCalled();
@@ -222,8 +272,10 @@ describe('AdminPage', () => {
 
   it('switches to usage tab', async () => {
     render(<AdminPage />);
-    const usageTab = screen.getAllByText('admin.tabUsage')[0];
-    fireEvent.click(usageTab);
+    await waitFor(() => {
+      expect(screen.getByText('admin.tabUsage')).toBeDefined();
+    });
+    fireEvent.click(screen.getByText('admin.tabUsage'));
     await waitFor(() => {
       expect(mockGetUsage).toHaveBeenCalled();
     });
