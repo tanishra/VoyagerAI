@@ -2,7 +2,7 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Send, Square, RotateCcw, Globe, Search, ShieldAlert, ListChecks, Loader2, PanelLeft, ChevronDown, ChevronLeft, ChevronRight, Clock, Sparkles, Copy, Check, Pencil, X, Mic, Paperclip, FileText, Info } from 'lucide-react';
+import { Send, Square, RotateCcw, Globe, Search, ShieldAlert, ListChecks, Loader2, PanelLeft, ChevronDown, ChevronLeft, ChevronRight, Clock, Sparkles, Copy, Check, Pencil, X, Paperclip, FileText, Info } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useLocale } from '@/lib/useLocale';
 import { streamChat, cancelStream, regenerateStream, editStream, editItinerary } from '@/lib/chat-api';
@@ -26,11 +26,9 @@ import ActivityPanel from '@/components/ActivityPanel';
 import ComparisonView from './ComparisonView';
 import FeedbackButtons from '@/components/FeedbackButtons';
 import ThreadSidebar from './ThreadSidebar';
-import VoiceWaveform from '@/components/VoiceWaveform';
 import FilePreview from '@/components/FilePreview';
 import CurrencySwitcher from '@/components/CurrencySwitcher';
 import { useCurrency } from '@/lib/useCurrency';
-import { useVoiceInput } from '@/lib/useVoiceInput';
 import { stripStructuredTags } from '@/lib/utils';
 import { uploadFile, type UploadedFile } from '@/lib/upload-api';
 import type { ChatMessage, ComparisonData, Itinerary, ActivityData, BranchInfo, GeneratedImage, GeneratedChart } from '@/lib/types';
@@ -1330,27 +1328,7 @@ export default function ChatPage() {
     inputRef.current?.focus();
   }, [t]);
 
-  const { isSupported: voiceSupported, isRecording: isRecordingVoice, start: startRecording, stop: stopRecording, error: voiceError } = useVoiceInput({
-    locale,
-    onTranscript: (text) => {
-      setInput(text);
-      inputRef.current?.focus();
-    },
-  });
-
-  useEffect(() => {
-    if (!isRecordingVoice) return;
-    const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        stopRecording();
-      }
-    };
-    window.addEventListener('keydown', handleEscape);
-    return () => window.removeEventListener('keydown', handleEscape);
-  }, [isRecordingVoice, stopRecording]);
-
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (isRecordingVoice) return;
     if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
       handleSend();
@@ -1877,19 +1855,18 @@ export default function ChatPage() {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder={isRecordingVoice ? t('listening') : t('placeholder')}
+                placeholder={t('placeholder')}
                 rows={1}
-                disabled={loading || regenerating || isRecordingVoice}
+                disabled={loading || regenerating}
                 aria-label={t('messageInput')}
                 className="flex-1 bg-transparent border-0 text-sm text-foreground placeholder:text-muted-foreground/50 resize-none outline-none focus:ring-0 transition-colors disabled:opacity-50 max-h-32 leading-6"
               />
-              {isRecordingVoice && <VoiceWaveform isActive={isRecordingVoice} />}
               {uploading && (
                 <Loader2 className="w-4 h-4 animate-spin text-muted-foreground shrink-0" />
               )}
               <button
                 onClick={() => fileInputRef.current?.click()}
-                disabled={loading || regenerating || isRecordingVoice || uploading || pendingAttachments.length >= 3}
+                disabled={loading || regenerating || uploading || pendingAttachments.length >= 3}
                 className="shrink-0 p-2 rounded-lg bg-muted hover:bg-accent text-foreground transition-all disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
                 aria-label={t('attachFile')}
               >
@@ -1908,27 +1885,9 @@ export default function ChatPage() {
                   {t('stop')}
                 </button>
               )}
-              {voiceSupported && (
-                <button
-                  onClick={() => isRecordingVoice ? stopRecording() : startRecording()}
-                  disabled={loading || regenerating}
-                  className={`shrink-0 p-2 rounded-lg transition-all disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer ${
-                    isRecordingVoice
-                      ? 'bg-destructive hover:bg-destructive/90 text-white animate-pulse'
-                      : 'bg-muted hover:bg-accent text-foreground'
-                  }`}
-                  aria-label={isRecordingVoice ? t('stopRecording') : t('voiceInput')}
-                >
-                  {isRecordingVoice ? (
-                    <Square className="w-4 h-4 fill-current" />
-                  ) : (
-                    <Mic className="w-4 h-4" />
-                  )}
-                </button>
-              )}
               <button
                 onClick={() => handleSend()}
-                disabled={!input.trim() || loading || isRecordingVoice}
+                disabled={!input.trim() || loading || regenerating}
                 className="shrink-0 p-2 rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground transition-all disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
                 aria-label={t('send')}
               >
