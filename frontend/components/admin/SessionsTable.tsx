@@ -13,11 +13,11 @@ interface Props {
 }
 
 const STATUS_COLORS: Record<string, string> = {
-  running: 'bg-blue-950/50 text-blue-300 border-blue-800',
-  completed: 'bg-green-950/50 text-green-300 border-green-800',
-  error: 'bg-red-950/50 text-red-300 border-red-800',
-  cancelled: 'bg-yellow-950/50 text-yellow-300 border-yellow-800',
-  budget_reached: 'bg-orange-950/50 text-orange-300 border-orange-800',
+  running: 'bg-primary/10 text-primary border-primary/30',
+  completed: 'bg-chart-2/10 text-chart-2 border-chart-2/30',
+  error: 'bg-destructive/10 text-destructive border-destructive/30',
+  cancelled: 'bg-accent text-accent-foreground border-accent-foreground/30',
+  budget_reached: 'bg-chart-3/10 text-chart-3 border-chart-3/30',
 };
 
 export function SessionsTable({ onSelectSession }: Props) {
@@ -75,7 +75,7 @@ export function SessionsTable({ onSelectSession }: Props) {
       {/* Filters */}
       <div className="flex flex-wrap gap-3 items-center">
         <div className="relative flex-1 min-w-48">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-500" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <input
             type="text"
             placeholder={t('sessionSearch')}
@@ -84,7 +84,7 @@ export function SessionsTable({ onSelectSession }: Props) {
               setSearch(e.target.value);
               setPage(0);
             }}
-            className="w-full pl-10 pr-4 py-2 bg-neutral-900 border border-neutral-800 rounded-lg text-sm text-white placeholder-neutral-500 focus:border-blue-500 focus:outline-none"
+            className="w-full pl-10 pr-4 py-2 bg-card border border-border rounded-lg text-sm text-foreground placeholder-muted-foreground focus:border-primary focus:outline-none"
           />
         </div>
         <select
@@ -93,7 +93,7 @@ export function SessionsTable({ onSelectSession }: Props) {
             setStatusFilter(e.target.value);
             setPage(0);
           }}
-          className="px-3 py-2 bg-neutral-900 border border-neutral-800 rounded-lg text-sm text-white focus:border-blue-500 focus:outline-none"
+          className="px-3 py-2 bg-card border border-border rounded-lg text-sm text-foreground focus:border-primary focus:outline-none"
         >
           <option value="">{t('allStatuses')}</option>
           <option value="running">Running</option>
@@ -106,15 +106,15 @@ export function SessionsTable({ onSelectSession }: Props) {
       {/* Table */}
       {loading ? (
         <div className="flex items-center justify-center py-12">
-          <Loader2 className="w-6 h-6 animate-spin text-neutral-500" />
+          <Loader2 className="w-6 h-6 animate-spin text-primary" />
         </div>
       ) : error ? (
         <div className="text-center py-12">
-          <AlertCircle className="w-6 h-6 text-red-400 mx-auto mb-2" />
-          <p className="text-neutral-400 text-sm">{error}</p>
+          <AlertCircle className="w-6 h-6 text-destructive mx-auto mb-2" />
+          <p className="text-muted-foreground text-sm">{error}</p>
         </div>
       ) : sessions.length === 0 ? (
-        <div className="text-center py-12 text-neutral-500 text-sm">
+        <div className="text-center py-12 text-muted-foreground text-sm">
           {t('noSessions')}
         </div>
       ) : (
@@ -122,7 +122,7 @@ export function SessionsTable({ onSelectSession }: Props) {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="text-neutral-400 border-b border-neutral-800">
+                <tr className="text-muted-foreground border-b border-border">
                   <th className="text-left py-2 px-3 font-medium">{t('sessionStart')}</th>
                   <th className="text-left py-2 px-3 font-medium">{t('sessionUser')}</th>
                   <th className="text-left py-2 px-3 font-medium">{t('sessionDuration')}</th>
@@ -137,28 +137,28 @@ export function SessionsTable({ onSelectSession }: Props) {
                   <tr
                     key={s.thread_id}
                     onClick={() => onSelectSession(s.thread_id)}
-                    className="border-b border-neutral-800/50 hover:bg-neutral-900 cursor-pointer transition-colors"
+                    className="border-b border-border/50 hover:bg-muted cursor-pointer transition-colors"
                   >
-                    <td className="py-2 px-3 text-neutral-300 text-xs">
+                    <td className="py-2 px-3 text-foreground text-xs">
                       {formatDate(s.start_time)}
                     </td>
-                    <td className="py-2 px-3 text-neutral-400 font-mono text-xs">
+                    <td className="py-2 px-3 text-muted-foreground font-mono text-xs">
                       {s.user_hash}
                     </td>
-                    <td className="py-2 px-3 text-neutral-300">
+                    <td className="py-2 px-3 text-foreground">
                       {formatDuration(s.duration_seconds)}
                     </td>
-                    <td className="py-2 px-3 text-neutral-300">{s.subagent_count}</td>
-                    <td className="py-2 px-3 text-neutral-300 text-xs">
+                    <td className="py-2 px-3 text-foreground">{s.subagent_count}</td>
+                    <td className="py-2 px-3 text-foreground text-xs">
                       {(s.total_tokens_in / 1000).toFixed(1)}k / {(s.total_tokens_out / 1000).toFixed(1)}k
                     </td>
-                    <td className="py-2 px-3 text-neutral-300">
+                    <td className="py-2 px-3 text-foreground">
                       ${s.total_cost_usd.toFixed(4)}
                     </td>
                     <td className="py-2 px-3">
                       <span
                         className={`inline-block px-2 py-0.5 rounded text-xs border ${
-                          STATUS_COLORS[s.status] || 'bg-neutral-900 text-neutral-400 border-neutral-700'
+                          STATUS_COLORS[s.status] || 'bg-muted text-muted-foreground border-border'
                         }`}
                       >
                         {s.status}
@@ -172,21 +172,21 @@ export function SessionsTable({ onSelectSession }: Props) {
 
           {/* Pagination */}
           <div className="flex items-center justify-between">
-            <p className="text-xs text-neutral-500">
+            <p className="text-xs text-muted-foreground">
               {page * pageSize + 1}–{Math.min((page + 1) * pageSize, total)} of {total}
             </p>
             <div className="flex gap-2">
               <button
                 onClick={() => setPage((p) => Math.max(0, p - 1))}
                 disabled={page === 0}
-                className="p-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                className="p-1.5 rounded-lg bg-muted hover:bg-muted/70 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
               >
                 <ChevronLeft className="w-4 h-4" />
               </button>
               <button
                 onClick={() => setPage((p) => p + 1)}
                 disabled={(page + 1) * pageSize >= total}
-                className="p-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                className="p-1.5 rounded-lg bg-muted hover:bg-muted/70 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
               >
                 <ChevronRight className="w-4 h-4" />
               </button>
