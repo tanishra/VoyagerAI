@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Menu, X, ArrowRight, LogOut, ChevronDown } from 'lucide-react';
+import { Menu, X, ArrowRight, LogOut, ChevronDown, Shield } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
@@ -96,6 +96,7 @@ export default function Navbar() {
   }
 
   const isDevUser = user?.user_id === 'dev@localhost';
+  const isAdmin = user?.is_admin ?? false;
 
   return (
     <nav
@@ -172,6 +173,15 @@ export default function Navbar() {
                       <p className="text-sm font-medium text-foreground truncate">{user.display_name}</p>
                       <p className="text-xs text-muted-foreground truncate">{user.email}</p>
                     </div>
+                    {isAdmin && (
+                      <Link
+                        href={`/${locale}/admin`}
+                        className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-foreground hover:bg-muted transition-colors"
+                      >
+                        <Shield className="w-4 h-4" />
+                        {t('adminDashboard')}
+                      </Link>
+                    )}
                     <button
                       onClick={handleLogout}
                       className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-foreground hover:bg-muted transition-colors cursor-pointer"
