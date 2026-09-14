@@ -1,8 +1,8 @@
 # Stage 1: Builder — install dependencies
 FROM python:3.12-slim AS builder
 WORKDIR /app
-COPY requirements.txt .
-RUN pip install --no-cache-dir --user -r requirements.txt
+COPY requirements.lock.txt .
+RUN pip install --no-cache-dir --user -r requirements.lock.txt
 
 # Stage 2: Runtime — slim production image
 FROM python:3.12-slim AS runtime
