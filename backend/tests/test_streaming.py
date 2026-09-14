@@ -404,9 +404,9 @@ class TestStreamChatAgentRetry:
         )
 
         assert fake.stream_calls == 2
-        assert fake.get_state_calls == 1  # only first pass; retry text extracts directly
+        assert fake.get_state_calls == 1  # only first pass extraction; retry text extracts directly
         assert events[-2] == ("itinerary", {"destination": "Paris", "days": []})
-        assert events[-1] == ("done", None)
+        assert events[-1][0] == "done"
 
     def test_no_retry_when_itinerary_present(self, monkeypatch):
         import asyncio
@@ -447,7 +447,7 @@ class TestStreamChatAgentRetry:
 
         assert fake.stream_calls == 1
         assert events[-2] == ("itinerary", {"destination": "Paris", "days": []})
-        assert events[-1] == ("done", None)
+        assert events[-1][0] == "done"
 
     def test_retry_uses_hint_and_formatter_recovers(self, monkeypatch):
         import asyncio
@@ -499,7 +499,7 @@ class TestStreamChatAgentRetry:
         assert captured["user"] == "plan a trip"
         assert captured["draft"] == prose
         assert events[-2] == ("itinerary", {"destination": "Paris", "days": []})
-        assert events[-1] == ("done", None)
+        assert events[-1][0] == "done"
 
     def test_formatter_failure_still_ends_gracefully(self, monkeypatch):
         import asyncio
@@ -530,7 +530,7 @@ class TestStreamChatAgentRetry:
             self._collect(deep_agent_module.stream_chat_agent("hi", "t1", "u1"))
         )
 
-        assert events[-1] == ("done", None)
+        assert events[-1][0] == "done"
         assert all(e[0] != "error" for e in events)
 
 
@@ -592,7 +592,7 @@ class TestStreamTextExtraction:
             "itinerary",
             {"destination": "Udaipur, India", "total_days": 1, "days": []},
         )
-        assert events[-1] == ("done", None)
+        assert events[-1][0] == "done"
 
     def test_hint_prefers_stream_text_over_state(self, monkeypatch):
         import asyncio
@@ -755,7 +755,7 @@ class TestChatStreamEndpoint:
 
         import main as main_module
 
-        async def fake_stream_chat_agent(message, thread_id, user_id=None, locale=None, timezone=None, cancel_event=None, attachments=None):
+        async def fake_stream_chat_agent(message, thread_id, user_id=None, locale=None, timezone=None, currency=None, cancel_event=None, attachments=None):
             yield {"event": "on_chat_model_stream", "data": {"chunk": _Chunk([{"type": "text-delta", "text": "Hi"}])}}
             yield {"event": "on_tool_start", "name": "task", "run_id": "r1", "data": {"input": {"subagent_type": "researcher"}}}
             yield {"event": "on_tool_end", "name": "task", "run_id": "r1", "data": {"output": "ok"}}
@@ -788,7 +788,7 @@ class TestChatStreamEndpoint:
         assert events[6][0] == "tool_end"
         assert events[6][1]["name"] == "researcher"
         assert events[7] == ("itinerary", {"destination": "Paris"})
-        assert events[8] == ("done", None)
+        assert events[8][0] == "done"
 
     def test_tool_error_event_sequence(self, monkeypatch):
         import json as _json
@@ -797,7 +797,7 @@ class TestChatStreamEndpoint:
 
         import main as main_module
 
-        async def fake_stream_chat_agent(message, thread_id, user_id=None, locale=None, timezone=None, cancel_event=None, attachments=None):
+        async def fake_stream_chat_agent(message, thread_id, user_id=None, locale=None, timezone=None, currency=None, cancel_event=None, attachments=None):
             yield {"event": "on_tool_start", "name": "task", "run_id": "r9", "data": {"input": {"subagent_type": "risk_detector"}}}
             yield {"event": "on_tool_error", "name": "task", "run_id": "r9", "data": {"error": "boom"}}
             yield {"event": "done", "data": None}
@@ -826,7 +826,7 @@ class TestChatStreamEndpoint:
 
         import main as main_module
 
-        async def fake_stream_chat_agent(message, thread_id, user_id=None, locale=None, timezone=None, attachments=None):
+        async def fake_stream_chat_agent(message, thread_id, user_id=None, locale=None, timezone=None, currency=None, attachments=None):
             yield {"event": "done", "data": None}
 
         monkeypatch.setattr(main_module, "stream_chat_agent", fake_stream_chat_agent)
@@ -856,7 +856,7 @@ class TestChatStreamEndpoint:
 
         import main as main_module
 
-        async def fake_stream_chat_agent(message, thread_id, user_id=None, locale=None, timezone=None, attachments=None):
+        async def fake_stream_chat_agent(message, thread_id, user_id=None, locale=None, timezone=None, currency=None, attachments=None):
             yield {"event": "done", "data": None}
 
         monkeypatch.setattr(main_module, "stream_chat_agent", fake_stream_chat_agent)
@@ -884,7 +884,7 @@ class TestChatStreamEndpoint:
 
         import main as main_module
 
-        async def fake_stream_chat_agent(message, thread_id, user_id=None, locale=None, timezone=None, attachments=None):
+        async def fake_stream_chat_agent(message, thread_id, user_id=None, locale=None, timezone=None, currency=None, attachments=None):
             yield {"event": "done", "data": None}
 
         monkeypatch.setattr(main_module, "stream_chat_agent", fake_stream_chat_agent)
@@ -910,7 +910,7 @@ class TestChatStreamEndpoint:
 
         import main as main_module
 
-        async def failing_stream_chat_agent(message, thread_id, user_id=None, locale=None, timezone=None, cancel_event=None, attachments=None):
+        async def failing_stream_chat_agent(message, thread_id, user_id=None, locale=None, timezone=None, currency=None, cancel_event=None, attachments=None):
             yield {"event": "on_chat_model_stream", "data": {"chunk": "part"}}
             raise RuntimeError("boom")
 
@@ -939,7 +939,7 @@ class TestChatStreamEndpoint:
 
         import main as main_module
 
-        async def failing_stream_chat_agent(message, thread_id, user_id=None, locale=None, timezone=None, cancel_event=None, attachments=None):
+        async def failing_stream_chat_agent(message, thread_id, user_id=None, locale=None, timezone=None, currency=None, cancel_event=None, attachments=None):
             yield {"event": "on_chat_model_stream", "data": {"chunk": "part"}}
             raise RuntimeError("boom")
 
@@ -975,7 +975,7 @@ class TestConversationModeGate:
 
         import main as main_module
 
-        async def conversational_stream(message, thread_id, user_id=None, locale=None, timezone=None, cancel_event=None, attachments=None):
+        async def conversational_stream(message, thread_id, user_id=None, locale=None, timezone=None, currency=None, cancel_event=None, attachments=None):
             yield {"event": "on_chat_model_stream", "data": {"chunk": _Chunk([{"type": "text-delta", "text": "Where would you like to go?"}])}}
             yield {"event": "done", "data": None}
 

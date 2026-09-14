@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-from typing import ClassVar
 from unittest.mock import patch
 
 import pytest
@@ -32,11 +31,22 @@ def _create_dev_session():
 
 
 @pytest.fixture
-def fresh_store():
-    """A ThreadStore with no Redis connection — uses in-memory fallback."""
+def fresh_store(monkeypatch):
+    """A ThreadStore with no Redis/SQLite — uses in-memory fallback only."""
+    import threads as threads_module
+
     store = ThreadStore()
-    # Force in-memory mode by making _get_redis return None
-    store._redis = None
+
+    async def _no_redis():
+        return None
+
+    monkeypatch.setattr(store, "_get_redis", _no_redis)
+
+    async def _no_sqlite():
+        return None
+
+    monkeypatch.setattr(threads_module, "get_sqlite_connection", _no_sqlite)
+
     return store
 
 
@@ -56,7 +66,7 @@ def client(fresh_store, monkeypatch):
         yield c
 
 
-async def _fake_stream(message, thread_id, user_id=None, locale=None, timezone=None, cancel_event=None, attachments=None):
+async def _fake_stream(message, thread_id, user_id=None, locale=None, timezone=None, currency=None, cancel_event=None, attachments=None):
     yield {"event": "done", "data": None}
 
 

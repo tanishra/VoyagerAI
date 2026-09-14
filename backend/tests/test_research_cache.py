@@ -16,50 +16,44 @@ class TestResearchCache:
         return ResearchCache()
 
     def test_cache_miss_returns_none(self, cache: ResearchCache):
-        loop = asyncio.get_event_loop()
-        result = loop.run_until_complete(cache.get("nonexistent_key"))
+        result = asyncio.run(cache.get("nonexistent_key"))
         assert result is None
 
     def test_cache_set_then_get(self, cache: ResearchCache):
-        loop = asyncio.get_event_loop()
-        loop.run_until_complete(cache.set("key1", "cached result text"))
-        result = loop.run_until_complete(cache.get("key1"))
+        asyncio.run(cache.set("key1", "cached result text"))
+        result = asyncio.run(cache.get("key1"))
         assert result == "cached result text"
 
     def test_cache_ttl_expiry(self, cache: ResearchCache):
-        loop = asyncio.get_event_loop()
-        loop.run_until_complete(cache.set("key2", "expires soon", ttl=1))
-        result = loop.run_until_complete(cache.get("key2"))
+        asyncio.run(cache.set("key2", "expires soon", ttl=1))
+        result = asyncio.run(cache.get("key2"))
         assert result == "expires soon"
 
         time.sleep(1.1)
-        result = loop.run_until_complete(cache.get("key2"))
+        result = asyncio.run(cache.get("key2"))
         assert result is None
 
     def test_cache_invalidate_all(self, cache: ResearchCache):
-        loop = asyncio.get_event_loop()
-        loop.run_until_complete(cache.set("key3", "result1"))
-        loop.run_until_complete(cache.set("key4", "result2"))
-        loop.run_until_complete(cache.set("key5", "result3"))
+        asyncio.run(cache.set("key3", "result1"))
+        asyncio.run(cache.set("key4", "result2"))
+        asyncio.run(cache.set("key5", "result3"))
 
-        loop.run_until_complete(cache.invalidate_all())
+        asyncio.run(cache.invalidate_all())
 
-        assert loop.run_until_complete(cache.get("key3")) is None
-        assert loop.run_until_complete(cache.get("key4")) is None
-        assert loop.run_until_complete(cache.get("key5")) is None
+        assert asyncio.run(cache.get("key3")) is None
+        assert asyncio.run(cache.get("key4")) is None
+        assert asyncio.run(cache.get("key5")) is None
 
     def test_cache_invalidate_all_returns_count(self, cache: ResearchCache):
-        loop = asyncio.get_event_loop()
-        loop.run_until_complete(cache.set("key6", "result1"))
-        loop.run_until_complete(cache.set("key7", "result2"))
-        loop.run_until_complete(cache.set("key8", "result3"))
+        asyncio.run(cache.set("key6", "result1"))
+        asyncio.run(cache.set("key7", "result2"))
+        asyncio.run(cache.set("key8", "result3"))
 
-        count = loop.run_until_complete(cache.invalidate_all())
+        count = asyncio.run(cache.invalidate_all())
         assert count == 3
 
     def test_cache_stats_empty(self, cache: ResearchCache):
-        loop = asyncio.get_event_loop()
-        stats = loop.run_until_complete(cache.get_stats())
+        stats = asyncio.run(cache.get_stats())
         assert stats["total_entries"] == 0
         assert stats["cache_hits"] == 0
         assert stats["cache_misses"] == 0

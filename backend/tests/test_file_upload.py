@@ -33,10 +33,14 @@ def _create_dev_session():
 
 
 @pytest.fixture
-def fresh_file_store():
+def fresh_file_store(monkeypatch):
     """A FileStore with no Redis connection — uses in-memory fallback."""
     store = FileStore()
-    store._redis = None
+
+    async def _no_redis():
+        return None
+
+    monkeypatch.setattr(store, "_get_redis", _no_redis)
     return store
 
 
@@ -56,7 +60,7 @@ def client(fresh_file_store, monkeypatch):
         yield c
 
 
-async def _fake_stream(message, thread_id, user_id=None, locale=None, timezone=None, cancel_event=None, attachments=None):
+async def _fake_stream(message, thread_id, user_id=None, locale=None, timezone=None, currency=None, cancel_event=None, attachments=None):
     yield {"event": "done", "data": None}
 
 

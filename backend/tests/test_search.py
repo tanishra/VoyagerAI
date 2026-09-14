@@ -8,10 +8,22 @@ from threads import ThreadStore
 
 
 @pytest.fixture
-def fresh_store():
-    """A ThreadStore with no Redis connection — uses in-memory fallback."""
+def fresh_store(monkeypatch):
+    """A ThreadStore with no Redis/SQLite — uses in-memory fallback only."""
+    import threads as threads_module
+
     store = ThreadStore()
-    store._redis = None
+
+    async def _no_redis():
+        return None
+
+    monkeypatch.setattr(store, "_get_redis", _no_redis)
+
+    async def _no_sqlite():
+        return None
+
+    monkeypatch.setattr(threads_module, "get_sqlite_connection", _no_sqlite)
+
     return store
 
 

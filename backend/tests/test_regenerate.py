@@ -59,7 +59,7 @@ class TestRegenerateEndpoint:
 
         captured_thread_id = []
 
-        async def fake_regenerate(*, thread_id, user_id, locale, timezone, cancel_event):
+        async def fake_regenerate(*, thread_id, user_id, locale, timezone, currency=None, cancel_event=None):
             captured_thread_id.append(thread_id)
             yield {"event": "done", "data": None}
 
@@ -86,7 +86,7 @@ class TestRegenerateEndpoint:
         """Regenerate endpoint returns a valid SSE stream with events."""
         import main as main_module
 
-        async def fake_regenerate(*, thread_id, user_id, locale, timezone, cancel_event):
+        async def fake_regenerate(*, thread_id, user_id, locale, timezone, currency=None, cancel_event=None):
             yield {"event": "on_chat_model_stream", "data": {"chunk": "Hi"}}
             yield {"event": "done", "data": None}
 
@@ -107,7 +107,7 @@ class TestRegenerateEndpoint:
         """Cancel event is respected during regeneration."""
         import main as main_module
 
-        async def fake_regenerate(*, thread_id, user_id, locale, timezone, cancel_event):
+        async def fake_regenerate(*, thread_id, user_id, locale, timezone, currency=None, cancel_event=None):
             yield {"event": "on_chat_model_stream", "data": {"chunk": "partial"}}
             if cancel_event:
                 cancel_event.set()
@@ -130,7 +130,7 @@ class TestRegenerateEndpoint:
         """If regenerate raises, an error SSE event is emitted."""
         import main as main_module
 
-        async def failing_regenerate(*, thread_id, user_id, locale, timezone, cancel_event):
+        async def failing_regenerate(*, thread_id, user_id, locale, timezone, currency=None, cancel_event=None):
             raise RuntimeError("boom")
 
         monkeypatch.setattr(main_module, "regenerate_chat_agent", failing_regenerate)

@@ -30,7 +30,7 @@ def _create_dev_session():
 def _make_capturing_stream(captured: list):
     """Return an async generator that captures the locale kwarg."""
 
-    async def _stream(*, message, thread_id, user_id, locale=None, timezone=None, cancel_event=None, attachments=None):
+    async def _stream(*, message, thread_id, user_id, locale=None, timezone=None, currency=None, cancel_event=None, attachments=None):
         captured.append(locale)
         yield {"event": "thread_id", "data": {"thread_id": thread_id}}
         yield {"event": "done", "data": None}
@@ -45,7 +45,7 @@ def client(monkeypatch):
 
     monkeypatch.setenv("GEMINI_API_KEY", "test-key-for-locale-tests")
 
-    async def _fake_stream(*, message, thread_id, user_id, locale=None, timezone=None, cancel_event=None, attachments=None):
+    async def _fake_stream(*, message, thread_id, user_id, locale=None, timezone=None, currency=None, cancel_event=None, attachments=None):
         yield {"event": "thread_id", "data": {"thread_id": thread_id}}
         yield {"event": "done", "data": None}
 

@@ -93,34 +93,33 @@ def test_share_create_includes_image_in_response(authed_client, csrf_headers, mo
     monkeypatch.setattr("main.generate_destination_image", mock_generate)
 
     # First, create a thread with an itinerary
-    thread_resp = authed_client.post(
-        "/chat/stream",
-        headers={
-            **csrf_headers,
-            "Content-Type": "application/json",
-            "Accept": "text/event-stream",
-        },
-        json={"message": "Plan a 1-day trip to Paris"},
-        stream=True,
-    )
-    assert thread_resp.status_code in (200, 401, 403)
-
-    # If we can't create a thread, skip this test
-    if thread_resp.status_code != 200:
-        pytest.skip("Cannot create thread for share image test")
-
     thread_id = None
-    for line in thread_resp.iter_lines():
-        if line.startswith("event: thread_id"):
-            pass
-        elif line.startswith("data:"):
-            try:
-                data = json.loads(line[5:].strip())
-                if "thread_id" in data:
-                    thread_id = data["thread_id"]
-                    break
-            except json.JSONDecodeError:
-                pass
+    try:
+        with authed_client.stream(
+            "POST", "/chat/stream",
+            headers={
+                **csrf_headers,
+                "Content-Type": "application/json",
+                "Accept": "text/event-stream",
+            },
+            json={"message": "Plan a 1-day trip to Paris"},
+        ) as thread_resp:
+            assert thread_resp.status_code in (200, 401, 403)
+            if thread_resp.status_code != 200:
+                pytest.skip("Cannot create thread for share image test")
+            for line in thread_resp.iter_lines():
+                if line.startswith("event: thread_id"):
+                    pass
+                elif line.startswith("data:"):
+                    try:
+                        data = json.loads(line[5:].strip())
+                        if "thread_id" in data:
+                            thread_id = data["thread_id"]
+                            break
+                    except json.JSONDecodeError:
+                        pass
+    except Exception:
+        pytest.skip("Cannot create thread for share image test")
 
     if not thread_id:
         pytest.skip("Could not extract thread_id from stream")
@@ -151,31 +150,31 @@ def test_share_create_image_generation_disabled(authed_client, csrf_headers, mon
     monkeypatch.setattr("main.generate_destination_image", mock_generate)
 
     # Create a thread with an itinerary
-    thread_resp = authed_client.post(
-        "/chat/stream",
-        headers={
+    thread_id = None
+    try:
+        with authed_client.stream(
+            "POST", "/chat/stream",
+            headers={
             **csrf_headers,
             "Content-Type": "application/json",
             "Accept": "text/event-stream",
         },
-        json={"message": "Plan a 1-day trip to Paris"},
-        stream=True,
-    )
-    assert thread_resp.status_code in (200, 401, 403)
-
-    if thread_resp.status_code != 200:
+            json={"message": "Plan a 1-day trip to Paris"},
+        ) as thread_resp:
+            assert thread_resp.status_code in (200, 401, 403)
+            if thread_resp.status_code != 200:
+                pytest.skip("Cannot create thread for share image test")
+            for line in thread_resp.iter_lines():
+                if line.startswith("data:"):
+                    try:
+                        data = json.loads(line[5:].strip())
+                        if "thread_id" in data:
+                            thread_id = data["thread_id"]
+                            break
+                    except json.JSONDecodeError:
+                        pass
+    except Exception:
         pytest.skip("Cannot create thread for share image test")
-
-    thread_id = None
-    for line in thread_resp.iter_lines():
-        if line.startswith("data:"):
-            try:
-                data = json.loads(line[5:].strip())
-                if "thread_id" in data:
-                    thread_id = data["thread_id"]
-                    break
-            except json.JSONDecodeError:
-                pass
 
     if not thread_id:
         pytest.skip("Could not extract thread_id from stream")

@@ -233,4 +233,4 @@ class TestPendingVisuals:
 def asyncio_run(coro):
     import asyncio
 
-    return asyncio.get_event_loop().run_until_complete(coro) if not asyncio.iscoroutinefunction(coro) else asyncio.run(coro)
+    return asyncio.run(coro)

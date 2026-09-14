@@ -16,11 +16,14 @@ from security_store import SecurityStore, _hash_user_id
 
 
 @pytest.fixture
-def store():
+def store(monkeypatch):
     """Fresh SecurityStore with in-memory fallback (no Redis)."""
     s = SecurityStore()
-    # Force in-memory mode by setting _redis to a sentinel that always fails
-    s._redis = None
+
+    async def _no_redis():
+        return None
+
+    monkeypatch.setattr(s, "_get_redis", _no_redis)
     return s
 
 

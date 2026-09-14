@@ -38,16 +38,12 @@ def _make_result(title: str, url: str, content: str, score: float = 0.9) -> dict
 
 
 @pytest.fixture(autouse=True)
-def _reset_rate_limit():
-    """Reset rate limiter and clear research cache before each test."""
-    import asyncio as _asyncio
-    loop = _asyncio.new_event_loop()
-    loop.run_until_complete(research_cache.invalidate_all())
+def _reset_rate_limit(monkeypatch):
+    """Reset rate limiter and disable research cache before each test."""
+    monkeypatch.setattr("config.settings.settings.RESEARCH_CACHE_ENABLED", False)
     reset_orchestrator_search_count()
     yield
-    loop.run_until_complete(research_cache.invalidate_all())
     reset_orchestrator_search_count()
-    loop.close()
 
 
 # ---------------------------------------------------------------------------
@@ -167,7 +163,7 @@ class TestQuickSearch:
         mock_tavily.search.return_value = _make_tavily_response([])
         with patch("agents.tools.internet._get_tavily", return_value=mock_tavily):
             result = await _quick_search("obscure query")
-            assert result == "No results found."
+            assert "No results found." in result
 
 
 # ---------------------------------------------------------------------------

@@ -32,10 +32,14 @@ def _create_dev_session():
 
 
 @pytest.fixture
-def fresh_share_store():
+def fresh_share_store(monkeypatch):
     """A ShareStore with no Redis connection — uses in-memory fallback."""
     store = ShareStore()
-    store._redis = None
+
+    async def _no_redis():
+        return None
+
+    monkeypatch.setattr(store, "_get_redis", _no_redis)
     return store
 
 
