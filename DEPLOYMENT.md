@@ -177,3 +177,42 @@ docker compose exec backend python -c "import urllib.request; print(urllib.reque
 # Check frontend
 docker compose exec frontend wget -qO- http://localhost:3000/
 ```
+
+## Dependency Management
+
+### Backend lockfile (`requirements.lock.txt`)
+
+The backend uses a pinned lockfile for reproducible Docker builds:
+
+- **`requirements.txt`** is the source of truth (human-edited, loose ranges).
+- **`requirements.lock.txt`** is the build artifact (exact versions, generated).
+- The Dockerfile installs from `requirements.lock.txt` to ensure identical deps across builds.
+
+**Regenerating the lockfile after bumping a dependency:**
+
+```bash
+# Create a clean venv to avoid capturing dev/local packages
+python3.12 -m venv /tmp/lockfile-venv
+/tmp/lockfile-venv/bin/pip install -r backend/requirements.txt
+/tmp/lockfile-venv/bin/pip freeze | sort > backend/requirements.lock.txt
+rm -rf /tmp/lockfile-venv
+
+# Verify no known vulnerabilities
+pip-audit -r backend/requirements.lock.txt
+```
+
+### Frontend npm audit
+
+All npm vulnerabilities have been resolved (0 critical, 0 high, 0 moderate, 0 low):
+
+- **`serialize-javascript`**: Forced to `^7.0.5` via `overrides` in `package.json`. This is a build-time-only dependency (webpack/workbox plugin), not shipped in the runtime bundle. Upstream `@ducanh2912/next-pwa` hasn't released a fix yet, so the override is the correct interim measure.
+- **`sharp`**: Resolved via `npm audit fix` (transitive dep of Next.js).
+- **`vitest`/`vite`/`undici`**: Upgraded to latest versions to fix dev-dependency vulnerabilities.
+
+### CI/CD pipeline
+
+GitHub Actions (`.github/workflows/ci.yml`) runs on every PR and push to `main`:
+
+- **Backend job**: Redis service container, `ruff check`, `pytest tests/ -v`.
+- **Frontend job**: `tsc --noEmit`, `eslint`, `vitest run`, `next build`.
+- **Audit job**: `pip-audit` + `npm audit --production` (informational, non-blocking).
