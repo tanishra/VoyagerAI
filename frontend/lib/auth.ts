@@ -49,7 +49,6 @@ export function clearSessionCache() {
   cachedUser = null;
   cachedNull = false;
   fetchPromise = null;
-  clearSessionToken();
 }
 
 export async function logout(): Promise<void> {
@@ -63,6 +62,7 @@ export async function logout(): Promise<void> {
     // ignore — cookie clearing is the important part
   }
   clearSessionCache();
+  clearSessionToken();
 }
 
 export function getLoginUrl(): string {
