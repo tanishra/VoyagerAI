@@ -216,3 +216,67 @@ GitHub Actions (`.github/workflows/ci.yml`) runs on every PR and push to `main`:
 - **Backend job**: Redis service container, `ruff check`, `pytest tests/ -v`.
 - **Frontend job**: `tsc --noEmit`, `eslint`, `vitest run`, `next build`.
 - **Audit job**: `pip-audit` + `npm audit --production` (informational, non-blocking).
+
+---
+
+## Production Deployment: Hugging Face Spaces (Backend) & Vercel (Frontend)
+
+### Part A: Deploying Backend to Hugging Face Spaces
+
+1. **Create Space on Hugging Face**:
+   - Go to [huggingface.co/new-space](https://huggingface.co/new-space)
+   - **Name**: e.g. `voyager-ai-backend`
+   - **License**: `MIT`
+   - **SDK**: `Docker` (Select **Blank**)
+   - **Visibility**: `Public` (Required so your Vercel frontend can call the API endpoints)
+
+2. **Add Remote & Push Backend Subtree**:
+   ```bash
+   # Add Hugging Face Space as a remote
+   git remote add hf https://huggingface.co/spaces/<your-hf-username>/<your-space-name>
+
+   # Deploy backend/ subdirectory via git subtree
+   git subtree push --prefix backend hf main
+   ```
+   *Note: If the Space was created with an initial commit, use force split push:*
+   ```bash
+   git subtree split --prefix backend -b hf-deploy
+   git push -f hf hf-deploy:main
+   git branch -D hf-deploy
+   ```
+
+3. **Configure Space Settings (Variables & Secrets)**:
+   In your Space, navigate to **Settings > Variables and secrets**:
+
+   **Secrets:**
+   - `GEMINI_API_KEY`: Your Google Gemini API Key
+   - `TAVILY_API_KEY`: Your Tavily Search API Key
+   - `SESSION_SECRET_KEY`: A strong 32+ character random string (e.g. generated via `python -c "import secrets; print(secrets.token_urlsafe(32))"`)
+   - `API_AUTH_KEY`: (Optional) If running with `AUTH_MODE=production`
+
+   **Variables:**
+   - `AUTH_MODE`: `development` (recommended for zero-setup mock auth) or `production`
+   - `CORS_ORIGINS`: `https://<your-vercel-domain>.vercel.app,http://localhost:3000`
+   - `CHECKPOINTER_BACKEND`: `sqlite`
+   - `STORE_BACKEND`: `memory`
+
+4. **Verify Backend Status**:
+   - Once the build succeeds, test the health endpoint:
+     `https://<your-hf-username>-<your-space-name>.hf.space/health`
+   - Expected response: `{"status":"ok",...}`
+
+---
+
+### Part B: Deploying Frontend to Vercel
+
+1. **Import Repository on Vercel**:
+   - Connect your GitHub repository to Vercel.
+   - **Root Directory**: Select `frontend`.
+   - **Framework Preset**: Next.js.
+
+2. **Configure Environment Variables in Vercel**:
+   - `NEXT_PUBLIC_API_URL`: `https://<your-hf-username>-<your-space-name>.hf.space`
+
+3. **Deploy**:
+   - Click **Deploy**. Vercel will run `npm install` and `next build` automatically.
+
