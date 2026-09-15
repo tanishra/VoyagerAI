@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
-from agents.deep_agent import _extract_chat_itinerary, _looks_like_itinerary_draft
+from agents.deep_agent import (
+    _extract_chat_itinerary,
+    _looks_like_comparison_draft,
+    _looks_like_itinerary_draft,
+    _strip_untagged_plan_prose,
+)
 
 
 class _Msg:
@@ -89,3 +94,80 @@ class TestLooksLikeItineraryDraft:
     def test_empty_text(self):
         assert _looks_like_itinerary_draft("") is False
         assert _looks_like_itinerary_draft(None) is False
+
+
+class TestLooksLikeComparisonDraft:
+    """Regression: the model sometimes writes a full 3-tier comparison plan
+    (Budget/Balanced/Premium) in prose without wrapping it in <comparison>
+    tags. This heuristic lets the untagged-response gate still trigger
+    structured extraction and the _format_comparison recovery pass."""
+
+    def test_detects_untagged_comparison_plan(self):
+        text = (
+            "Here are three itinerary options for your 2-day trip to Chandigarh:\n\n"
+            "Budget Plan\n"
+            "Accommodation: Budget Hostel\n"
+            "Food: Street food\n"
+            "Activities: Free attractions\n"
+            "Transport: Walking\n"
+            "Total Cost: ₹90 per person\n\n"
+            "Balanced Plan\n"
+            "Accommodation: Mid-range hotel\n"
+            "Food: Mix of local restaurants and street food\n"
+            "Activities: Includes some paid activities\n"
+            "Transport: Public transport\n"
+            "Total Cost: ₹270 per person\n\n"
+            "Premium Plan\n"
+            "Accommodation: Luxury hotel\n"
+            "Food: Fine dining\n"
+            "Activities: Private tours\n"
+            "Transport: Taxi\n"
+            "Total Cost: ₹860 per person\n"
+        )
+        assert _looks_like_comparison_draft(text) is True
+
+    def test_ignores_plain_conversation(self):
+        text = "I'd prefer the premium option, what do you think?"
+        assert _looks_like_comparison_draft(text) is False
+
+    def test_ignores_single_tier_mention(self):
+        text = "The budget plan sounds great. Let me know the total cost."
+        assert _looks_like_comparison_draft(text) is False
+
+    def test_empty_text(self):
+        assert _looks_like_comparison_draft("") is False
+        assert _looks_like_comparison_draft(None) is False
+
+
+class TestStripUntaggedPlanProse:
+    """Tests for stripping untagged plan prose from displayed chat text."""
+
+    def test_strips_untagged_itinerary_prose(self):
+        text = (
+            "Here's your plan for Chandigarh.\n\n"
+            "Day 1: Explore the city\n"
+            "Morning: Visit Rock Garden\n"
+            "Afternoon: Sukhna Lake\n"
+        )
+        result = _strip_untagged_plan_prose(text, "itinerary")
+        assert "Day 1" not in result
+        assert "See the plan below." in result
+
+    def test_strips_untagged_comparison_prose(self):
+        text = (
+            "Here are three options:\n\n"
+            "Budget Plan\nAccommodation: Hostel\nTotal Cost: ₹90\n\n"
+            "Balanced Plan\nAccommodation: Hotel\nTotal Cost: ₹270\n"
+        )
+        result = _strip_untagged_plan_prose(text, "comparison")
+        assert "Budget Plan" not in result
+        assert "See the plan below." in result
+
+    def test_keeps_text_without_marker(self):
+        text = "Just a conversational reply with no plan markers."
+        result = _strip_untagged_plan_prose(text, "itinerary")
+        assert result == text
+
+    def test_empty_text(self):
+        assert _strip_untagged_plan_prose("", "itinerary") == ""
+        assert _strip_untagged_plan_prose(None, "comparison") is None

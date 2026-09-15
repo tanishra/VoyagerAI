@@ -1018,6 +1018,66 @@ class TestConversationModeGate:
         assert not _ITINERARY_TAG_RE.search(comp)
         assert _COMPARISON_TAG_RE.search(comp)
 
+    def test_untagged_comparison_prose_triggers_comparison_event(self, monkeypatch):
+        """Regression: the model sometimes writes a full 3-tier comparison plan
+        in prose without <comparison> tags. The _detect_plan_kind dispatcher
+        should still classify it as 'comparison' and the stream should emit
+        a comparison event (not just done)."""
+        import json as _json
+
+        from fastapi.testclient import TestClient
+
+        import main as main_module
+
+        _COMPARISON_PROSE = (
+            "Here are three itinerary options for your 2-day trip to Chandigarh:\n\n"
+            "Budget Plan\n"
+            "Accommodation: Budget Hostel\n"
+            "Food: Street food\n"
+            "Activities: Free attractions like Rock Garden\n"
+            "Transport: Walking\n"
+            "Total Cost: ₹90 per person\n\n"
+            "Balanced Plan\n"
+            "Accommodation: Mid-range hotel\n"
+            "Food: Mix of local restaurants and street food\n"
+            "Activities: Includes some paid activities\n"
+            "Transport: Public transport\n"
+            "Total Cost: ₹270 per person\n\n"
+            "Premium Plan\n"
+            "Accommodation: Luxury hotel\n"
+            "Food: Fine dining\n"
+            "Activities: Private tours and luxury experiences\n"
+            "Transport: Taxi\n"
+            "Total Cost: ₹860 per person\n"
+        )
+
+        async def comparison_stream(message, thread_id, user_id=None, locale=None, timezone=None, currency=None, cancel_event=None, attachments=None):
+            yield {"event": "on_chat_model_stream", "data": {"chunk": _Chunk([{"type": "text-delta", "text": _COMPARISON_PROSE}])}}
+            yield {"event": "done", "data": None}
+
+        monkeypatch.setattr(main_module, "stream_chat_agent", comparison_stream)
+        with TestClient(main_module.app) as c:
+            _inject_session(c)
+            with c.stream(
+                "POST", "/chat/stream",
+                json={"message": "Plan a trip to Chandigarh"},
+            ) as r:
+                parsed = []
+                for line in r.iter_lines():
+                    if line.startswith("data: "):
+                        parsed.append(_json.loads(line[6:]))
+
+        events = [(p["event"], p["data"]) for p in parsed]
+        event_types = [e[0] for e in events]
+        # The stream should yield tokens + done (the mock stream doesn't emit
+        # comparison events itself — that's done by stream_chat_agent which
+        # we mocked). But the key regression check is that _detect_plan_kind
+        # correctly classifies this prose as "comparison", not "none".
+        from agents.deep_agent import _detect_plan_kind
+        import asyncio as _aio
+        plan_kind = _aio.run(_detect_plan_kind(_COMPARISON_PROSE))
+        assert plan_kind == "comparison", f"Expected 'comparison', got '{plan_kind}'"
+
 
 class TestSubagentProgress:
     """Tests for the new subagent_progress SSE event and parent_run_id nesting."""

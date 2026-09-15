@@ -7,6 +7,8 @@ import json
 from agents.deep_agent import (
     _extract_comparison_from_text,
     _find_largest_comparison_object,
+    _format_comparison,
+    _detect_plan_kind,
 )
 
 _SAMPLE_COMPARISON = {
@@ -75,3 +77,86 @@ class TestComparisonFallbackExtraction:
 
     def test_returns_none_for_plain_text(self):
         assert _find_largest_comparison_object("no json here") is None
+
+
+class TestFormatComparison:
+    """Tests for the _format_comparison structured-recovery pass."""
+
+    def test_returns_dict_on_success(self, monkeypatch):
+        from agents import deep_agent as _da
+
+        class _MockResult:
+            def model_dump(self):
+                return _SAMPLE_COMPARISON
+
+        async def _fake_ainvoke(self, messages):
+            return _MockResult()
+
+        monkeypatch.setattr(_da, "_comparison_formatter_model", type("M", (), {"ainvoke": _fake_ainvoke})())
+        result = _format_comparison.__wrapped__("draft text", "user msg") if hasattr(_format_comparison, "__wrapped__") else None
+
+        # If not wrapped, call directly via asyncio
+        if result is None:
+            import asyncio as _aio
+
+            result = _aio.run(_format_comparison("draft text", "user msg"))
+        assert result is not None
+        assert "plans" in result
+        assert len(result["plans"]) == 3
+
+    def test_returns_none_on_exception(self, monkeypatch):
+        import asyncio as _aio
+
+        from agents import deep_agent as _da
+
+        async def _raising_ainvoke(self, messages):
+            raise RuntimeError("model down")
+
+        monkeypatch.setattr(_da, "_comparison_formatter_model", type("M", (), {"ainvoke": _raising_ainvoke})())
+        result = _aio.run(_format_comparison("draft", "msg"))
+        assert result is None
+
+
+class TestDetectPlanKind:
+    """Tests for the _detect_plan_kind shared dispatcher."""
+
+    def test_comparison_tag_detected(self):
+        import asyncio as _aio
+
+        text = f"<comparison>{json.dumps(_SAMPLE_COMPARISON)}</comparison>"
+        assert _aio.run(_detect_plan_kind(text)) == "comparison"
+
+    def test_itinerary_tag_detected(self):
+        import asyncio as _aio
+
+        text = '<itinerary>{"destination": "Paris", "days": []}</itinerary>'
+        assert _aio.run(_detect_plan_kind(text)) == "itinerary"
+
+    def test_comparison_heuristic_detected(self):
+        import asyncio as _aio
+
+        text = (
+            "Budget Plan\nAccommodation: Hostel\nTotal Cost: ₹90\n\n"
+            "Balanced Plan\nAccommodation: Hotel\nTotal Cost: ₹270\n"
+        )
+        assert _aio.run(_detect_plan_kind(text)) == "comparison"
+
+    def test_itinerary_heuristic_detected(self):
+        import asyncio as _aio
+
+        text = (
+            "Day 1: Explore\nMorning: Visit museum\nAfternoon: Walk\nEvening: Dinner\n"
+            "Day 2: More\nMorning: Cafe\nAfternoon: Park\nEvening: Show\n"
+        )
+        assert _aio.run(_detect_plan_kind(text)) == "itinerary"
+
+    def test_none_for_empty_text(self):
+        import asyncio as _aio
+
+        assert _aio.run(_detect_plan_kind("")) == "none"
+        assert _aio.run(_detect_plan_kind(None)) == "none"
+
+    def test_classifier_fallback_returns_none_for_short_text(self):
+        import asyncio as _aio
+
+        assert _aio.run(_detect_plan_kind("Short conversational reply")) == "none"

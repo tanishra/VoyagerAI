@@ -18,7 +18,7 @@ from pydantic import BaseModel
 
 from agents.activity_store import load_activity, load_all_activity, save_activity
 from agents.tools import is_visual_tool, set_current_thread_id
-from agents.llm import get_formatter_model, get_orchestrator_model
+from agents.llm import get_formatter_model, get_orchestrator_model, get_subagent_model
 from agents.prompts import build_chat_agent_prompt
 from agents.subagents import get_subagents
 from agents.tools import get_orchestrator_tools, reset_orchestrator_search_count
@@ -612,6 +612,34 @@ def _looks_like_itinerary_draft(text: str) -> bool:
     time_slots = len(_ITINERARY_SLOT_RE.findall(text))
     return day_headers >= 2 and time_slots >= 3
 
+
+_TIER_HEADER_RE = re.compile(
+    r"\b(?:budget|balanced|premium|luxury|economy|standard)\s+plan\b",
+    re.IGNORECASE,
+)
+_COST_KEYWORD_RE = re.compile(
+    r"\b(?:total\s+cost|cost\s+breakdown|per\s+person|accommodation|activities|transport|food)\b",
+    re.IGNORECASE,
+)
+
+
+def _looks_like_comparison_draft(text: str) -> bool:
+    """Heuristic: detect a 3-tier comparison plan written in prose without tags.
+
+    The model sometimes produces a full budget/balanced/premium plan comparison
+    (the content the app renders as a comparison card) but forgets to wrap it
+    in <comparison> tags. This detects that pattern by requiring >=2 distinct
+    tier mentions AND >=2 cost-related keywords, mirroring the conservative
+    AND-based design of _looks_like_itinerary_draft.
+    """
+    if not text:
+        return False
+    tier_matches = _TIER_HEADER_RE.findall(text)
+    distinct_tiers = len({m.lower().split()[0] for m in tier_matches})
+    cost_hits = len(_COST_KEYWORD_RE.findall(text))
+    return distinct_tiers >= 2 and cost_hits >= 2
+
+
 # Strip complete and partial structured blocks from displayed text
 _STRIP_COMPLETE_RE = re.compile(r"<(?:comparison|itinerary)>[\s\S]*?</(?:comparison|itinerary)>", re.DOTALL)
 _STRIP_PARTIAL_RE = re.compile(r"<(?:comparison|itinerary)>[\s\S]*$")
@@ -852,6 +880,143 @@ async def _format_itinerary(draft_text: str, user_message: str) -> dict | None:
         return None
 
 
+class _ComparisonPlan(BaseModel):
+    tier: str
+    itinerary: _ItineraryDraft | None = None
+    cost_breakdown: dict | None = None
+    tradeoffs: list[str] = []
+
+
+class _ComparisonDraft(BaseModel):
+    plans: list[_ComparisonPlan]
+    comparison_matrix: dict | None = None
+
+
+_comparison_formatter_model = None
+
+
+async def _format_comparison(draft_text: str, user_message: str) -> dict | None:
+    """Structured recovery pass: force valid comparison JSON from the draft.
+
+    Mirrors _format_itinerary but for 3-tier comparison plans. Uses
+    with_structured_output so the model must emit schema-conforming JSON
+    via function-call generation instead of free-form text.
+    """
+    global _comparison_formatter_model
+    try:
+        if _comparison_formatter_model is None:
+            _comparison_formatter_model = get_formatter_model(_ComparisonDraft)
+        result = await _comparison_formatter_model.ainvoke(
+            [
+                (
+                    "system",
+                    ("You are a comparison-plan JSON formatter. Extract or repair "
+                    "the 3-tier comparison (budget/balanced/premium) from the assistant "
+                    "draft. Return ONLY the comparison object with every plan populated."),
+                ),
+                (
+                    "user",
+                    f"User request: {user_message}\n\nAssistant draft:\n{draft_text}",
+                ),
+            ]
+        )
+        if result is None:
+            return None
+        return result.model_dump()
+    except Exception:
+        logger.warning("structured comparison formatter failed", exc_info=True)
+        return None
+
+
+# Loose pre-filter keywords for the cheap classifier fallback
+_PLAN_LIKE_RE = re.compile(
+    r"\b(?:day\s*\d|itinerary|budget\s+plan|balanced\s+plan|premium\s+plan|"
+    r"total\s+cost|cost\s+breakdown|accommodation|activities|transport|"
+    r"morning|afternoon|evening|destination|per\s+person)\b",
+    re.IGNORECASE,
+)
+
+
+async def _classify_plan_intent(text: str) -> str:
+    """Cheap LLM classifier fallback for plan detection.
+
+    Called only when tag regexes AND heuristics both miss, but the text
+    looks plan-like enough (length + keyword pre-filter) to justify one
+    cheap model call. Returns 'itinerary', 'comparison', or 'none'.
+    Never raises — returns 'none' on any failure.
+    """
+    if not text or len(text) < 400 or not _PLAN_LIKE_RE.search(text):
+        return "none"
+    try:
+        model = get_subagent_model()
+        result = await model.ainvoke(
+            [
+                (
+                    "system",
+                    ("Classify the assistant's travel-planning response into exactly "
+                    "one word: 'itinerary' (a single day-by-day plan), 'comparison' "
+                    "(multiple budget tiers like budget/balanced/premium), or 'none' "
+                    "(a conversational reply, clarifying question, or non-plan text). "
+                    "Respond with ONLY the word, nothing else."),
+                ),
+                ("user", text[:4000]),
+            ]
+        )
+        label = result.content.strip().lower() if hasattr(result, "content") else ""
+        if label in ("itinerary", "comparison"):
+            return label
+        return "none"
+    except Exception:
+        logger.warning("plan-intent classifier failed", exc_info=True)
+        return "none"
+
+
+async def _detect_plan_kind(stream_text: str) -> str:
+    """Shared dispatcher: determine what kind of plan (if any) the response contains.
+
+    Returns 'itinerary', 'comparison', or 'none'. Checks fast regex heuristics
+    first, then falls back to a cheap LLM classifier for edge cases.
+    """
+    if not stream_text:
+        return "none"
+    if _COMPARISON_TAG_RE.search(stream_text):
+        return "comparison"
+    if _ITINERARY_TAG_RE.search(stream_text):
+        return "itinerary"
+    if _looks_like_comparison_draft(stream_text):
+        return "comparison"
+    if _looks_like_itinerary_draft(stream_text):
+        return "itinerary"
+    return await _classify_plan_intent(stream_text)
+
+
+# Markers for stripping untagged plan prose from displayed chat text
+_UNTAGGED_DAY_START_RE = re.compile(r"\n\s*day\s*1\s*[:\-]", re.IGNORECASE)
+_UNTAGGED_TIER_START_RE = re.compile(
+    r"\n\s*(?:budget|balanced|premium|luxury|economy|standard)\s+plan\b",
+    re.IGNORECASE,
+)
+
+
+def _strip_untagged_plan_prose(text: str, kind: str) -> str:
+    """Remove untagged plan prose from displayed text, keeping the conversational lead-in.
+
+    For untagged recovery paths: truncate at the first Day 1 / tier-plan
+    marker so the card is the single source of truth. Appends a short
+    trailer if the remaining text is non-empty.
+    """
+    if not text:
+        return text
+    marker_re = _UNTAGGED_DAY_START_RE if kind == "itinerary" else _UNTAGGED_TIER_START_RE
+    match = marker_re.search(text)
+    if match:
+        lead_in = text[: match.start()].strip()
+        if lead_in:
+            return lead_in + "\n\nSee the plan below."
+        return "See the plan below."
+    return text
+
+
 async def stream_chat_agent(
     message: str,
     thread_id: str,
@@ -957,28 +1122,23 @@ async def stream_chat_agent(
         logger.warning("Failed to persist cost data for thread %s", thread_id, exc_info=True)
 
     stream_text = stream.last_text()
-    logger.info("stream finished: last_text len=%d, has_tags=%s", len(stream_text), bool(stream_text and (_ITINERARY_TAG_RE.search(stream_text) or _COMPARISON_TAG_RE.search(stream_text))))
+    plan_kind = await _detect_plan_kind(stream_text)
+    logger.info("stream finished: last_text len=%d, plan_kind=%s", len(stream_text), plan_kind)
 
-    # Only attempt structured extraction if the agent's response contains
-    # itinerary or comparison tags, or looks like an untagged day-by-day
-    # itinerary draft — plain conversational responses (clarifying
-    # questions, suggestions, etc.) should pass through without extraction.
-    has_tags = bool(stream_text and (
-        _ITINERARY_TAG_RE.search(stream_text)
-        or _COMPARISON_TAG_RE.search(stream_text)
-        or _looks_like_itinerary_draft(stream_text)
-    ))
-
-    if not has_tags:
-        # Conversational response — no extraction needed
+    if plan_kind == "none":
         yield {"event": "done", "data": {"budget_reached": stream._budget_reached}}
         return
 
-    # Check for comparison (3-plan) output first
-    comparison = _extract_comparison_from_text(stream_text) if stream_text else None
+    comparison = None
+    itinerary = None
 
-    if comparison is None:
-        # Fall back to single itinerary (refinement turns)
+    if plan_kind == "comparison":
+        comparison = _extract_comparison_from_text(stream_text) if stream_text else None
+        if comparison is None:
+            # Structured recovery pass for untagged comparison drafts
+            comparison = await _format_comparison(stream_text, message)
+    else:
+        # plan_kind == "itinerary"
         itinerary = _extract_itinerary_from_text(stream_text) if stream_text else None
         if itinerary is None:
             state = await agent.aget_state(config)
@@ -1013,8 +1173,6 @@ async def stream_chat_agent(
         if itinerary is None:
             draft = stream_text or _last_assistant_text(state.values)
             itinerary = await _format_itinerary(draft, message)
-    else:
-        itinerary = None
 
     try:
         if comparison is not None:
@@ -1126,22 +1284,22 @@ async def regenerate_chat_agent(
         logger.warning("Failed to persist cost data for thread %s", thread_id, exc_info=True)
 
     stream_text = stream.last_text()
-    logger.info("regenerate finished: last_text len=%d, has_tags=%s", len(stream_text), bool(stream_text and (_ITINERARY_TAG_RE.search(stream_text) or _COMPARISON_TAG_RE.search(stream_text))))
+    plan_kind = await _detect_plan_kind(stream_text)
+    logger.info("regenerate finished: last_text len=%d, plan_kind=%s", len(stream_text), plan_kind)
 
-    has_tags = bool(stream_text and (
-        _ITINERARY_TAG_RE.search(stream_text)
-        or _COMPARISON_TAG_RE.search(stream_text)
-        or _looks_like_itinerary_draft(stream_text)
-    ))
-
-    if not has_tags:
+    if plan_kind == "none":
         yield {"event": "done", "data": {"budget_reached": stream._budget_reached}}
         return
 
-    # Same extraction logic as stream_chat_agent
-    comparison = _extract_comparison_from_text(stream_text) if stream_text else None
+    comparison = None
+    itinerary = None
 
-    if comparison is None:
+    if plan_kind == "comparison":
+        comparison = _extract_comparison_from_text(stream_text) if stream_text else None
+        if comparison is None:
+            comparison = await _format_comparison(stream_text, "")
+    else:
+        # plan_kind == "itinerary"
         itinerary = _extract_itinerary_from_text(stream_text) if stream_text else None
         if itinerary is None:
             state = await agent.aget_state(forked_config)
@@ -1176,8 +1334,6 @@ async def regenerate_chat_agent(
         if itinerary is None:
             draft = stream_text or _last_assistant_text(state.values)
             itinerary = await _format_itinerary(draft, "")
-    else:
-        itinerary = None
 
     try:
         if comparison is not None:
@@ -1289,21 +1445,22 @@ async def edit_chat_agent(
         logger.warning("Failed to persist cost data for thread %s", thread_id, exc_info=True)
 
     stream_text = stream.last_text()
-    logger.info("edit finished: last_text len=%d, has_tags=%s", len(stream_text), bool(stream_text and (_ITINERARY_TAG_RE.search(stream_text) or _COMPARISON_TAG_RE.search(stream_text))))
+    plan_kind = await _detect_plan_kind(stream_text)
+    logger.info("edit finished: last_text len=%d, plan_kind=%s", len(stream_text), plan_kind)
 
-    has_tags = bool(stream_text and (
-        _ITINERARY_TAG_RE.search(stream_text)
-        or _COMPARISON_TAG_RE.search(stream_text)
-        or _looks_like_itinerary_draft(stream_text)
-    ))
-
-    if not has_tags:
+    if plan_kind == "none":
         yield {"event": "done", "data": {"budget_reached": stream._budget_reached}}
         return
 
-    comparison = _extract_comparison_from_text(stream_text) if stream_text else None
+    comparison = None
+    itinerary = None
 
-    if comparison is None:
+    if plan_kind == "comparison":
+        comparison = _extract_comparison_from_text(stream_text) if stream_text else None
+        if comparison is None:
+            comparison = await _format_comparison(stream_text, new_message)
+    else:
+        # plan_kind == "itinerary"
         itinerary = _extract_itinerary_from_text(stream_text) if stream_text else None
         if itinerary is None:
             state = await agent.aget_state(forked_config)
@@ -1329,14 +1486,14 @@ async def edit_chat_agent(
                 return
 
             stream_text = stream.last_text() or retry.last_text()
-            comparison = _extract_comparison_from_text(stream_text) if stream_text else None
-            if comparison is None:
-                itinerary = _extract_itinerary_from_text(stream_text) if stream_text else None
-                if itinerary is None:
-                    state = await agent.aget_state(forked_config)
-                    itinerary = _extract_chat_itinerary(state.values)
-            else:
-                itinerary = None
+            itinerary = _extract_itinerary_from_text(stream_text) if stream_text else None
+            if itinerary is None:
+                state = await agent.aget_state(forked_config)
+                itinerary = _extract_chat_itinerary(state.values)
+
+        if itinerary is None:
+            draft = stream_text or _last_assistant_text(state.values)
+            itinerary = await _format_itinerary(draft, new_message)
 
     try:
         if comparison is not None:
