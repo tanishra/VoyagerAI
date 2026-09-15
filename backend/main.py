@@ -149,14 +149,6 @@ app = FastAPI(
     openapi_url=None,
 )
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
 _use_secure_cookies = settings.AUTH_MODE == "production" or any(orig.startswith("https://") for orig in ALLOWED_ORIGINS)
 
 app.add_middleware(
@@ -231,6 +223,18 @@ async def csrf_middleware(request: Request, call_next):
             max_age=7 * 24 * 3600,
         )
     return response
+
+# CORSMiddleware must be added LAST so it becomes the outermost middleware layer.
+# Starlette's add_middleware() prepends to the stack (last added = outermost),
+# guaranteeing CORS headers are applied to every response, including errors,
+# 401s, 429s, and 503s raised by any of the middlewares registered above.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # --- Docs endpoints: open in dev, admin-protected in production ---
 _docs_deps: list = [] if settings.AUTH_MODE == "development" else [

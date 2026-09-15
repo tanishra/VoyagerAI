@@ -19,28 +19,22 @@ function CallbackContent() {
 
     // Store session token from URL for cross-domain auth (fallback when cookies are blocked)
     if (token) {
-      console.log('[auth/callback] Storing session token from URL');
       setSessionToken(token);
       clearSessionCache();
       // Clean the token from the URL for security
       window.history.replaceState({}, '', '/auth/callback?success=1');
-    } else {
-      console.log('[auth/callback] No token in URL — relying on cookie only');
     }
 
     let cancelled = false;
-    console.log('[auth/callback] Calling getSession()...');
     getSession().then((user) => {
       if (cancelled) return;
-      console.log('[auth/callback] getSession result:', user);
       if (user) {
         router.push('/chat');
       } else {
         setError(true);
       }
-    }).catch((err) => {
-      console.error('[auth/callback] getSession error:', err);
-      setError(true);
+    }).catch(() => {
+      if (!cancelled) setError(true);
     });
     return () => { cancelled = true; };
   }, [router, initialSuccess, token]);
