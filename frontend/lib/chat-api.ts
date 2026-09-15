@@ -1,5 +1,5 @@
 import type { BranchInfo, ChatStreamCallbacks, ComparisonData, GeneratedChart, GeneratedImage, Itinerary, UsageEntry } from './types';
-import { getCsrfHeaders } from './csrf';
+import { getApiHeaders } from './api-headers';
 
 const MAX_RETRIES = 3;
 const RETRY_DELAYS = [1000, 2000, 4000];
@@ -40,11 +40,11 @@ export async function streamChat(
   let resolvedThreadId: string | undefined;
 
   const url = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/chat/stream`;
-  const headers = {
+  const headers = getApiHeaders({
     'Content-Type': 'application/json',
     Accept: 'text/event-stream',
     ...(body.locale ? { 'Accept-Language': body.locale } : {}),
-  };
+  });
   const bodyStr = JSON.stringify(body);
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
@@ -195,7 +195,7 @@ export async function cancelStream(threadId: string): Promise<void> {
       `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/chat/cancel`,
       {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...getCsrfHeaders() },
+        headers: getApiHeaders({ 'Content-Type': 'application/json' }),
         credentials: 'include',
         body: JSON.stringify({ thread_id: threadId }),
       },
@@ -319,11 +319,11 @@ export async function regenerateStream(
   let resolvedThreadId: string | undefined;
 
   const url = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/chat/regenerate`;
-  const headers = {
+  const headers = getApiHeaders({
     'Content-Type': 'application/json',
     Accept: 'text/event-stream',
     ...(body.locale ? { 'Accept-Language': body.locale } : {}),
-  };
+  });
   const bodyStr = JSON.stringify(body);
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
@@ -425,11 +425,11 @@ export async function editItinerary(
   let resolvedThreadId: string | undefined;
 
   const url = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/chat/${body.thread_id}/edit-itinerary`;
-  const headers = {
+  const headers = getApiHeaders({
     'Content-Type': 'application/json',
     Accept: 'text/event-stream',
     ...(body.locale ? { 'Accept-Language': body.locale } : {}),
-  };
+  });
   const bodyStr = JSON.stringify(body);
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
@@ -527,7 +527,7 @@ export async function getBranches(threadId: string): Promise<BranchInfo[]> {
   try {
     const res = await fetch(
       `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/threads/${threadId}/branches`,
-      { credentials: 'include' },
+      { headers: getApiHeaders(), credentials: 'include' },
     );
     if (res.status === 401) {
       window.location.href = '/login';
@@ -549,11 +549,11 @@ export async function editStream(
   let resolvedThreadId: string | undefined;
 
   const url = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/chat/edit`;
-  const headers = {
+  const headers = getApiHeaders({
     'Content-Type': 'application/json',
     Accept: 'text/event-stream',
     ...(body.locale ? { 'Accept-Language': body.locale } : {}),
-  };
+  });
   const bodyStr = JSON.stringify(body);
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {

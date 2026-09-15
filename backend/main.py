@@ -9,7 +9,7 @@ import secrets
 import uuid
 from dataclasses import asdict
 
-from fastapi import Depends, FastAPI, HTTPException, Request, UploadFile, File as FastAPIFile
+from fastapi import Depends, FastAPI, HTTPException, Request, UploadFile, File as FastAPIFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_swagger_ui_html, get_redoc_html
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
@@ -157,11 +157,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+_use_secure_cookies = settings.AUTH_MODE == "production" or any(orig.startswith("https://") for orig in ALLOWED_ORIGINS)
+
 app.add_middleware(
     SessionMiddleware,
     secret_key=settings.SESSION_SECRET_KEY,
-    same_site="lax",
-    https_only=settings.AUTH_MODE == "production",
+    same_site="none" if _use_secure_cookies else "lax",
+    https_only=_use_secure_cookies,
 )
 
 
@@ -224,8 +226,8 @@ async def csrf_middleware(request: Request, call_next):
             CSRF_COOKIE_NAME,
             secrets.token_urlsafe(32),
             httponly=False,
-            samesite="lax",
-            secure=settings.AUTH_MODE == "production",
+            samesite="none" if _use_secure_cookies else "lax",
+            secure=_use_secure_cookies,
             max_age=7 * 24 * 3600,
         )
     return response
@@ -2552,6 +2554,7 @@ async def update_thread(
     response_model=None,
     responses={
         302: {"description": "Redirect to Google OAuth consent screen"},
+        503: {"description": "Google OAuth is not configured on this server"},
     },
 )
 async def auth_login(request: Request) -> RedirectResponse:
@@ -2561,7 +2564,21 @@ async def auth_login(request: Request) -> RedirectResponse:
 
     **Returns:** 302 redirect — no JSON response.
     """
+    if not hasattr(oauth, "google") or not (settings.GOOGLE_CLIENT_ID and settings.GOOGLE_CLIENT_SECRET):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                "Google OAuth is not configured. Please set GOOGLE_CLIENT_ID and "
+                "GOOGLE_CLIENT_SECRET in your Hugging Face Space secrets or environment variables."
+            ),
+        )
+
     redirect_uri = settings.OAUTH_REDIRECT_URI
+    if "localhost" in redirect_uri and "localhost" not in str(request.base_url):
+        proto = request.headers.get("x-forwarded-proto", request.url.scheme)
+        host = request.headers.get("x-forwarded-host", request.url.netloc)
+        redirect_uri = f"{proto}://{host}/auth/callback"
+
     return await oauth.google.authorize_redirect(request, redirect_uri)
 
 
@@ -2573,6 +2590,7 @@ async def auth_login(request: Request) -> RedirectResponse:
     responses={
         302: {"description": "Redirect to frontend with session cookie set"},
         400: {"description": "No email in Google response"},
+        503: {"description": "Google OAuth is not configured"},
     },
 )
 async def auth_callback(request: Request) -> RedirectResponse:
@@ -2582,6 +2600,12 @@ async def auth_callback(request: Request) -> RedirectResponse:
 
     **Returns:** 302 redirect with `Set-Cookie` header.
     """
+    if not hasattr(oauth, "google") or not (settings.GOOGLE_CLIENT_ID and settings.GOOGLE_CLIENT_SECRET):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Google OAuth is not configured.",
+        )
+
     token = await oauth.google.authorize_access_token(request)
     user_info = token.get("userinfo") or {}
     email = user_info.get("email")
@@ -2594,11 +2618,21 @@ async def auth_callback(request: Request) -> RedirectResponse:
         "email": email,
     }
     session_id = await create_session(session_data)
-    resp = RedirectResponse(url="http://localhost:3000/auth/callback?success=1")
+
+    frontend_url = "http://localhost:3000"
+    if ALLOWED_ORIGINS:
+        https_origins = [orig for orig in ALLOWED_ORIGINS if orig.startswith("https://")]
+        if https_origins:
+            frontend_url = https_origins[0]
+        elif ALLOWED_ORIGINS[0] != "*":
+            frontend_url = ALLOWED_ORIGINS[0]
+
+    resp = RedirectResponse(url=f"{frontend_url.rstrip('/')}/auth/callback?success=1")
     resp.set_cookie(
         SESSION_COOKIE_NAME, session_id,
-        max_age=SESSION_TTL, httponly=True, samesite="lax",
-        secure=settings.AUTH_MODE == "production",
+        max_age=SESSION_TTL, httponly=True,
+        samesite="none" if _use_secure_cookies else "lax",
+        secure=_use_secure_cookies,
     )
     return resp
 
@@ -2624,7 +2658,11 @@ async def auth_logout(request: Request) -> AuthLogoutResponse:
     if session_id:
         await delete_session(session_id)
     response = JSONResponse({"status": "ok"})
-    response.delete_cookie(SESSION_COOKIE_NAME)
+    response.delete_cookie(
+        SESSION_COOKIE_NAME,
+        samesite="none" if _use_secure_cookies else "lax",
+        secure=_use_secure_cookies,
+    )
     return response
 
 
@@ -2771,7 +2809,14 @@ async def create_share_link(
         user_id, thread_id, itinerary_json, destination, image_base64=image_base64,
     )
     locale = extract_locale(request) or "en"
-    share_url = f"http://localhost:3000/{locale}/share/{token}"
+    frontend_url = "http://localhost:3000"
+    if ALLOWED_ORIGINS:
+        https_origins = [orig for orig in ALLOWED_ORIGINS if orig.startswith("https://")]
+        if https_origins:
+            frontend_url = https_origins[0]
+        elif ALLOWED_ORIGINS[0] != "*":
+            frontend_url = ALLOWED_ORIGINS[0]
+    share_url = f"{frontend_url.rstrip('/')}/{locale}/share/{token}"
     logger.info("Created share link for user=%s thread=%s token=%s", user_id, thread_id, token[:8])
     return {"share_url": share_url, "expires_at": expires_at, "destination": destination}
 

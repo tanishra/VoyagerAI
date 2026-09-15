@@ -1,5 +1,5 @@
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-import { getCsrfHeaders } from './csrf';
+import { getApiHeaders } from './api-headers';
 
 export interface FeedbackPayload {
   thread_id: string;
@@ -21,7 +21,7 @@ export async function submitFeedback(
 ): Promise<{ status: string; rating: string }> {
   const res = await fetch(`${API_BASE}/feedback`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...getCsrfHeaders() },
+    headers: getApiHeaders({ 'Content-Type': 'application/json' }),
     credentials: 'include',
     body: JSON.stringify(payload),
   });
@@ -38,6 +38,7 @@ export async function submitFeedback(
 
 export async function getFeedbackAggregate(): Promise<FeedbackAggregate> {
   const res = await fetch(`${API_BASE}/admin/feedback`, {
+    headers: getApiHeaders(),
     credentials: 'include',
   });
 

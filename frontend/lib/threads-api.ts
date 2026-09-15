@@ -1,6 +1,6 @@
 import type { Itinerary, ComparisonData, ActivityData, BranchInfo, GeneratedImage, GeneratedChart } from '@/lib/types';
 import { putThreads, getAllCachedThreads, putThreadHistory, getCachedThreadHistory, clearOldThreads } from './offline-db';
-import { getCsrfHeaders } from './csrf';
+import { getApiHeaders } from './api-headers';
 
 export interface ThreadMeta {
   thread_id: string;
@@ -47,6 +47,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 export async function listThreads(offset: number = 0): Promise<ThreadListResponse> {
   try {
     const res = await fetch(`${API_URL}/threads?offset=${offset}`, {
+      headers: getApiHeaders(),
       credentials: 'include',
     });
     if (res.status === 401) {
@@ -79,6 +80,7 @@ export async function getThreadHistory(threadId: string, checkpointId?: string):
       url.searchParams.set('checkpoint_id', checkpointId);
     }
     const res = await fetch(url.toString(), {
+      headers: getApiHeaders(),
       credentials: 'include',
     });
     if (res.status === 401) {
@@ -99,6 +101,7 @@ export async function getThreadHistory(threadId: string, checkpointId?: string):
 export async function getBranches(threadId: string): Promise<BranchInfo[]> {
   try {
     const res = await fetch(`${API_URL}/threads/${threadId}/branches`, {
+      headers: getApiHeaders(),
       credentials: 'include',
     });
     if (res.status === 401) {
@@ -117,7 +120,7 @@ export async function deleteThread(threadId: string): Promise<boolean> {
   try {
     const res = await fetch(`${API_URL}/threads/${threadId}`, {
       method: 'DELETE',
-      headers: { ...getCsrfHeaders() },
+      headers: getApiHeaders(),
       credentials: 'include',
     });
     if (res.status === 401) {
@@ -134,6 +137,7 @@ export async function searchThreads(query: string, offset: number = 0): Promise<
   try {
     const params = new URLSearchParams({ q: query, offset: String(offset) });
     const res = await fetch(`${API_URL}/threads/search?${params}`, {
+      headers: getApiHeaders(),
       credentials: 'include',
     });
     if (res.status === 401) {
@@ -151,7 +155,7 @@ export async function updateThread(threadId: string, pinned: boolean): Promise<b
   try {
     const res = await fetch(`${API_URL}/threads/${threadId}`, {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json', ...getCsrfHeaders() },
+      headers: getApiHeaders({ 'Content-Type': 'application/json' }),
       credentials: 'include',
       body: JSON.stringify({ pinned }),
     });

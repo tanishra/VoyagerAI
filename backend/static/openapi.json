@@ -2487,6 +2487,9 @@
           },
           "302": {
             "description": "Redirect to Google OAuth consent screen"
+          },
+          "503": {
+            "description": "Google OAuth is not configured on this server"
           }
         }
       }
@@ -2513,6 +2516,9 @@
           },
           "400": {
             "description": "No email in Google response"
+          },
+          "503": {
+            "description": "Google OAuth is not configured"
           }
         }
       }

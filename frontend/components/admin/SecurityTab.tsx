@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Loader2, AlertCircle, Shield, ShieldAlert, Clock, UserX } from 'lucide-react';
 import { useTranslations } from 'next-intl';
+import { getApiHeaders } from '@/lib/api-headers';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -34,8 +35,8 @@ export function SecurityTab() {
     setError(null);
     try {
       const [flagsRes, cooldownsRes] = await Promise.all([
-        fetch(`${API_BASE}/admin/security/flags?period=week`, { credentials: 'include' }),
-        fetch(`${API_BASE}/admin/security/cooldowns`, { credentials: 'include' }),
+        fetch(`${API_BASE}/admin/security/flags?period=week`, { headers: getApiHeaders(), credentials: 'include' }),
+        fetch(`${API_BASE}/admin/security/cooldowns`, { headers: getApiHeaders(), credentials: 'include' }),
       ]);
       if (flagsRes.status === 401) window.location.href = '/login';
       if (!flagsRes.ok) throw new Error('Failed to fetch flags');
@@ -62,6 +63,7 @@ export function SecurityTab() {
     try {
       await fetch(`${API_BASE}/admin/security/cooldowns/${userHash}`, {
         method: 'DELETE',
+        headers: getApiHeaders(),
         credentials: 'include',
       });
       setCooldowns((prev) => prev.filter((c) => c.user_hash !== userHash));

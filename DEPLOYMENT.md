@@ -276,6 +276,7 @@ GitHub Actions (`.github/workflows/ci.yml`) runs on every PR and push to `main`:
 
 2. **Configure Environment Variables in Vercel**:
    - `NEXT_PUBLIC_API_URL`: `https://<your-hf-username>-<your-space-name>.hf.space`
+   - `NEXT_PUBLIC_API_AUTH_KEY`: Set to the same secret string as `API_AUTH_KEY` in your Hugging Face Space secrets (required when `AUTH_MODE=production`).
 
 3. **Deploy**:
    - Click **Deploy**. Vercel will run `npm install` and `next build` automatically.

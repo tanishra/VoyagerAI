@@ -10,6 +10,7 @@ import { TopUsersTable } from '@/components/admin/TopUsersTable';
 import { TokenEfficiencyTable } from '@/components/admin/TokenEfficiencyTable';
 import FeedbackSummary from '@/components/admin/FeedbackSummary';
 import { getFeedbackAggregate, type FeedbackAggregate } from '@/lib/feedback-api';
+import { getApiHeaders } from '@/lib/api-headers';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -53,6 +54,7 @@ export function CostsTab() {
     try {
       if (p === 'live') {
         const res = await fetch(`${API_BASE}/admin/costs/live?hours=24`, {
+          headers: getApiHeaders(),
           credentials: 'include',
         });
         if (res.status === 401) {
@@ -63,6 +65,7 @@ export function CostsTab() {
         setLiveData(data);
       } else {
         const res = await fetch(`${API_BASE}/admin/costs?period=${p}`, {
+          headers: getApiHeaders(),
           credentials: 'include',
         });
         if (res.status === 401) {

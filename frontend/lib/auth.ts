@@ -1,5 +1,5 @@
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-import { getCsrfHeaders } from './csrf';
+import { getApiHeaders } from './api-headers';
 
 export interface SessionUser {
   user_id: string;
@@ -21,7 +21,10 @@ export async function getSession(): Promise<SessionUser | null> {
 
   fetchPromise = (async () => {
     try {
-      const res = await fetch(`${API_URL}/auth/me`, { credentials: 'include' });
+      const res = await fetch(`${API_URL}/auth/me`, {
+        headers: getApiHeaders(),
+        credentials: 'include',
+      });
       if (!res.ok) {
         if (res.status === 401) {
           cachedNull = true;
@@ -51,7 +54,7 @@ export async function logout(): Promise<void> {
   try {
     await fetch(`${API_URL}/auth/logout`, {
       method: 'POST',
-      headers: { ...getCsrfHeaders() },
+      headers: getApiHeaders(),
       credentials: 'include',
     });
   } catch {
