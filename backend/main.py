@@ -3002,7 +3002,19 @@ async def _start_thread_cleanup_task() -> None:
             except Exception:  # noqa: BLE001
                 logger.warning("SQLite fallback cleanup task error", exc_info=True)
 
-    asyncio.create_task(_cleanup_loop())
+    app.state._cleanup_task = asyncio.create_task(_cleanup_loop())
+
+
+@app.on_event("shutdown")
+async def _cancel_thread_cleanup_task() -> None:
+    """Cancel the background cleanup task on shutdown."""
+    task = getattr(app.state, "_cleanup_task", None)
+    if task is not None:
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
 
 
 # --- Prometheus metrics endpoint (Phase 7.4) ---

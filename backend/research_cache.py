@@ -36,7 +36,7 @@ class ResearchCache:
     async def _get_redis(self) -> Redis | None:
         if self._redis is None:
             try:
-                self._redis = Redis.from_url(REDIS_URL, decode_responses=True)
+                self._redis = Redis.from_url(REDIS_URL, decode_responses=True, socket_connect_timeout=2, socket_timeout=2)
                 await self._redis.ping()
                 logger.info("ResearchCache connected to Redis at %s", REDIS_URL)
             except (RedisError, RuntimeError) as exc:
@@ -132,6 +132,18 @@ class ResearchCache:
                 return count
             except (RedisError, RuntimeError) as exc:
                 logger.warning("ResearchCache invalidate_all Redis error: %s", exc)
+
+        # SQLite fallback
+        db = await get_sqlite_connection()
+        if db is not None:
+            try:
+                cur = await db.execute("DELETE FROM research_cache")
+                await db.commit()
+                count = cur.rowcount
+                self._mem_cache.clear()
+                return max(count, 0)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("ResearchCache invalidate_all SQLite error: %s", exc)
 
         count = len(self._mem_cache)
         self._mem_cache.clear()

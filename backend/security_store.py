@@ -52,7 +52,7 @@ class SecurityStore:
     async def _get_redis(self) -> Redis | None:
         if self._redis is None:
             try:
-                self._redis = Redis.from_url(REDIS_URL, decode_responses=True)
+                self._redis = Redis.from_url(REDIS_URL, decode_responses=True, socket_connect_timeout=2, socket_timeout=2)
                 await self._redis.ping()
                 logger.info("SecurityStore connected to Redis at %s", REDIS_URL)
             except (RedisError, RuntimeError) as exc:

@@ -55,7 +55,7 @@ DEV_USER: dict = {
 async def _get_redis() -> Redis | None:
     """Get a Redis connection for session storage."""
     try:
-        r = Redis.from_url(settings.REDIS_URL, decode_responses=True)
+        r = Redis.from_url(settings.REDIS_URL, decode_responses=True, socket_connect_timeout=2, socket_timeout=2)
         await r.ping()
         return r
     except (RedisError, RuntimeError) as exc:
