@@ -1,5 +1,5 @@
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-import { getApiHeaders } from './api-headers';
+import { withAuthParams } from './api-headers';
 
 export interface ObservabilitySession {
   thread_id: string;
@@ -88,8 +88,7 @@ export interface UsageData {
 }
 
 async function _fetch<T>(path: string): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
-    headers: getApiHeaders(),
+  const res = await fetch(withAuthParams(`${API_BASE}${path}`), {
     credentials: 'include',
   });
   if (res.status === 401) {

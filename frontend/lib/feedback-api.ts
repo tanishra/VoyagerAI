@@ -1,5 +1,5 @@
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-import { getApiHeaders } from './api-headers';
+import { withAuthParams } from './api-headers';
 
 export interface FeedbackPayload {
   thread_id: string;
@@ -19,9 +19,8 @@ export interface FeedbackAggregate {
 export async function submitFeedback(
   payload: FeedbackPayload,
 ): Promise<{ status: string; rating: string }> {
-  const res = await fetch(`${API_BASE}/feedback`, {
+  const res = await fetch(withAuthParams(`${API_BASE}/feedback`), {
     method: 'POST',
-    headers: getApiHeaders({ 'Content-Type': 'application/json' }),
     credentials: 'include',
     body: JSON.stringify(payload),
   });
@@ -37,8 +36,7 @@ export async function submitFeedback(
 }
 
 export async function getFeedbackAggregate(): Promise<FeedbackAggregate> {
-  const res = await fetch(`${API_BASE}/admin/feedback`, {
-    headers: getApiHeaders(),
+  const res = await fetch(withAuthParams(`${API_BASE}/admin/feedback`), {
     credentials: 'include',
   });
 

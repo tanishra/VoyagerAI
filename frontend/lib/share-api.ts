@@ -1,5 +1,5 @@
 import type { Itinerary } from '@/lib/types';
-import { getApiHeaders } from './api-headers';
+import { withAuthParams } from './api-headers';
 
 export interface ShareLink {
   token: string;
@@ -21,9 +21,8 @@ export interface ShareData {
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 export async function createShare(threadId: string): Promise<{ share_url: string; expires_at: number; destination: string }> {
-  const res = await fetch(`${API_URL}/share/${threadId}`, {
+  const res = await fetch(withAuthParams(`${API_URL}/share/${threadId}`), {
     method: 'POST',
-    headers: getApiHeaders(),
     credentials: 'include',
   });
   if (res.status === 401) {
@@ -38,17 +37,15 @@ export async function createShare(threadId: string): Promise<{ share_url: string
 }
 
 export async function getShare(token: string): Promise<ShareData | null> {
-  const res = await fetch(`${API_URL}/share/${token}`, {
-    headers: getApiHeaders(),
-  });
+  // Public endpoint — no authentication required, so no auth params are sent.
+  const res = await fetch(`${API_URL}/share/${token}`);
   if (!res.ok) return null;
   return res.json();
 }
 
 export async function revokeShare(token: string): Promise<boolean> {
-  const res = await fetch(`${API_URL}/share/${token}`, {
+  const res = await fetch(withAuthParams(`${API_URL}/share/${token}`), {
     method: 'DELETE',
-    headers: getApiHeaders(),
     credentials: 'include',
   });
   if (res.status === 401) {
@@ -59,8 +56,7 @@ export async function revokeShare(token: string): Promise<boolean> {
 }
 
 export async function listShares(): Promise<ShareLink[]> {
-  const res = await fetch(`${API_URL}/shares`, {
-    headers: getApiHeaders(),
+  const res = await fetch(withAuthParams(`${API_URL}/shares`), {
     credentials: 'include',
   });
   if (res.status === 401) {
@@ -72,8 +68,7 @@ export async function listShares(): Promise<ShareLink[]> {
 }
 
 export async function exportItinerary(threadId: string, format: 'json' | 'markdown' | 'ical'): Promise<Blob> {
-  const res = await fetch(`${API_URL}/export/${threadId}?fmt=${format}`, {
-    headers: getApiHeaders(),
+  const res = await fetch(withAuthParams(`${API_URL}/export/${threadId}?fmt=${format}`), {
     credentials: 'include',
   });
   if (res.status === 401) {

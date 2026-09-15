@@ -26,3 +26,27 @@ export function getApiHeaders(extraHeaders: Record<string, string> = {}): Record
 
   return headers;
 }
+
+/**
+ * Appends the session token and API key as query params instead of custom headers.
+ *
+ * Custom headers (X-Session-Token, X-API-Key) and non-simple Content-Types
+ * (application/json) force the browser to send a CORS preflight OPTIONS
+ * request. Some hosting proxies (e.g. Hugging Face Spaces) intercept and
+ * answer OPTIONS requests themselves without proper
+ * Access-Control-Allow-Credentials support, which silently breaks any
+ * preflighted cross-origin request. Passing auth via query params keeps
+ * the request a CORS "simple request" and avoids preflight entirely.
+ */
+export function withAuthParams(url: string): string {
+  const u = new URL(url);
+  const sessionToken = getSessionToken();
+  if (sessionToken) {
+    u.searchParams.set('session_token', sessionToken);
+  }
+  const apiKey = process.env.NEXT_PUBLIC_API_AUTH_KEY;
+  if (apiKey) {
+    u.searchParams.set('api_key', apiKey);
+  }
+  return u.toString();
+}

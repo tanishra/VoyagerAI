@@ -9,15 +9,20 @@ from __future__ import annotations
 
 import hmac
 
-from fastapi import Header, HTTPException, status
+from fastapi import Header, HTTPException, Request, status
 
 from config import API_AUTH_KEY, AUTH_MODE, logger
 
 
 async def verify_api_key(
+    request: Request,
     x_api_key: str | None = Header(default=None),
 ) -> str:
-    """Verify the X-API-Key header or bypass in development mode."""
+    """Verify the X-API-Key header, or the api_key query param, or bypass in dev mode.
+
+    The query param fallback avoids triggering a CORS preflight (custom headers
+    force a preflight OPTIONS request, which some hosting proxies mishandle).
+    """
     if AUTH_MODE == "development":
         return "dev"
 
@@ -28,6 +33,7 @@ async def verify_api_key(
             detail="Server authentication is misconfigured",
         )
 
+    x_api_key = x_api_key or request.query_params.get("api_key")
     if not x_api_key or not hmac.compare_digest(x_api_key, API_AUTH_KEY):
         logger.warning("Unauthorized request received")
         raise HTTPException(

@@ -1,5 +1,5 @@
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-import { getApiHeaders } from './api-headers';
+import { withAuthParams } from './api-headers';
 
 export interface UploadedFile {
   file_id: string;
@@ -13,9 +13,13 @@ export async function uploadFile(file: File): Promise<UploadedFile> {
   const formData = new FormData();
   formData.append('file', file);
 
-  const res = await fetch(`${API_URL}/upload`, {
+  // No custom headers here — multipart/form-data (set automatically by the
+  // browser for FormData bodies) is CORS-safelisted, but custom headers like
+  // X-Session-Token/X-API-Key would still force a preflight OPTIONS request,
+  // which some hosting proxies (e.g. Hugging Face Spaces) mishandle. Auth is
+  // passed via query params instead.
+  const res = await fetch(withAuthParams(`${API_URL}/upload`), {
     method: 'POST',
-    headers: getApiHeaders(),
     body: formData,
     credentials: 'include',
   });

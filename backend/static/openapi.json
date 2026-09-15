@@ -506,16 +506,6 @@
             }
           }
         ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/FeedbackRequest"
-              }
-            }
-          }
-        },
         "responses": {
           "200": {
             "description": "Feedback submitted successfully",
@@ -1621,16 +1611,6 @@
             }
           }
         ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ChatRequest"
-              }
-            }
-          }
-        },
         "responses": {
           "200": {
             "description": "Server-Sent Events stream of chat tokens and events",
@@ -1691,18 +1671,6 @@
             }
           }
         ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "additionalProperties": true,
-                "title": "Body"
-              }
-            }
-          }
-        },
         "responses": {
           "200": {
             "description": "Cancellation status",
@@ -1762,18 +1730,6 @@
             }
           }
         ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "additionalProperties": true,
-                "title": "Body"
-              }
-            }
-          }
-        },
         "responses": {
           "200": {
             "description": "Server-Sent Events stream of regenerated chat tokens",
@@ -1831,18 +1787,6 @@
             }
           }
         ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "additionalProperties": true,
-                "title": "Body"
-              }
-            }
-          }
-        },
         "responses": {
           "200": {
             "description": "Server-Sent Events stream of edited chat tokens",
@@ -1909,18 +1853,6 @@
             }
           }
         ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "additionalProperties": true,
-                "title": "Body"
-              }
-            }
-          }
-        },
         "responses": {
           "200": {
             "description": "Server-Sent Events stream of AI validation response",
@@ -2421,16 +2353,6 @@
             }
           }
         ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ThreadUpdateRequest"
-              }
-            }
-          }
-        },
         "responses": {
           "200": {
             "description": "Thread updated successfully",
@@ -2927,40 +2849,6 @@
   },
   "components": {
     "schemas": {
-      "AttachmentInfo": {
-        "properties": {
-          "file_id": {
-            "type": "string",
-            "title": "File Id",
-            "description": "Unique file ID from POST /upload."
-          },
-          "filename": {
-            "type": "string",
-            "maxLength": 200,
-            "title": "Filename",
-            "description": "Original filename."
-          },
-          "content_type": {
-            "type": "string",
-            "maxLength": 100,
-            "title": "Content Type",
-            "description": "MIME type (e.g. image/jpeg)."
-          },
-          "data_url": {
-            "type": "string",
-            "title": "Data Url",
-            "description": "Base64 data URL for frontend rendering."
-          }
-        },
-        "type": "object",
-        "required": [
-          "file_id",
-          "filename",
-          "content_type",
-          "data_url"
-        ],
-        "title": "AttachmentInfo"
-      },
       "AuthLogoutResponse": {
         "properties": {
           "status": {
@@ -3092,95 +2980,6 @@
           "cancelled"
         ],
         "title": "ChatCancelResponse"
-      },
-      "ChatRequest": {
-        "properties": {
-          "message": {
-            "type": "string",
-            "maxLength": 2000,
-            "minLength": 1,
-            "title": "Message",
-            "description": "User chat message."
-          },
-          "thread_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 200
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Thread Id",
-            "description": "Thread ID for resuming a previous conversation."
-          },
-          "client_message_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 100
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Client Message Id",
-            "description": "Client-generated UUID for offline message dedup."
-          },
-          "locale": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 10
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Locale",
-            "description": "User's preferred locale (e.g. 'en', 'es', 'fr')."
-          },
-          "timezone": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 50
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Timezone",
-            "description": "User's IANA timezone (e.g. 'Asia/Kolkata', 'America/New_York')."
-          },
-          "currency": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 10
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Currency",
-            "description": "User's preferred currency code (e.g. 'USD', 'INR', 'EUR')."
-          },
-          "attachments": {
-            "items": {
-              "$ref": "#/components/schemas/AttachmentInfo"
-            },
-            "type": "array",
-            "title": "Attachments",
-            "description": "File attachments (images, PDFs)."
-          }
-        },
-        "type": "object",
-        "required": [
-          "message"
-        ],
-        "title": "ChatRequest"
       },
       "CooldownItem": {
         "properties": {
@@ -3345,48 +3144,6 @@
           "created_at"
         ],
         "title": "FeedbackCommentItem"
-      },
-      "FeedbackRequest": {
-        "properties": {
-          "thread_id": {
-            "type": "string",
-            "maxLength": 200,
-            "title": "Thread Id",
-            "description": "Thread ID."
-          },
-          "message_id": {
-            "type": "string",
-            "maxLength": 200,
-            "title": "Message Id",
-            "description": "Message ID being rated."
-          },
-          "rating": {
-            "type": "string",
-            "pattern": "^(up|down)$",
-            "title": "Rating",
-            "description": "Rating: 'up' or 'down'."
-          },
-          "comment": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 1000
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Comment",
-            "description": "Optional feedback comment."
-          }
-        },
-        "type": "object",
-        "required": [
-          "thread_id",
-          "message_id",
-          "rating"
-        ],
-        "title": "FeedbackRequest"
       },
       "FeedbackStatsResponse": {
         "properties": {
@@ -4080,24 +3837,6 @@
           "created_at"
         ],
         "title": "ThreadSearchResult"
-      },
-      "ThreadUpdateRequest": {
-        "properties": {
-          "pinned": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Pinned",
-            "description": "Set to true/false to pin/unpin a thread."
-          }
-        },
-        "type": "object",
-        "title": "ThreadUpdateRequest"
       },
       "ThreadUpdateResponse": {
         "properties": {

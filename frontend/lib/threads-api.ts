@@ -1,6 +1,6 @@
 import type { Itinerary, ComparisonData, ActivityData, BranchInfo, GeneratedImage, GeneratedChart } from '@/lib/types';
 import { putThreads, getAllCachedThreads, putThreadHistory, getCachedThreadHistory, clearOldThreads } from './offline-db';
-import { getApiHeaders } from './api-headers';
+import { withAuthParams } from './api-headers';
 
 export interface ThreadMeta {
   thread_id: string;
@@ -46,8 +46,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 export async function listThreads(offset: number = 0): Promise<ThreadListResponse> {
   try {
-    const res = await fetch(`${API_URL}/threads?offset=${offset}`, {
-      headers: getApiHeaders(),
+    const res = await fetch(withAuthParams(`${API_URL}/threads?offset=${offset}`), {
       credentials: 'include',
     });
     if (res.status === 401) {
@@ -79,8 +78,7 @@ export async function getThreadHistory(threadId: string, checkpointId?: string):
     if (checkpointId) {
       url.searchParams.set('checkpoint_id', checkpointId);
     }
-    const res = await fetch(url.toString(), {
-      headers: getApiHeaders(),
+    const res = await fetch(withAuthParams(url.toString()), {
       credentials: 'include',
     });
     if (res.status === 401) {
@@ -100,8 +98,7 @@ export async function getThreadHistory(threadId: string, checkpointId?: string):
 
 export async function getBranches(threadId: string): Promise<BranchInfo[]> {
   try {
-    const res = await fetch(`${API_URL}/threads/${threadId}/branches`, {
-      headers: getApiHeaders(),
+    const res = await fetch(withAuthParams(`${API_URL}/threads/${threadId}/branches`), {
       credentials: 'include',
     });
     if (res.status === 401) {
@@ -118,9 +115,8 @@ export async function getBranches(threadId: string): Promise<BranchInfo[]> {
 
 export async function deleteThread(threadId: string): Promise<boolean> {
   try {
-    const res = await fetch(`${API_URL}/threads/${threadId}`, {
+    const res = await fetch(withAuthParams(`${API_URL}/threads/${threadId}`), {
       method: 'DELETE',
-      headers: getApiHeaders(),
       credentials: 'include',
     });
     if (res.status === 401) {
@@ -136,8 +132,7 @@ export async function deleteThread(threadId: string): Promise<boolean> {
 export async function searchThreads(query: string, offset: number = 0): Promise<SearchResponse> {
   try {
     const params = new URLSearchParams({ q: query, offset: String(offset) });
-    const res = await fetch(`${API_URL}/threads/search?${params}`, {
-      headers: getApiHeaders(),
+    const res = await fetch(withAuthParams(`${API_URL}/threads/search?${params}`), {
       credentials: 'include',
     });
     if (res.status === 401) {
@@ -153,9 +148,8 @@ export async function searchThreads(query: string, offset: number = 0): Promise<
 
 export async function updateThread(threadId: string, pinned: boolean): Promise<boolean> {
   try {
-    const res = await fetch(`${API_URL}/threads/${threadId}`, {
+    const res = await fetch(withAuthParams(`${API_URL}/threads/${threadId}`), {
       method: 'PATCH',
-      headers: getApiHeaders({ 'Content-Type': 'application/json' }),
       credentials: 'include',
       body: JSON.stringify({ pinned }),
     });

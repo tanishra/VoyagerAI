@@ -5,7 +5,7 @@ import { motion } from 'framer-motion';
 import { Save, CheckCircle, AlertCircle, Loader2, FileText, Sparkles, ArrowLeft } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { getSession } from '@/lib/auth';
-import { getApiHeaders } from '@/lib/api-headers';
+import { withAuthParams } from '@/lib/api-headers';
 import { useLocale } from '@/lib/useLocale';
 import Link from 'next/link';
 
@@ -24,8 +24,7 @@ export default function PreferencesPage() {
     setLoading(true);
     setMessage(null);
     try {
-      const res = await fetch(`${API_BASE}/preferences`, {
-        headers: getApiHeaders(),
+      const res = await fetch(withAuthParams(`${API_BASE}/preferences`), {
         credentials: 'include',
       });
       if (res.status === 401) {
@@ -67,9 +66,8 @@ export default function PreferencesPage() {
     setSaving(true);
     setMessage(null);
     try {
-      const res = await fetch(`${API_BASE}/preferences`, {
+      const res = await fetch(withAuthParams(`${API_BASE}/preferences`), {
         method: 'PUT',
-        headers: getApiHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ user_instructions: userInstructions }),
         credentials: 'include',
       });

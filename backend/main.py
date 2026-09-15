@@ -13,6 +13,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request, UploadFile, File a
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_swagger_ui_html, get_redoc_html
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
+from pydantic import ValidationError
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
@@ -814,7 +815,6 @@ async def export_costs_csv(
 @limiter.limit("30/minute")
 async def submit_feedback(
     request: Request,
-    body: FeedbackRequest,
     user: dict = Depends(get_current_user),
 ) -> FeedbackSubmitResponse:
     """Submit or update thumbs up/down feedback for a specific message.
@@ -824,6 +824,13 @@ async def submit_feedback(
     **Request body:** `FeedbackRequest` with `thread_id`, `message_id`, `rating` ('up' or 'down'),
     and optional `comment` (max 1000 chars).
     """
+    # Body is parsed manually (independent of Content-Type) so the frontend can
+    # avoid a CORS preflight OPTIONS request (see chat_stream for details).
+    try:
+        body = FeedbackRequest(**json.loads(await request.body()))
+    except (json.JSONDecodeError, ValidationError) as exc:
+        raise HTTPException(status_code=422, detail=f"Invalid request body: {exc}")
+
     user_id = user["user_id"]
     result = await feedback_store.submit_feedback(
         user_id=user_id,
@@ -1463,7 +1470,6 @@ async def upload_file(
 )
 @limiter.limit("20/minute")
 async def chat_stream(
-    chat_req: ChatRequest,
     request: Request,
     user: dict = Depends(get_current_user),
 ) -> EventSourceResponse:
@@ -1478,6 +1484,15 @@ async def chat_stream(
     **SSE event types:** `thread_id`, `status`, `token`, `itinerary`, `comparison`,
     `image`, `chart`, `usage`, `tool_error`, `subagent_progress`, `cancelled`, `error`, `done`.
     """
+    # Body is parsed manually (independent of the Content-Type header) so the
+    # frontend can send it as text/plain and avoid a CORS preflight OPTIONS
+    # request, which some hosting proxies (e.g. Hugging Face Spaces) mishandle.
+    try:
+        raw_body = await request.body()
+        chat_req = ChatRequest(**json.loads(raw_body))
+    except (json.JSONDecodeError, ValidationError) as exc:
+        raise HTTPException(status_code=422, detail=f"Invalid request body: {exc}")
+
     _msg_safe = sanitize_prompt_input(chat_req.message, "message")
 
     user_id = user["user_id"]
@@ -1691,7 +1706,6 @@ async def chat_stream(
 @limiter.limit("30/minute")
 async def chat_cancel(
     request: Request,
-    body: dict,
     user: dict = Depends(get_current_user),
 ) -> ChatCancelResponse:
     """Cancel an active chat stream for a given thread.
@@ -1700,6 +1714,12 @@ async def chat_cancel(
 
     Returns `cancelled: true` if a stream was found and cancelled, `false` otherwise.
     """
+    # Body is parsed manually (independent of Content-Type) to allow the frontend
+    # to avoid a CORS preflight OPTIONS request (see chat_stream for details).
+    try:
+        body = json.loads(await request.body())
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=422, detail="Invalid JSON body")
     thread_id = body.get("thread_id", "")
     if not thread_id:
         raise HTTPException(status_code=400, detail="thread_id required")
@@ -1728,7 +1748,6 @@ async def chat_cancel(
 @limiter.limit("30/minute")
 async def chat_regenerate(
     request: Request,
-    body: dict,
     user: dict = Depends(get_current_user),
 ):
     """Regenerate the last assistant response for a thread.
@@ -1737,6 +1756,12 @@ async def chat_regenerate(
 
     **Request body:** `{"thread_id": "...", "locale": "en", "timezone": "Asia/Kolkata"}`
     """
+    # Body is parsed manually (independent of Content-Type) to allow the frontend
+    # to avoid a CORS preflight OPTIONS request (see chat_stream for details).
+    try:
+        body = json.loads(await request.body())
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=422, detail="Invalid JSON body")
     raw_thread_id = body.get("thread_id", "")
     if not raw_thread_id:
         raise HTTPException(status_code=400, detail="thread_id required")
@@ -1878,7 +1903,6 @@ async def chat_regenerate(
 @limiter.limit("30/minute")
 async def chat_edit(
     request: Request,
-    body: dict,
     user: dict = Depends(get_current_user),
 ):
     """Edit the last user message and regenerate the assistant response.
@@ -1888,6 +1912,12 @@ async def chat_edit(
 
     **Request body:** `{"thread_id": "...", "message": "new text", "locale": "en", "timezone": "Asia/Kolkata"}`
     """
+    # Body is parsed manually (independent of Content-Type) to allow the frontend
+    # to avoid a CORS preflight OPTIONS request (see chat_stream for details).
+    try:
+        body = json.loads(await request.body())
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=422, detail="Invalid JSON body")
     raw_thread_id = body.get("thread_id", "")
     if not raw_thread_id:
         raise HTTPException(status_code=400, detail="thread_id required")
@@ -2035,7 +2065,6 @@ async def chat_edit(
 async def chat_edit_itinerary(
     request: Request,
     thread_id: str,
-    body: dict,
     user: dict = Depends(get_current_user),
 ):
     """Validate a user-edited itinerary.
@@ -2046,6 +2075,12 @@ async def chat_edit_itinerary(
 
     **Request body:** `{"itinerary": {...}, "locale": "en", "timezone": "...", "currency": "USD"}`
     """
+    # Body is parsed manually (independent of Content-Type) to allow the frontend
+    # to avoid a CORS preflight OPTIONS request (see chat_stream for details).
+    try:
+        body = json.loads(await request.body())
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=422, detail="Invalid JSON body")
     itinerary_data = body.get("itinerary")
     if not itinerary_data or not isinstance(itinerary_data, dict):
         raise HTTPException(status_code=400, detail="itinerary object required")
@@ -2525,7 +2560,6 @@ async def delete_thread(
 async def update_thread(
     thread_id: str,
     request: Request,
-    body: ThreadUpdateRequest,
     user: dict = Depends(get_current_user),
 ) -> ThreadUpdateResponse:
     """Update thread metadata (e.g., pin or unpin a thread).
@@ -2535,6 +2569,13 @@ async def update_thread(
 
     **Request body:** `ThreadUpdateRequest` with optional `pinned` boolean.
     """
+    # Body is parsed manually (independent of Content-Type) so the frontend can
+    # avoid a CORS preflight OPTIONS request (see chat_stream for details).
+    try:
+        body = ThreadUpdateRequest(**json.loads(await request.body()))
+    except (json.JSONDecodeError, ValidationError) as exc:
+        raise HTTPException(status_code=422, detail=f"Invalid request body: {exc}")
+
     user_id = user["user_id"]
 
     # Security: verify ownership via prefix check
@@ -2662,7 +2703,11 @@ async def auth_logout(request: Request) -> AuthLogoutResponse:
 
     No authentication required — always returns 200.
     """
-    session_id = request.cookies.get(SESSION_COOKIE_NAME) or request.headers.get("X-Session-Token")
+    session_id = (
+        request.cookies.get(SESSION_COOKIE_NAME)
+        or request.headers.get("X-Session-Token")
+        or request.query_params.get("session_token")
+    )
     if session_id:
         await delete_session(session_id)
     response = JSONResponse({"status": "ok"})
