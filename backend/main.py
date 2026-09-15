@@ -2628,7 +2628,9 @@ async def auth_callback(request: Request) -> RedirectResponse:
         elif ALLOWED_ORIGINS[0] != "*":
             frontend_url = ALLOWED_ORIGINS[0]
 
-    resp = RedirectResponse(url=f"{frontend_url.rstrip('/')}/auth/callback?success=1&token={session_id}")
+    redirect_target = f"{frontend_url.rstrip('/')}/auth/callback?success=1&token={session_id}"
+    logger.info("OAuth callback: redirecting to %s", redirect_target[:80])
+    resp = RedirectResponse(url=redirect_target)
     resp.set_cookie(
         SESSION_COOKIE_NAME, session_id,
         max_age=SESSION_TTL, httponly=True,
