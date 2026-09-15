@@ -382,7 +382,7 @@ class TestStreamChatAgentRetry:
 
             async def aget_state(self, config):
                 self.get_state_calls += 1
-                if self.get_state_calls == 1:
+                if self.get_state_calls <= 2:
                     return _fake_state([_Msg('<itinerary>Just some prose, no JSON here.</itinerary>')])
                 return _fake_state([_Msg('<itinerary>{"destination": "Paris", "days": []}</itinerary>')])
 
@@ -404,7 +404,7 @@ class TestStreamChatAgentRetry:
         )
 
         assert fake.stream_calls == 2
-        assert fake.get_state_calls == 1  # only first pass extraction; retry text extracts directly
+        assert fake.get_state_calls == 2  # message_index + extraction (retry succeeds from stream text)
         assert events[-2] == ("itinerary", {"destination": "Paris", "days": []})
         assert events[-1][0] == "done"
 
@@ -587,7 +587,7 @@ class TestStreamTextExtraction:
         )
 
         assert fake.stream_calls == 1  # no retry needed
-        assert fake.get_state_calls == 0  # stream text alone was sufficient
+        assert fake.get_state_calls == 1  # message_index call; stream text alone was sufficient for extraction
         assert events[-2] == (
             "itinerary",
             {"destination": "Udaipur, India", "total_days": 1, "days": []},

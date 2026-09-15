@@ -40,6 +40,10 @@ def fresh_share_store(monkeypatch):
         return None
 
     monkeypatch.setattr(store, "_get_redis", _no_redis)
+    import share_store as ss_module
+    async def _no_sqlite():
+        return None
+    monkeypatch.setattr(ss_module, "get_sqlite_connection", _no_sqlite)
     return store
 
 

@@ -51,10 +51,14 @@ class TestPricing:
 
 class TestCostStore:
     @pytest.fixture
-    def store(self):
-        """Create a CostStore that uses in-memory fallback (no Redis)."""
+    def store(self, monkeypatch):
+        """Create a CostStore that uses in-memory fallback (no Redis, no SQLite)."""
         s = CostStore()
         s._redis = None  # Force in-memory mode
+        import cost_store as cs_module
+        async def _no_sqlite():
+            return None
+        monkeypatch.setattr(cs_module, "get_sqlite_connection", _no_sqlite)
         return s
 
     @pytest.mark.asyncio

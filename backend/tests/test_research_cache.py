@@ -12,8 +12,18 @@ from research_cache import ResearchCache
 
 class TestResearchCache:
     @pytest.fixture
-    def cache(self) -> ResearchCache:
-        return ResearchCache()
+    def cache(self, monkeypatch) -> ResearchCache:
+        c = ResearchCache()
+        c._redis = None
+        async def _no_redis():
+            return None
+        monkeypatch.setattr(c, "_get_redis", _no_redis)
+        import research_cache as rc_module
+        async def _no_sqlite():
+            return None
+        monkeypatch.setattr(rc_module, "get_sqlite_connection", _no_sqlite)
+        asyncio.run(c.invalidate_all())
+        return c
 
     def test_cache_miss_returns_none(self, cache: ResearchCache):
         result = asyncio.run(cache.get("nonexistent_key"))

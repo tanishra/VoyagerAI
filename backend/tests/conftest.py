@@ -7,6 +7,54 @@ import pytest
 from fastapi.testclient import TestClient
 
 
+@pytest.fixture(autouse=True)
+def _fast_redis_fail(monkeypatch):
+    """Make all Redis connections fail instantly in tests.
+
+    This prevents tests from hanging when Redis is not running.
+    Stores fall back to in-memory/SQLite which is sufficient for tests.
+    """
+    from redis.asyncio import Redis as AsyncRedis
+    from redis.exceptions import RedisError
+
+    def _fail_from_url(*args, **kwargs):
+        raise RedisError("Redis disabled in tests")
+
+    monkeypatch.setattr(AsyncRedis, "from_url", _fail_from_url)
+
+    import agents.deep_agent as deep_agent_module
+    monkeypatch.setattr(deep_agent_module.settings, "CHECKPOINTER_BACKEND", "memory")
+    monkeypatch.setattr(deep_agent_module, "_checkpointer", None)
+
+    # Reset rate limiter singleton state to prevent 429s between tests
+    import rate_limiter as rl_module
+    rl_module.rate_limiter._mem.clear()
+    rl_module.rate_limiter._redis = None
+    # Disable SQLite fallback for rate limiter so _mem.clear() is sufficient
+    async def _no_sqlite():
+        return None
+    monkeypatch.setattr(rl_module, "get_sqlite_connection", _no_sqlite)
+
+    # Reset slowapi limiter storage to prevent 429s between tests
+    try:
+        import main as main_module
+        if hasattr(main_module.app.state, "limiter"):
+            main_module.app.state.limiter._storage.reset()
+    except Exception:
+        pass
+
+    # Reset shared SQLite connection to prevent stale event-loop hangs
+    import sqlite_fallback
+    sqlite_fallback._conn = None
+    sqlite_fallback._init_failed = False
+
+    yield
+
+    # Clean up SQLite connection after test
+    sqlite_fallback._conn = None
+    sqlite_fallback._init_failed = False
+
+
 @pytest.fixture
 def client():
     has_provider_key = any(

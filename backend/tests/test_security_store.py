@@ -24,6 +24,10 @@ def store(monkeypatch):
         return None
 
     monkeypatch.setattr(s, "_get_redis", _no_redis)
+    import security_store as sec_module
+    async def _no_sqlite():
+        return None
+    monkeypatch.setattr(sec_module, "get_sqlite_connection", _no_sqlite)
     return s
 
 

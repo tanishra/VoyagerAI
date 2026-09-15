@@ -41,7 +41,7 @@ jobs:
         working-directory: backend
         run: |
           pip install --no-cache-dir -r requirements.lock.txt
-          pip install --no-cache-dir pytest pytest-asyncio httpx ruff
+          pip install --no-cache-dir pytest pytest-asyncio pytest-timeout httpx ruff
 
       - name: Lint with ruff
         working-directory: backend

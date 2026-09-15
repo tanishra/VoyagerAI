@@ -112,7 +112,7 @@ class TestInternetSearchErrors:
 
         def slow_search(**kwargs):
             import time
-            time.sleep(20)
+            time.sleep(1)
             return {}
 
         mock_tavily.search.side_effect = slow_search

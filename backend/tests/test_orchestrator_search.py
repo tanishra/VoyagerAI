@@ -40,7 +40,8 @@ def _make_result(title: str, url: str, content: str, score: float = 0.9) -> dict
 @pytest.fixture(autouse=True)
 def _reset_rate_limit(monkeypatch):
     """Reset rate limiter and disable research cache before each test."""
-    monkeypatch.setattr("config.settings.settings.RESEARCH_CACHE_ENABLED", False)
+    from config import settings as _settings
+    monkeypatch.setattr(_settings, "RESEARCH_CACHE_ENABLED", False)
     reset_orchestrator_search_count()
     yield
     reset_orchestrator_search_count()
@@ -147,7 +148,7 @@ class TestQuickSearch:
 
         def slow_search(**kwargs):
             import time
-            time.sleep(20)
+            time.sleep(1)
             return {}
 
         mock_tavily.search.side_effect = slow_search
