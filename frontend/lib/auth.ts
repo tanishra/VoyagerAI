@@ -1,6 +1,6 @@
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 import { getApiHeaders } from './api-headers';
-import { clearSessionToken } from './session-token';
+import { getSessionToken, clearSessionToken } from './session-token';
 
 export interface SessionUser {
   user_id: string;
@@ -22,8 +22,15 @@ export async function getSession(): Promise<SessionUser | null> {
 
   fetchPromise = (async () => {
     try {
-      const res = await fetch(`${API_URL}/auth/me`, {
-        headers: getApiHeaders(),
+      // Use a query param (not a custom header) for the session token fallback so this
+      // GET request stays a CORS "simple request" and never triggers a preflight OPTIONS —
+      // some hosting proxies (e.g. Hugging Face Spaces) intercept OPTIONS and answer it
+      // without Access-Control-Allow-Credentials, which would otherwise break this call.
+      const sessionToken = getSessionToken();
+      const url = sessionToken
+        ? `${API_URL}/auth/me?session_token=${encodeURIComponent(sessionToken)}`
+        : `${API_URL}/auth/me`;
+      const res = await fetch(url, {
         credentials: 'include',
       });
       if (!res.ok) {
