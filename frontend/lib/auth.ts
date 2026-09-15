@@ -1,5 +1,6 @@
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 import { getApiHeaders } from './api-headers';
+import { clearSessionToken } from './session-token';
 
 export interface SessionUser {
   user_id: string;
@@ -48,6 +49,7 @@ export function clearSessionCache() {
   cachedUser = null;
   cachedNull = false;
   fetchPromise = null;
+  clearSessionToken();
 }
 
 export async function logout(): Promise<void> {

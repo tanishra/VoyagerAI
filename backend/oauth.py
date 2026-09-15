@@ -162,12 +162,15 @@ async def delete_session(session_id: str) -> None:
 
 
 async def get_current_user(request: Request) -> dict:
-    """FastAPI dependency: extract and verify the user from the session cookie.
+    """FastAPI dependency: extract and verify the user from the session cookie or token header.
+
+    Checks the session cookie first, then falls back to the X-Session-Token header
+    (used when third-party cookies are blocked by the browser).
 
     Returns a dict with keys: user_id, display_name, avatar_url, email.
     Raises 401 if not authenticated.
     """
-    session_id = request.cookies.get(SESSION_COOKIE_NAME)
+    session_id = request.cookies.get(SESSION_COOKIE_NAME) or request.headers.get("X-Session-Token")
     if not session_id:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

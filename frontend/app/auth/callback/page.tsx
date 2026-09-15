@@ -2,7 +2,8 @@
 
 import { Suspense, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { getSession } from '@/lib/auth';
+import { getSession, clearSessionCache } from '@/lib/auth';
+import { setSessionToken } from '@/lib/session-token';
 import { Loader2, AlertCircle } from 'lucide-react';
 import Link from 'next/link';
 
@@ -10,10 +11,19 @@ function CallbackContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const initialSuccess = searchParams.get('success') === '1';
+  const token = searchParams.get('token');
   const [error, setError] = useState(!initialSuccess);
 
   useEffect(() => {
     if (!initialSuccess) return;
+
+    // Store session token from URL for cross-domain auth (fallback when cookies are blocked)
+    if (token) {
+      setSessionToken(token);
+      clearSessionCache();
+      // Clean the token from the URL for security
+      window.history.replaceState({}, '', '/auth/callback?success=1');
+    }
 
     let cancelled = false;
     getSession().then((user) => {
@@ -25,7 +35,7 @@ function CallbackContent() {
       }
     });
     return () => { cancelled = true; };
-  }, [router, initialSuccess]);
+  }, [router, initialSuccess, token]);
 
   if (error) {
     return (

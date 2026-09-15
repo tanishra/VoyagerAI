@@ -2618,6 +2618,7 @@ async def auth_callback(request: Request) -> RedirectResponse:
         "email": email,
     }
     session_id = await create_session(session_data)
+    logger.info("OAuth callback: session created for %s (id=%s)", email, session_id[:12])
 
     frontend_url = "http://localhost:3000"
     if ALLOWED_ORIGINS:
@@ -2627,12 +2628,13 @@ async def auth_callback(request: Request) -> RedirectResponse:
         elif ALLOWED_ORIGINS[0] != "*":
             frontend_url = ALLOWED_ORIGINS[0]
 
-    resp = RedirectResponse(url=f"{frontend_url.rstrip('/')}/auth/callback?success=1")
+    resp = RedirectResponse(url=f"{frontend_url.rstrip('/')}/auth/callback?success=1&token={session_id}")
     resp.set_cookie(
         SESSION_COOKIE_NAME, session_id,
         max_age=SESSION_TTL, httponly=True,
         samesite="none" if _use_secure_cookies else "lax",
         secure=_use_secure_cookies,
+        path="/",
     )
     return resp
 
@@ -2654,7 +2656,7 @@ async def auth_logout(request: Request) -> AuthLogoutResponse:
 
     No authentication required — always returns 200.
     """
-    session_id = request.cookies.get(SESSION_COOKIE_NAME)
+    session_id = request.cookies.get(SESSION_COOKIE_NAME) or request.headers.get("X-Session-Token")
     if session_id:
         await delete_session(session_id)
     response = JSONResponse({"status": "ok"})
@@ -2662,6 +2664,7 @@ async def auth_logout(request: Request) -> AuthLogoutResponse:
         SESSION_COOKIE_NAME,
         samesite="none" if _use_secure_cookies else "lax",
         secure=_use_secure_cookies,
+        path="/",
     )
     return response
 
