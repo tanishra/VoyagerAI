@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from agents.deep_agent import _extract_chat_itinerary
+from agents.deep_agent import _extract_chat_itinerary, _looks_like_itinerary_draft
 
 
 class _Msg:
@@ -58,3 +58,34 @@ class TestFallbackExtraction:
             _Msg("final thoughts, no plan here"),
         ]
         assert _extract_chat_itinerary({"messages": msgs}) == {"destination": "Rome", "days": []}
+
+
+class TestLooksLikeItineraryDraft:
+    """Regression: the model sometimes writes a full day-by-day itinerary in
+    prose without wrapping it in <itinerary>/<comparison> tags. This heuristic
+    lets the untagged-response gate still trigger structured extraction and
+    the _format_itinerary recovery pass, instead of silently dropping the
+    itinerary card."""
+
+    def test_detects_untagged_day_by_day_plan(self):
+        text = (
+            "Day 1: Explore the Heart of Chandigarh\n\n"
+            "Morning:\nActivity: Visit the Rock Garden\nTiming: 9:00 AM - 11:00 AM\n\n"
+            "Afternoon:\nActivity: Stroll around Sukhna Lake\nTiming: 12:00 PM - 2:00 PM\n\n"
+            "Evening:\nActivity: Shopping at Sector 17\nTiming: 4:00 PM - 7:00 PM\n\n"
+            "Day 2: Cultural and Leisure Activities\n\n"
+            "Morning:\nActivity: Visit the Rose Garden\nTiming: 9:00 AM - 11:00 AM\n"
+        )
+        assert _looks_like_itinerary_draft(text) is True
+
+    def test_ignores_plain_conversation(self):
+        text = "Do you have any specific accessibility needs or preferences for transportation?"
+        assert _looks_like_itinerary_draft(text) is False
+
+    def test_ignores_single_day_mention(self):
+        text = "Day 1 sounds great, morning: let's start with breakfast."
+        assert _looks_like_itinerary_draft(text) is False
+
+    def test_empty_text(self):
+        assert _looks_like_itinerary_draft("") is False
+        assert _looks_like_itinerary_draft(None) is False

@@ -592,6 +592,26 @@ async def create_chat_agent(checkpointer=None, store=None, user_id=None, locale=
 _ITINERARY_TAG_RE = re.compile(r"<itinerary>\s*(.*?)\s*</itinerary>", re.DOTALL)
 _COMPARISON_TAG_RE = re.compile(r"<comparison>\s*(.*?)\s*</comparison>", re.DOTALL)
 
+_DAY_HEADER_RE = re.compile(r"day\s*\d+\s*[:\-]", re.IGNORECASE)
+_ITINERARY_SLOT_RE = re.compile(r"\b(?:morning|afternoon|evening)\b\s*:", re.IGNORECASE)
+
+
+def _looks_like_itinerary_draft(text: str) -> bool:
+    """Heuristic: detect a day-by-day itinerary written in prose without tags.
+
+    Occasionally the model produces a full day-by-day plan (the exact content
+    the app renders as an itinerary card) but forgets to wrap it in
+    <itinerary>/<comparison> tags as the system prompt requires. Without this
+    check, such a response is mistaken for plain conversation and the
+    structured-extraction/formatting recovery path (including
+    `_format_itinerary`) never runs, so no itinerary card is ever shown.
+    """
+    if not text:
+        return False
+    day_headers = len(_DAY_HEADER_RE.findall(text))
+    time_slots = len(_ITINERARY_SLOT_RE.findall(text))
+    return day_headers >= 2 and time_slots >= 3
+
 # Strip complete and partial structured blocks from displayed text
 _STRIP_COMPLETE_RE = re.compile(r"<(?:comparison|itinerary)>[\s\S]*?</(?:comparison|itinerary)>", re.DOTALL)
 _STRIP_PARTIAL_RE = re.compile(r"<(?:comparison|itinerary)>[\s\S]*$")
@@ -940,10 +960,13 @@ async def stream_chat_agent(
     logger.info("stream finished: last_text len=%d, has_tags=%s", len(stream_text), bool(stream_text and (_ITINERARY_TAG_RE.search(stream_text) or _COMPARISON_TAG_RE.search(stream_text))))
 
     # Only attempt structured extraction if the agent's response contains
-    # itinerary or comparison tags — conversational responses (clarifying
+    # itinerary or comparison tags, or looks like an untagged day-by-day
+    # itinerary draft — plain conversational responses (clarifying
     # questions, suggestions, etc.) should pass through without extraction.
     has_tags = bool(stream_text and (
-        _ITINERARY_TAG_RE.search(stream_text) or _COMPARISON_TAG_RE.search(stream_text)
+        _ITINERARY_TAG_RE.search(stream_text)
+        or _COMPARISON_TAG_RE.search(stream_text)
+        or _looks_like_itinerary_draft(stream_text)
     ))
 
     if not has_tags:
@@ -1106,7 +1129,9 @@ async def regenerate_chat_agent(
     logger.info("regenerate finished: last_text len=%d, has_tags=%s", len(stream_text), bool(stream_text and (_ITINERARY_TAG_RE.search(stream_text) or _COMPARISON_TAG_RE.search(stream_text))))
 
     has_tags = bool(stream_text and (
-        _ITINERARY_TAG_RE.search(stream_text) or _COMPARISON_TAG_RE.search(stream_text)
+        _ITINERARY_TAG_RE.search(stream_text)
+        or _COMPARISON_TAG_RE.search(stream_text)
+        or _looks_like_itinerary_draft(stream_text)
     ))
 
     if not has_tags:
@@ -1267,7 +1292,9 @@ async def edit_chat_agent(
     logger.info("edit finished: last_text len=%d, has_tags=%s", len(stream_text), bool(stream_text and (_ITINERARY_TAG_RE.search(stream_text) or _COMPARISON_TAG_RE.search(stream_text))))
 
     has_tags = bool(stream_text and (
-        _ITINERARY_TAG_RE.search(stream_text) or _COMPARISON_TAG_RE.search(stream_text)
+        _ITINERARY_TAG_RE.search(stream_text)
+        or _COMPARISON_TAG_RE.search(stream_text)
+        or _looks_like_itinerary_draft(stream_text)
     ))
 
     if not has_tags:
