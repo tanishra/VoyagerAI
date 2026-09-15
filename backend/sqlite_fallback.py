@@ -15,6 +15,7 @@ Usage:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import time
@@ -218,6 +219,7 @@ CREATE INDEX IF NOT EXISTS idx_obs_errors_expires ON observability_errors(expire
 """
 
 _conn: aiosqlite.Connection | None = None
+_conn_loop: asyncio.AbstractEventLoop | None = None
 _init_failed = False
 
 
@@ -227,15 +229,26 @@ async def get_sqlite_connection() -> aiosqlite.Connection | None:
     Returns None if SQLite cannot be initialised (in-memory fallback is the
     last resort).
     """
-    global _conn, _init_failed
+    global _conn, _conn_loop, _init_failed
     if _init_failed:
         return None
+
+    try:
+        current_loop = asyncio.get_running_loop()
+    except RuntimeError:
+        current_loop = None
+
     if _conn is not None:
-        return _conn
+        if _conn_loop is not None and (_conn_loop.is_closed() or _conn_loop is not current_loop):
+            _conn = None
+            _conn_loop = None
+        else:
+            return _conn
     try:
         path = settings.SQLITE_FALLBACK_DB_PATH
         os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
         _conn = await aiosqlite.connect(path)
+        _conn_loop = current_loop
         _conn.row_factory = aiosqlite.Row
         await _conn.execute("PRAGMA journal_mode=WAL")
         await _conn.execute("PRAGMA synchronous=NORMAL")
@@ -286,10 +299,12 @@ async def cleanup_expired() -> int:
 
 async def close_connection() -> None:
     """Close the shared connection (called on app shutdown)."""
-    global _conn
+    global _conn, _conn_loop, _init_failed
     if _conn is not None:
         try:
             await _conn.close()
         except Exception:  # noqa: BLE001, S110
             pass
         _conn = None
+    _conn_loop = None
+    _init_failed = False
