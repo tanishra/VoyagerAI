@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 import logging
@@ -98,11 +99,40 @@ async def create_redis_checkpointer() -> AsyncRedisSaver:
     ``aget_tuple`` unimplemented, which crashes any async stream run; the
     ``AsyncRedisSaver`` from ``langgraph.checkpoint.redis.aio`` is the
     implementation that works with async graphs.
+
+    Upstash Redis supports RedisJSON but NOT RediSearch. The ``setup()``
+    call creates RediSearch indexes via ``FT.CREATE`` which fails on
+    Upstash. However, ``aput()`` uses ``JSON.SET`` and ``aget_tuple()``
+    uses ``JSON.GET`` — both only require RedisJSON. So we catch the
+    ``setup()`` failure, manually initialize the attributes that
+    ``asetup()`` would have set, and still return the saver.
     """
     global _checkpointer
     if _checkpointer is None:
         saver = AsyncRedisSaver(redis_url=settings.REDIS_URL)
-        await saver.setup()
+        try:
+            await saver.setup()
+        except Exception as exc:  # noqa: BLE001 (intentional fallback handler)
+            logger.warning(
+                "Redis checkpointer setup() failed (likely no RediSearch module): %s. "
+                "Continuing without search indexes — basic get/put will still work.",
+                exc,
+            )
+            # asetup() does: self.loop, create_indexes(), create(), _detect_cluster_mode(), _key_registry
+            # create_indexes() runs before create() so SearchIndex objects exist.
+            # We need to manually init the rest.
+            if not getattr(saver, "loop", None):
+                saver.loop = asyncio.get_running_loop()
+            if not getattr(saver, "_key_registry", None):
+                try:
+                    from langgraph.checkpoint.redis.aio import AsyncKeyRegistry
+                    saver._key_registry = AsyncKeyRegistry(saver._redis)
+                except Exception:  # noqa: BLE001
+                    saver._key_registry = None
+            try:
+                await saver._detect_cluster_mode()
+            except Exception:  # noqa: BLE001
+                pass
         _checkpointer = saver
     return _checkpointer
 
@@ -143,6 +173,13 @@ async def create_checkpointer():
 
 
 def create_redis_store() -> RedisStore:
+    """Build a Redis-backed semantic memory store.
+
+    Requires RediSearch for vector index creation. On Upstash (no
+    RediSearch), this will fail and the caller falls back to
+    InMemoryStore — semantic cross-thread memory won't persist but
+    thread persistence is unaffected.
+    """
     global _store
     if _store is None:
         conn = RedisConnectionFactory.get_redis_connection(settings.REDIS_URL)
@@ -150,7 +187,15 @@ def create_redis_store() -> RedisStore:
             conn=conn,
             index={"dims": 1536, "embed": "openai:text-embedding-3-small"},
         )
-        _store.setup()
+        try:
+            _store.setup()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "RedisStore setup() failed (likely no RediSearch module): %s. "
+                "Semantic memory will use in-memory fallback.",
+                exc,
+            )
+            raise
     return _store
 
 
@@ -162,7 +207,12 @@ def get_redis_file_store() -> InMemoryStore | RedisStore:
                 conn = RedisConnectionFactory.get_redis_connection(settings.REDIS_URL)
                 _file_store = RedisStore(conn=conn)
                 _file_store.setup()
-            except Exception:  # noqa: BLE001 (intentional fallback handler)
+            except Exception as exc:  # noqa: BLE001 (intentional fallback handler)
+                logger.warning(
+                    "Redis file store setup() failed (likely no RediSearch): %s. "
+                    "Using in-memory fallback.",
+                    exc,
+                )
                 _file_store = InMemoryStore()
         else:
             _file_store = InMemoryStore()
