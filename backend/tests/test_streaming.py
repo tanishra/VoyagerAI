@@ -740,6 +740,49 @@ class TestSqliteCheckpointer:
         saver = asyncio.run(deep_agent_module.create_checkpointer())
         assert isinstance(saver, MemorySaver)
 
+    def test_redis_checkpointer_survives_setup_failure_upstash(self, monkeypatch):
+        """When Redis is available but RediSearch is not (e.g. Upstash),
+        create_redis_checkpointer should catch the setup() failure and
+        still return the AsyncRedisSaver — aput/aget_tuple only need
+        RedisJSON, not RediSearch."""
+        import asyncio
+        from unittest.mock import AsyncMock, MagicMock
+
+        from langgraph.checkpoint.redis.aio import AsyncRedisSaver
+
+        import agents.deep_agent as deep_agent_module
+
+        # Reset the global cache
+        monkeypatch.setattr(deep_agent_module, "_checkpointer", None)
+
+        # Mock the Redis connection so AsyncRedisSaver.__init__ doesn't fail
+        mock_redis = AsyncMock()
+        mock_redis.ping = AsyncMock(return_value=True)
+
+        from redisvl.redis.connection import RedisConnectionFactory
+
+        def _mock_get_conn(*args, **kwargs):
+            return mock_redis
+
+        monkeypatch.setattr(RedisConnectionFactory, "get_async_redis_connection", _mock_get_conn)
+
+        # Mock AsyncRedisSaver.setup() to simulate Upstash (no RediSearch)
+        original_init = AsyncRedisSaver.__init__
+
+        class _MockSaver(AsyncRedisSaver):
+            def __init__(self, redis_url=None, **kwargs):
+                original_init(self, redis_url=redis_url, **kwargs)
+
+            async def setup(self):
+                raise RuntimeError("FT.CREATE not supported (no RediSearch module)")
+
+        monkeypatch.setattr(deep_agent_module, "AsyncRedisSaver", _MockSaver)
+
+        saver = asyncio.run(deep_agent_module.create_redis_checkpointer())
+        assert isinstance(saver, _MockSaver)
+        assert saver.loop is not None
+        assert hasattr(saver, "_key_registry")
+
 
 async def _raise_on_call(*args, **kwargs):
     raise RuntimeError("forced failure")
