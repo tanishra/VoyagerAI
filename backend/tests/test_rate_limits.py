@@ -115,6 +115,13 @@ class TestRateLimiter:
     @pytest.mark.asyncio
     async def test_persistence_across_instances(self):
         """Rate limit data should survive creating a new RateLimiter (SQLite)."""
+        # conftest disables SQLite for rate_limiter globally; re-enable it here
+        # so cross-instance persistence via SQLite can be verified.
+        import rate_limiter as rl_module
+        from sqlite_fallback import get_sqlite_connection as _real_get_sqlite
+        mp = pytest.MonkeyPatch()
+        mp.setattr(rl_module, "get_sqlite_connection", _real_get_sqlite)
+
         rl1 = RateLimiter()
         rl1._redis = None
         with patch.object(RateLimiter, "_get_redis", _no_redis):
@@ -128,6 +135,8 @@ class TestRateLimiter:
             allowed, retry = await rl2.check_rate_limit("alice", "chat", 10)
             assert allowed is False
             assert retry > 0
+
+        mp.undo()
 
     @pytest.mark.asyncio
     async def test_retry_after_is_positive(self):
