@@ -7,7 +7,7 @@ import { useTranslations } from 'next-intl';
 import { useLocale } from '@/lib/useLocale';
 import { streamChat, cancelStream, regenerateStream, editStream, editItinerary } from '@/lib/chat-api';
 import { listThreads, getThreadHistory, getBranches, deleteThread, updateThread, type ThreadMeta } from '@/lib/threads-api';
-import { getSession, type SessionUser } from '@/lib/auth';
+import { getSession, clearSessionCache, type SessionUser } from '@/lib/auth';
 import { useOnlineStatus } from '@/lib/useOnlineStatus';
 import { useThrottledValue } from '@/lib/useThrottledValue';
 import { queueMessage, replayQueuedMessages, type QueuedMessage } from '@/lib/message-queue';
@@ -133,6 +133,7 @@ export default function ChatPage() {
         // Retry once after a delay — backend may still be starting up
         await new Promise((r) => setTimeout(r, 1500));
         if (cancelled) return;
+        clearSessionCache();
         user = await getSession();
       }
       if (!user) {
