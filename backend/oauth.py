@@ -64,7 +64,11 @@ async def _get_redis() -> Redis | None:
 
 
 async def create_session(user_info: dict) -> str:
-    """Create a session in Redis (or SQLite / in-memory fallback) and return the session ID."""
+    """Create a session, writing through to Redis AND SQLite (in-memory only as last resort).
+
+    Write-through ensures a transient Redis read failure later cannot orphan the
+    session — the SQLite copy still resolves it.
+    """
     session_id = secrets.token_urlsafe(32)
     now = int(time.time())
     payload = {
@@ -72,6 +76,8 @@ async def create_session(user_info: dict) -> str:
         "created_at": now,
         "exp": now + SESSION_TTL,
     }
+    persisted = False
+
     r = await _get_redis()
     if r is not None:
         try:
@@ -80,13 +86,13 @@ async def create_session(user_info: dict) -> str:
                 json.dumps(payload),
                 ex=SESSION_TTL,
             )
-            return session_id
+            persisted = True
         except (RedisError, RuntimeError) as exc:
-            logger.warning("Session Redis write failed — using fallback: %s", exc)
+            logger.warning("Session Redis write failed: %s", exc)
         finally:
             await r.aclose()
 
-    # SQLite fallback
+    # SQLite fallback (also acts as the durable copy when Redis is up)
     db = await get_sqlite_connection()
     if db is not None:
         try:
@@ -95,12 +101,12 @@ async def create_session(user_info: dict) -> str:
                 (session_id, json.dumps(payload), now, now + SESSION_TTL),
             )
             await db.commit()
-            return session_id
+            persisted = True
         except Exception as exc:  # noqa: BLE001
-            logger.warning("Session SQLite write failed — using in-memory: %s", exc)
+            logger.warning("Session SQLite write failed: %s", exc)
 
-    # In-memory fallback
-    _mem_sessions[session_id] = payload
+    if not persisted:
+        _mem_sessions[session_id] = payload
     return session_id
 
 
@@ -172,19 +178,24 @@ async def get_current_user(request: Request) -> dict:
     Returns a dict with keys: user_id, display_name, avatar_url, email.
     Raises 401 if not authenticated.
     """
-    session_id = (
-        request.cookies.get(SESSION_COOKIE_NAME)
-        or request.headers.get("X-Session-Token")
-        or request.query_params.get("session_token")
-    )
-    if not session_id:
+    candidates = [
+        request.cookies.get(SESSION_COOKIE_NAME),
+        request.headers.get("X-Session-Token"),
+        request.query_params.get("session_token"),
+    ]
+    if not any(candidates):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Not authenticated",
             headers={"WWW-Authenticate": "Cookie"},
         )
 
-    session = await get_session(session_id)
+    # Try each candidate in turn — a stale cookie must not shadow a valid token.
+    session = None
+    for session_id in dict.fromkeys(s for s in candidates if s):
+        session = await get_session(session_id)
+        if session:
+            break
     if not session:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
