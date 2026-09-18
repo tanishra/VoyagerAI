@@ -53,12 +53,10 @@ class ResearchCache:
                 if value is not None:
                     await r.incr("research:cache:hits")
                     return value
-                await r.incr("research:cache:misses")
-                return None
             except (RedisError, RuntimeError) as exc:
                 logger.warning("ResearchCache get Redis error: %s", exc)
 
-        # SQLite fallback
+        # SQLite — checked even when Redis is up but has no copy
         db = await get_sqlite_connection()
         if db is not None:
             try:
@@ -71,7 +69,6 @@ class ResearchCache:
                         return row["value"]
                     await db.execute("DELETE FROM research_cache WHERE key = ?", (key,))
                     await db.commit()
-                return None
             except Exception as exc:  # noqa: BLE001
                 logger.warning("ResearchCache get SQLite error: %s", exc)
 
@@ -86,6 +83,8 @@ class ResearchCache:
 
     async def set(self, key: str, value: str, ttl: int = _DEFAULT_TTL) -> None:
         """Store a formatted search result with TTL."""
+        persisted = False
+
         r = await self._get_redis()
         if r is not None:
             try:
@@ -94,11 +93,11 @@ class ResearchCache:
                 pipe.sadd("research:cache:index", key)
                 pipe.expire("research:cache:index", ttl)
                 await pipe.execute()
-                return
+                persisted = True
             except (RedisError, RuntimeError) as exc:
                 logger.warning("ResearchCache set Redis error: %s", exc)
 
-        # SQLite fallback
+        # SQLite write-through (durable copy alongside Redis)
         db = await get_sqlite_connection()
         if db is not None:
             try:
@@ -108,44 +107,42 @@ class ResearchCache:
                     (key, value, now, now + ttl),
                 )
                 await db.commit()
-                return
+                persisted = True
             except Exception as exc:  # noqa: BLE001
                 logger.warning("ResearchCache set SQLite error: %s", exc)
 
-        self._mem_cache[key] = (value, time.time() + ttl)
+        if not persisted:
+            self._mem_cache[key] = (value, time.time() + ttl)
 
     async def invalidate_all(self) -> int:
-        """Delete all cached research results. Returns count of cleared entries."""
+        """Delete all cached research results from all stores. Returns count cleared."""
+        count = 0
+
         r = await self._get_redis()
         if r is not None:
             try:
                 keys = await r.smembers("research:cache:index")
-                if not keys:
-                    return 0
-                pipe = r.pipeline()
-                for k in keys:
-                    pipe.delete(f"research:cache:{k}")
-                pipe.delete("research:cache:index")
-                results = await pipe.execute()
-                count = sum(1 for r_val in results[:-1] if r_val)
-                logger.info("ResearchCache invalidated %d entries", count)
-                return count
+                if keys:
+                    pipe = r.pipeline()
+                    for k in keys:
+                        pipe.delete(f"research:cache:{k}")
+                    pipe.delete("research:cache:index")
+                    results = await pipe.execute()
+                    count = sum(1 for r_val in results[:-1] if r_val)
+                    logger.info("ResearchCache invalidated %d Redis entries", count)
             except (RedisError, RuntimeError) as exc:
                 logger.warning("ResearchCache invalidate_all Redis error: %s", exc)
 
-        # SQLite fallback
         db = await get_sqlite_connection()
         if db is not None:
             try:
                 cur = await db.execute("DELETE FROM research_cache")
                 await db.commit()
-                count = cur.rowcount
-                self._mem_cache.clear()
-                return max(count, 0)
+                count = max(count, cur.rowcount)
             except Exception as exc:  # noqa: BLE001
                 logger.warning("ResearchCache invalidate_all SQLite error: %s", exc)
 
-        count = len(self._mem_cache)
+        count = max(count, len(self._mem_cache))
         self._mem_cache.clear()
         return count
 
