@@ -67,6 +67,8 @@ class FeedbackStore:
             "updated_at": str(now),
         }
 
+        persisted = False
+
         r = await self._get_redis()
         if r is not None:
             try:
@@ -78,11 +80,11 @@ class FeedbackStore:
                 pipe.sadd(f"feedback:thread:{thread_id}", key)
                 pipe.expire(f"feedback:thread:{thread_id}", _TTL_SECONDS)
                 await pipe.execute()
-                return {"status": "ok", "rating": rating}
+                persisted = True
             except (RedisError, RuntimeError) as exc:
                 logger.warning("FeedbackStore submit_feedback Redis error: %s", exc)
 
-        # SQLite fallback
+        # SQLite write-through (durable copy alongside Redis)
         db = await get_sqlite_connection()
         if db is not None:
             try:
@@ -91,11 +93,12 @@ class FeedbackStore:
                     (key, user_id, message_id, thread_id, rating, comment or "", now, now),
                 )
                 await db.commit()
-                return {"status": "ok", "rating": rating}
+                persisted = True
             except Exception as exc:  # noqa: BLE001
                 logger.warning("FeedbackStore submit_feedback SQLite error: %s", exc)
 
-        self._mem_feedback[key] = data
+        if not persisted:
+            self._mem_feedback[key] = data
         return {"status": "ok", "rating": rating}
 
     async def get_feedback(self, user_id: str, message_id: str) -> dict | None:
@@ -105,21 +108,20 @@ class FeedbackStore:
         if r is not None:
             try:
                 data = await r.hgetall(f"feedback:{key}")
-                if not data:
-                    return None
-                return {
-                    "user_id": data.get("user_id", user_id),
-                    "message_id": data.get("message_id", message_id),
-                    "thread_id": data.get("thread_id", ""),
-                    "rating": data.get("rating", ""),
-                    "comment": data.get("comment", ""),
-                    "created_at": float(data.get("created_at", 0)),
-                    "updated_at": float(data.get("updated_at", 0)),
-                }
+                if data:
+                    return {
+                        "user_id": data.get("user_id", user_id),
+                        "message_id": data.get("message_id", message_id),
+                        "thread_id": data.get("thread_id", ""),
+                        "rating": data.get("rating", ""),
+                        "comment": data.get("comment", ""),
+                        "created_at": float(data.get("created_at", 0)),
+                        "updated_at": float(data.get("updated_at", 0)),
+                    }
             except (RedisError, RuntimeError) as exc:
                 logger.warning("FeedbackStore get_feedback Redis error: %s", exc)
 
-        # SQLite fallback
+        # SQLite — checked even when Redis is up but has no copy
         db = await get_sqlite_connection()
         if db is not None:
             try:
@@ -161,27 +163,50 @@ class FeedbackStore:
             Dict with total_up, total_down, total_ratings, satisfaction_ratio,
             recent_comments (last 20 thumbs-down with non-empty comments).
         """
+        merged: dict[str, dict] = {}
+
+        def _merge(k: str, data: dict) -> None:
+            cur = merged.get(k)
+            if cur is None or float(data.get("updated_at", 0)) >= float(cur.get("updated_at", 0)):
+                merged[k] = data
+
         r = await self._get_redis()
         if r is not None:
             try:
                 keys = await r.zrange("feedback:index", 0, -1)
-                if not keys:
-                    return self._empty_stats()
-
-                pipe = r.pipeline()
-                for k in keys:
-                    pipe.hgetall(f"feedback:{k}")
-                results = await pipe.execute()
-
-                return self._compute_stats(keys, results)
+                if keys:
+                    pipe = r.pipeline()
+                    for k in keys:
+                        pipe.hgetall(f"feedback:{k}")
+                    results = await pipe.execute()
+                    for k, data in zip(keys, results, strict=False):
+                        if data:
+                            _merge(k, dict(data))
             except (RedisError, RuntimeError) as exc:
                 logger.warning("FeedbackStore get_aggregate_stats Redis error: %s", exc)
 
-        # In-memory fallback
-        items = list(self._mem_feedback.items())
-        keys = [k for k, _ in items]
-        results = [v for _, v in items]
-        return self._compute_stats(keys, results)
+        db = await get_sqlite_connection()
+        if db is not None:
+            try:
+                cur = await db.execute("SELECT * FROM feedback")
+                for row in await cur.fetchall():
+                    _merge(row["key"], {
+                        "user_id": row["user_id"] or "",
+                        "message_id": row["message_id"] or "",
+                        "thread_id": row["thread_id"] or "",
+                        "rating": row["rating"] or "",
+                        "comment": row["comment"] or "",
+                        "created_at": str(row["created_at"] or 0),
+                        "updated_at": str(row["updated_at"] or 0),
+                    })
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("FeedbackStore get_aggregate_stats SQLite error: %s", exc)
+
+        for k, v in self._mem_feedback.items():
+            _merge(k, v)
+
+        keys = list(merged.keys())
+        return self._compute_stats(keys, [merged[k] for k in keys])
 
     def _empty_stats(self) -> dict:
         return {
