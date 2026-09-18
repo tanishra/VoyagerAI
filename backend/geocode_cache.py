@@ -56,9 +56,8 @@ class GeocodeCache:
                 data = await r.hgetall(key)
                 if data and "lat" in data and "lng" in data:
                     return {"lat": float(data["lat"]), "lng": float(data["lng"])}
-                return None
             except (RedisError, RuntimeError) as exc:
-                logger.warning("GeocodeCache get Redis error — falling back: %s", exc)
+                logger.warning("GeocodeCache get Redis error: %s", exc)
 
         # SQLite fallback
         db = await get_sqlite_connection()
@@ -80,16 +79,18 @@ class GeocodeCache:
     async def set(self, query: str, lat: float, lng: float) -> None:
         """Cache coordinates for a query."""
         key = _cache_key(query)
+        persisted = False
+
         r = await self._get_redis()
         if r is not None:
             try:
                 await r.hset(key, mapping={"lat": str(lat), "lng": str(lng)})
                 await r.expire(key, _TTL_SECONDS)
-                return
+                persisted = True
             except (RedisError, RuntimeError) as exc:
-                logger.warning("GeocodeCache set Redis error — falling back: %s", exc)
+                logger.warning("GeocodeCache set Redis error: %s", exc)
 
-        # SQLite fallback
+        # SQLite write-through (durable copy alongside Redis)
         db = await get_sqlite_connection()
         if db is not None:
             try:
@@ -99,12 +100,13 @@ class GeocodeCache:
                     (key, lat, lng, _time.time()),
                 )
                 await db.commit()
-                return
+                persisted = True
             except Exception as exc:  # noqa: BLE001
-                logger.warning("GeocodeCache set SQLite error — falling back: %s", exc)
+                logger.warning("GeocodeCache set SQLite error: %s", exc)
 
-        # In-memory fallback
-        self._mem[key] = {"lat": lat, "lng": lng}
+        if not persisted:
+            # In-memory last resort
+            self._mem[key] = {"lat": lat, "lng": lng}
 
 
 geocode_cache = GeocodeCache()
