@@ -92,6 +92,8 @@ class CostStore:
             "model_used": model_used,
             "timestamp": ts,
         }
+        persisted = False
+
         r = await self._get_redis()
         if r is not None:
             try:
@@ -102,11 +104,11 @@ class CostStore:
                 pipe.hset(key, field_name, json.dumps(entry))
                 pipe.expire(key, _TTL_SECONDS)
                 await pipe.execute()
-                return
+                persisted = True
             except (RedisError, RuntimeError) as exc:
                 logger.warning("CostStore record_subagent_cost Redis error: %s", exc)
 
-        # SQLite fallback
+        # SQLite write-through (durable copy alongside Redis)
         db = await get_sqlite_connection()
         if db is not None:
             try:
@@ -115,11 +117,12 @@ class CostStore:
                     (thread_id, subagent_name, input_tokens, output_tokens, cost_usd, model_used, ts),
                 )
                 await db.commit()
-                return
+                persisted = True
             except Exception as exc:  # noqa: BLE001
                 logger.warning("CostStore record_subagent_cost SQLite error: %s", exc)
 
-        self._mem_subagents.setdefault(thread_id, []).append(entry)
+        if not persisted:
+            self._mem_subagents.setdefault(thread_id, []).append(entry)
 
     async def update_session_total(
         self,
@@ -149,6 +152,8 @@ class CostStore:
         }
         daily_key = f"costs:daily:{time.strftime('%Y-%m-%d', time.gmtime(now))}"
 
+        persisted = False
+
         r = await self._get_redis()
         if r is not None:
             try:
@@ -162,11 +167,11 @@ class CostStore:
                 pipe.zadd(f"costs:user:{user_tag}", {thread_id: total_cost_usd})
                 pipe.expire(f"costs:user:{user_tag}", _TTL_SECONDS)
                 await pipe.execute()
-                return
+                persisted = True
             except (RedisError, RuntimeError) as exc:
                 logger.warning("CostStore update_session_total Redis error: %s", exc)
 
-        # SQLite fallback
+        # SQLite write-through (durable copy alongside Redis)
         db = await get_sqlite_connection()
         if db is not None:
             try:
@@ -175,11 +180,12 @@ class CostStore:
                     (thread_id, user_id, total_input_tokens, total_output_tokens, total_cost_usd, efficiency_ratio, budget_limit_usd, 1 if budget_reached else 0, now),
                 )
                 await db.commit()
-                return
+                persisted = True
             except Exception as exc:  # noqa: BLE001
                 logger.warning("CostStore update_session_total SQLite error: %s", exc)
 
-        self._mem_sessions[thread_id] = data
+        if not persisted:
+            self._mem_sessions[thread_id] = data
 
     async def get_session_cost(self, thread_id: str) -> dict | None:
         """Get the session-level cost summary for a thread."""
@@ -187,23 +193,22 @@ class CostStore:
         if r is not None:
             try:
                 data = await r.hgetall(f"costs:session:{thread_id}")
-                if not data:
-                    return None
-                return {
-                    "thread_id": data.get("thread_id", thread_id),
-                    "user_id": data.get("user_id", ""),
-                    "total_input_tokens": int(data.get("total_input_tokens", 0)),
-                    "total_output_tokens": int(data.get("total_output_tokens", 0)),
-                    "total_cost_usd": float(data.get("total_cost_usd", 0.0)),
-                    "efficiency_ratio": float(data.get("efficiency_ratio", 0.0)),
-                    "budget_limit_usd": float(data.get("budget_limit_usd", 0.0)),
-                    "budget_reached": data.get("budget_reached") == "1",
-                    "created_at": float(data.get("created_at", 0)),
-                }
+                if data:
+                    return {
+                        "thread_id": data.get("thread_id", thread_id),
+                        "user_id": data.get("user_id", ""),
+                        "total_input_tokens": int(data.get("total_input_tokens", 0)),
+                        "total_output_tokens": int(data.get("total_output_tokens", 0)),
+                        "total_cost_usd": float(data.get("total_cost_usd", 0.0)),
+                        "efficiency_ratio": float(data.get("efficiency_ratio", 0.0)),
+                        "budget_limit_usd": float(data.get("budget_limit_usd", 0.0)),
+                        "budget_reached": data.get("budget_reached") == "1",
+                        "created_at": float(data.get("created_at", 0)),
+                    }
             except (RedisError, RuntimeError) as exc:
                 logger.warning("CostStore get_session_cost Redis error: %s", exc)
 
-        # SQLite fallback
+        # SQLite — checked even when Redis is up but has no copy
         db = await get_sqlite_connection()
         if db is not None:
             try:
@@ -247,34 +252,32 @@ class CostStore:
         }
 
     async def get_subagent_breakdown(self, thread_id: str) -> list[dict]:
-        """Get per-subagent cost breakdown for a thread."""
+        """Get per-subagent cost breakdown for a thread, merged across all stores."""
+        merged: dict[tuple, dict] = {}
+
         r = await self._get_redis()
         if r is not None:
             try:
                 raw = await r.hgetall(f"costs:subagent:{thread_id}")
-                if not raw:
-                    return []
-                results = []
-                for field_name, value in raw.items():
+                for value in raw.values():
                     try:
-                        results.append(json.loads(value))
+                        entry = json.loads(value)
                     except (json.JSONDecodeError, TypeError):
                         continue
-                results.sort(key=lambda x: x.get("timestamp", 0))
-                return results
+                    key = (entry.get("subagent_name"), entry.get("timestamp"))
+                    merged[key] = entry
             except (RedisError, RuntimeError) as exc:
                 logger.warning("CostStore get_subagent_breakdown Redis error: %s", exc)
 
-        # SQLite fallback
         db = await get_sqlite_connection()
         if db is not None:
             try:
                 cur = await db.execute(
-                    "SELECT * FROM costs_subagent WHERE thread_id = ? ORDER BY timestamp", (thread_id,)
+                    "SELECT * FROM costs_subagent WHERE thread_id = ?", (thread_id,)
                 )
                 rows = await cur.fetchall()
-                results = [
-                    {
+                for row in rows:
+                    entry = {
                         "subagent_name": row["subagent_name"],
                         "input_tokens": int(row["input_tokens"] or 0),
                         "output_tokens": int(row["output_tokens"] or 0),
@@ -282,13 +285,67 @@ class CostStore:
                         "model_used": row["model_used"] or "",
                         "timestamp": float(row["timestamp"] or 0),
                     }
-                    for row in rows
-                ]
-                return results
+                    merged.setdefault((entry["subagent_name"], entry["timestamp"]), entry)
             except Exception as exc:  # noqa: BLE001
                 logger.warning("CostStore get_subagent_breakdown SQLite error: %s", exc)
 
-        return self._mem_subagents.get(thread_id, [])
+        for entry in self._mem_subagents.get(thread_id, []):
+            merged.setdefault((entry.get("subagent_name"), entry.get("timestamp")), entry)
+
+        results = list(merged.values())
+        results.sort(key=lambda x: x.get("timestamp", 0))
+        return results
+
+    async def _all_sessions(self) -> dict[str, dict]:
+        """Merge session cost records from all stores, keyed by thread_id.
+
+        When the same thread exists in multiple stores, the record with the
+        highest total_cost_usd wins (costs are cumulative, so max = freshest).
+        """
+        merged: dict[str, dict] = {}
+
+        def _merge(tid: str, data: dict) -> None:
+            cur = merged.get(tid)
+            if cur is None or float(data.get("total_cost_usd", 0)) >= float(cur.get("total_cost_usd", 0)):
+                merged[tid] = data
+
+        r = await self._get_redis()
+        if r is not None:
+            try:
+                thread_ids = await r.zrange("costs:index", 0, -1)
+                if thread_ids:
+                    pipe = r.pipeline()
+                    for tid in thread_ids:
+                        pipe.hgetall(f"costs:session:{tid}")
+                    sessions_raw = await pipe.execute()
+                    for tid, data in zip(thread_ids, sessions_raw, strict=False):
+                        if data:
+                            _merge(tid, dict(data))
+            except (RedisError, RuntimeError) as exc:
+                logger.warning("CostStore _all_sessions Redis error: %s", exc)
+
+        db = await get_sqlite_connection()
+        if db is not None:
+            try:
+                cur = await db.execute("SELECT * FROM costs_session")
+                for row in await cur.fetchall():
+                    _merge(row["thread_id"], {
+                        "thread_id": row["thread_id"],
+                        "user_id": row["user_id"] or "",
+                        "total_input_tokens": int(row["total_input_tokens"] or 0),
+                        "total_output_tokens": int(row["total_output_tokens"] or 0),
+                        "total_cost_usd": float(row["total_cost_usd"] or 0.0),
+                        "efficiency_ratio": float(row["efficiency_ratio"] or 0.0),
+                        "budget_reached": "1" if row["budget_reached"] else "0",
+                        "created_at": str(row["created_at"] or 0),
+                    })
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("CostStore _all_sessions SQLite error: %s", exc)
+
+        for tid, data in self._mem_sessions.items():
+            _merge(tid, data)
+
+        return merged
 
     async def get_aggregate_stats(self, period: str = "week") -> dict:
         """Get aggregate cost analytics for a time period.
@@ -310,56 +367,61 @@ class CostStore:
 
         start_ts = now - (days * 86_400)
 
+        merged = await self._all_sessions()
+        sessions = [
+            self._normalize_session(data)
+            for data in merged.values()
+            if float(data.get("created_at", 0)) >= start_ts
+        ]
+        subagent_entries = await self._all_subagent_entries()
+        return self._compute_stats(sessions, subagent_entries)
+
+    async def _all_subagent_entries(self) -> list[dict]:
+        """Merge subagent cost entries across all stores (deduped)."""
+        merged: dict[tuple, dict] = {}
+
+        def _add(tid: str, entry: dict) -> None:
+            key = (tid, entry.get("subagent_name"), entry.get("timestamp"))
+            merged[key] = entry
+
         r = await self._get_redis()
         if r is not None:
             try:
-                # Get all thread IDs from the index
                 thread_ids = await r.zrange("costs:index", 0, -1)
-                if not thread_ids:
-                    return self._empty_stats()
-
-                pipe = r.pipeline()
-                for tid in thread_ids:
-                    pipe.hgetall(f"costs:session:{tid}")
-                sessions_raw = await pipe.execute()
-
-                sessions = []
-                for tid, data in zip(thread_ids, sessions_raw, strict=False):
-                    if not data:
-                        continue
-                    created = float(data.get("created_at", 0))
-                    if created >= start_ts:
-                        sessions.append({
-                            "thread_id": tid,
-                            "user_id": data.get("user_id", ""),
-                            "total_input_tokens": int(data.get("total_input_tokens", 0)),
-                            "total_output_tokens": int(data.get("total_output_tokens", 0)),
-                            "total_cost_usd": float(data.get("total_cost_usd", 0.0)),
-                            "efficiency_ratio": float(data.get("efficiency_ratio", 0.0)),
-                            "budget_reached": data.get("budget_reached") == "1",
-                            "created_at": created,
-                        })
-
-                return await self._compute_stats(sessions, thread_ids, r, start_ts)
+                if thread_ids:
+                    pipe = r.pipeline()
+                    for tid in thread_ids:
+                        pipe.hgetall(f"costs:subagent:{tid}")
+                    for tid, raw in zip(thread_ids, await pipe.execute(), strict=False):
+                        for value in raw.values():
+                            try:
+                                _add(tid, json.loads(value))
+                            except (json.JSONDecodeError, TypeError):
+                                continue
             except (RedisError, RuntimeError) as exc:
-                logger.warning("CostStore get_aggregate_stats Redis error: %s", exc)
+                logger.warning("CostStore _all_subagent_entries Redis error: %s", exc)
 
-        # In-memory fallback
-        sessions = []
-        for tid, data in self._mem_sessions.items():
-            created = float(data.get("created_at", 0))
-            if created >= start_ts:
-                sessions.append({
-                    "thread_id": tid,
-                    "user_id": data.get("user_id", ""),
-                    "total_input_tokens": int(data.get("total_input_tokens", 0)),
-                    "total_output_tokens": int(data.get("total_output_tokens", 0)),
-                    "total_cost_usd": float(data.get("total_cost_usd", 0.0)),
-                    "efficiency_ratio": float(data.get("efficiency_ratio", 0.0)),
-                    "budget_reached": data.get("budget_reached") == "1",
-                    "created_at": created,
-                })
-        return await self._compute_stats(sessions, list(self._mem_sessions.keys()), None, start_ts)
+        db = await get_sqlite_connection()
+        if db is not None:
+            try:
+                cur = await db.execute("SELECT * FROM costs_subagent")
+                for row in await cur.fetchall():
+                    _add(row["thread_id"], {
+                        "subagent_name": row["subagent_name"],
+                        "input_tokens": int(row["input_tokens"] or 0),
+                        "output_tokens": int(row["output_tokens"] or 0),
+                        "cost_usd": float(row["cost_usd"] or 0.0),
+                        "model_used": row["model_used"] or "",
+                        "timestamp": float(row["timestamp"] or 0),
+                    })
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("CostStore _all_subagent_entries SQLite error: %s", exc)
+
+        for tid, entries in self._mem_subagents.items():
+            for entry in entries:
+                _add(tid, entry)
+
+        return list(merged.values())
 
     def _empty_stats(self) -> dict:
         return {
@@ -374,12 +436,10 @@ class CostStore:
             "poor_efficiency_sessions": [],
         }
 
-    async def _compute_stats(
+    def _compute_stats(
         self,
         sessions: list[dict],
-        all_thread_ids: list[str],
-        r: Redis | None,
-        start_ts: float,
+        subagent_entries: list[dict],
     ) -> dict:
         total_cost = sum(s["total_cost_usd"] for s in sessions)
         total_conv = len(sessions)
@@ -395,38 +455,13 @@ class CostStore:
 
         # Per-subagent breakdown (aggregate across all sessions)
         subagent_costs: dict[str, dict[str, float]] = {}
-        if r is not None:
-            pipe = r.pipeline()
-            for tid in all_thread_ids:
-                pipe.hgetall(f"costs:subagent:{tid}")
-            subagent_raw = await pipe.execute()
-            for raw in subagent_raw:
-                if not raw:
-                    continue
-                for field_name, value in raw.items():
-                    try:
-                        entry = json.loads(value)
-                        name = entry.get("subagent_name", "unknown")
-                        if name not in subagent_costs:
-                            subagent_costs[name] = {
-                                "cost": 0.0,
-                                "input_tokens": 0,
-                                "output_tokens": 0,
-                            }
-                        subagent_costs[name]["cost"] += entry.get("cost_usd", 0.0)
-                        subagent_costs[name]["input_tokens"] += entry.get("input_tokens", 0)
-                        subagent_costs[name]["output_tokens"] += entry.get("output_tokens", 0)
-                    except (json.JSONDecodeError, TypeError):
-                        continue
-        else:
-            for tid, entries in self._mem_subagents.items():
-                for entry in entries:
-                    name = entry.get("subagent_name", "unknown")
-                    if name not in subagent_costs:
-                        subagent_costs[name] = {"cost": 0.0, "input_tokens": 0, "output_tokens": 0}
-                    subagent_costs[name]["cost"] += entry.get("cost_usd", 0.0)
-                    subagent_costs[name]["input_tokens"] += entry.get("input_tokens", 0)
-                    subagent_costs[name]["output_tokens"] += entry.get("output_tokens", 0)
+        for entry in subagent_entries:
+            name = entry.get("subagent_name", "unknown")
+            if name not in subagent_costs:
+                subagent_costs[name] = {"cost": 0.0, "input_tokens": 0, "output_tokens": 0}
+            subagent_costs[name]["cost"] += entry.get("cost_usd", 0.0)
+            subagent_costs[name]["input_tokens"] += entry.get("input_tokens", 0)
+            subagent_costs[name]["output_tokens"] += entry.get("output_tokens", 0)
 
         per_subagent = [
             {"name": name, **data}
@@ -503,50 +538,12 @@ class CostStore:
     async def get_user_daily_spend(self, user_id: str) -> float:
         """Return total USD spent by *user_id* since UTC midnight."""
         now = time.time()
-        # Start of today (UTC midnight)
         today_str = time.strftime("%Y-%m-%d", time.gmtime(now))
         start_of_day = time.mktime(time.strptime(today_str, "%Y-%m-%d"))
-        user_tag = hashlib.sha256(user_id.encode()).hexdigest()[:12]
 
-        r = await self._get_redis()
-        if r is not None:
-            try:
-                # costs:user:{user_tag} is a sorted set: thread_id → cost_usd
-                # We need to sum costs for threads created today.
-                thread_ids = await r.zrange(f"costs:user:{user_tag}", 0, -1)
-                if not thread_ids:
-                    return 0.0
-                pipe = r.pipeline()
-                for tid in thread_ids:
-                    pipe.hgetall(f"costs:session:{tid}")
-                sessions = await pipe.execute()
-                total = 0.0
-                for tid, data in zip(thread_ids, sessions, strict=False):
-                    if not data:
-                        continue
-                    created = float(data.get("created_at", 0))
-                    if created >= start_of_day:
-                        total += float(data.get("total_cost_usd", 0.0))
-                return round(total, 6)
-            except (RedisError, RuntimeError) as exc:
-                logger.warning("CostStore get_user_daily_spend Redis error: %s", exc)
-
-        # SQLite fallback
-        db = await get_sqlite_connection()
-        if db is not None:
-            try:
-                cur = await db.execute(
-                    "SELECT SUM(total_cost_usd) FROM costs_session WHERE user_id = ? AND created_at >= ?",
-                    (user_id, start_of_day),
-                )
-                row = await cur.fetchone()
-                return round(float(row[0] or 0.0), 6)
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("CostStore get_user_daily_spend SQLite error: %s", exc)
-
-        # In-memory fallback
+        merged = await self._all_sessions()
         total = 0.0
-        for tid, data in self._mem_sessions.items():
+        for data in merged.values():
             if data.get("user_id", "") != user_id:
                 continue
             created = float(data.get("created_at", 0))
@@ -565,46 +562,11 @@ class CostStore:
 
     async def get_hourly_platform_spend(self) -> float:
         """Return total USD spent across all users in the last hour."""
-        now = time.time()
-        one_hour_ago = now - 3600
+        one_hour_ago = time.time() - 3600
 
-        r = await self._get_redis()
-        if r is not None:
-            try:
-                thread_ids = await r.zrange("costs:index", 0, -1)
-                if not thread_ids:
-                    return 0.0
-                pipe = r.pipeline()
-                for tid in thread_ids:
-                    pipe.hgetall(f"costs:session:{tid}")
-                sessions = await pipe.execute()
-                total = 0.0
-                for tid, data in zip(thread_ids, sessions, strict=False):
-                    if not data:
-                        continue
-                    created = float(data.get("created_at", 0))
-                    if created >= one_hour_ago:
-                        total += float(data.get("total_cost_usd", 0.0))
-                return round(total, 6)
-            except (RedisError, RuntimeError) as exc:
-                logger.warning("CostStore get_hourly_platform_spend Redis error: %s", exc)
-
-        # SQLite fallback
-        db = await get_sqlite_connection()
-        if db is not None:
-            try:
-                cur = await db.execute(
-                    "SELECT SUM(total_cost_usd) FROM costs_session WHERE created_at >= ?",
-                    (one_hour_ago,),
-                )
-                row = await cur.fetchone()
-                return round(float(row[0] or 0.0), 6)
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("CostStore get_hourly_platform_spend SQLite error: %s", exc)
-
-        # In-memory fallback
+        merged = await self._all_sessions()
         total = 0.0
-        for tid, data in self._mem_sessions.items():
+        for data in merged.values():
             created = float(data.get("created_at", 0))
             if created >= one_hour_ago:
                 total += float(data.get("total_cost_usd", 0.0))
@@ -635,82 +597,9 @@ class CostStore:
         now = time.time()
         start_ts = now - (hours * 3600)
 
-        r = await self._get_redis()
-        if r is not None:
-            try:
-                thread_ids = await r.zrange("costs:index", 0, -1)
-                if not thread_ids:
-                    return []
-
-                pipe = r.pipeline()
-                for tid in thread_ids:
-                    pipe.hgetall(f"costs:session:{tid}")
-                sessions_raw = await pipe.execute()
-
-                # Group by hour
-                hour_buckets: dict[str, dict] = {}
-                for tid, data in zip(thread_ids, sessions_raw, strict=False):
-                    if not data:
-                        continue
-                    created = float(data.get("created_at", 0))
-                    if created < start_ts:
-                        continue
-                    hour_key = time.strftime("%Y-%m-%dT%H:00", time.gmtime(created))
-                    bucket = hour_buckets.setdefault(hour_key, {
-                        "hour": hour_key,
-                        "cost": 0.0,
-                        "requests": 0,
-                        "tokens_in": 0,
-                        "tokens_out": 0,
-                    })
-                    bucket["cost"] += float(data.get("total_cost_usd", 0.0))
-                    bucket["requests"] += 1
-                    bucket["tokens_in"] += int(data.get("total_input_tokens", 0))
-                    bucket["tokens_out"] += int(data.get("total_output_tokens", 0))
-
-                result = sorted(hour_buckets.values(), key=lambda x: x["hour"])
-                for entry in result:
-                    entry["cost"] = round(entry["cost"], 6)
-                return result
-            except (RedisError, RuntimeError) as exc:
-                logger.warning("CostStore get_live_costs Redis error: %s", exc)
-
-        # SQLite fallback
-        db = await get_sqlite_connection()
-        if db is not None:
-            try:
-                cur = await db.execute(
-                    "SELECT total_cost_usd, total_input_tokens, total_output_tokens, created_at "
-                    "FROM costs_session WHERE created_at >= ? ORDER BY created_at",
-                    (start_ts,),
-                )
-                rows = await cur.fetchall()
-                hour_buckets: dict[str, dict] = {}
-                for row in rows:
-                    cost, tokens_in, tokens_out, created = row
-                    hour_key = time.strftime("%Y-%m-%dT%H:00", time.gmtime(float(created)))
-                    bucket = hour_buckets.setdefault(hour_key, {
-                        "hour": hour_key,
-                        "cost": 0.0,
-                        "requests": 0,
-                        "tokens_in": 0,
-                        "tokens_out": 0,
-                    })
-                    bucket["cost"] += float(cost or 0.0)
-                    bucket["requests"] += 1
-                    bucket["tokens_in"] += int(tokens_in or 0)
-                    bucket["tokens_out"] += int(tokens_out or 0)
-
-                result = sorted(hour_buckets.values(), key=lambda x: x["hour"])
-                for entry in result:
-                    entry["cost"] = round(entry["cost"], 6)
-                return result
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("CostStore get_live_costs SQLite error: %s", exc)
-
-        # In-memory fallback
+        merged = await self._all_sessions()
         hour_buckets: dict[str, dict] = {}
-        for tid, data in self._mem_sessions.items():
+        for data in merged.values():
             created = float(data.get("created_at", 0))
             if created < start_ts:
                 continue
@@ -744,46 +633,12 @@ class CostStore:
         today_str = time.strftime("%Y-%m-%d", time.gmtime(now))
         start_of_day = time.mktime(time.strptime(today_str, "%Y-%m-%d"))
 
-        r = await self._get_redis()
+        merged = await self._all_sessions()
         daily_spend = 0.0
-
-        if r is not None:
-            try:
-                thread_ids = await r.zrange("costs:index", 0, -1)
-                if thread_ids:
-                    pipe = r.pipeline()
-                    for tid in thread_ids:
-                        pipe.hgetall(f"costs:session:{tid}")
-                    sessions = await pipe.execute()
-                    for tid, data in zip(thread_ids, sessions, strict=False):
-                        if not data:
-                            continue
-                        created = float(data.get("created_at", 0))
-                        if created >= start_of_day:
-                            daily_spend += float(data.get("total_cost_usd", 0.0))
-            except (RedisError, RuntimeError) as exc:
-                logger.warning("CostStore check_platform_alerts Redis error: %s", exc)
-
-        if r is None:
-            # Try SQLite fallback first
-            db = await get_sqlite_connection()
-            if db is not None:
-                try:
-                    cur = await db.execute(
-                        "SELECT total_cost_usd, created_at FROM costs_session WHERE created_at >= ?",
-                        (start_of_day,),
-                    )
-                    rows = await cur.fetchall()
-                    for row in rows:
-                        daily_spend += float(row["total_cost_usd"] or 0.0)
-                except Exception as exc:  # noqa: BLE001
-                    logger.warning("CostStore check_platform_alerts SQLite error: %s", exc)
-            else:
-                # Use in-memory fallback
-                for tid, data in self._mem_sessions.items():
-                    created = float(data.get("created_at", 0))
-                    if created >= start_of_day:
-                        daily_spend += float(data.get("total_cost_usd", 0.0))
+        for data in merged.values():
+            created = float(data.get("created_at", 0))
+            if created >= start_of_day:
+                daily_spend += float(data.get("total_cost_usd", 0.0))
 
         daily_spend = round(daily_spend, 6)
         percentage = (daily_spend / daily_cap * 100) if daily_cap > 0 else 0.0
