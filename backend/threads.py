@@ -70,82 +70,164 @@ class ThreadStore:
                 self._redis = None
         return self._redis
 
+    # -----------------------------------------------------------------
+    # Store-level helpers — every read consults ALL stores and merges,
+    # every write/delete hits ALL stores. A Redis blip can never hide
+    # data that landed in SQLite or memory while Redis was down.
+    # -----------------------------------------------------------------
+
+    async def _redis_threads(self, tag: str) -> dict[str, ThreadMeta] | None:
+        """All thread metas from Redis, keyed by thread_id. None if unavailable."""
+        r = await self._get_redis()
+        if r is None:
+            return None
+        try:
+            thread_ids = await r.zrange(f"threads:{tag}", 0, -1)
+            if not thread_ids:
+                return {}
+            pipe = r.pipeline()
+            for tid in thread_ids:
+                pipe.hgetall(f"threads:{tag}:{tid}")
+            results = await pipe.execute()
+            out: dict[str, ThreadMeta] = {}
+            for tid, data in zip(thread_ids, results, strict=False):
+                if data:
+                    out[tid] = ThreadMeta(
+                        thread_id=data.get("thread_id", tid),
+                        summary=data.get("summary", ""),
+                        created_at=float(data.get("created_at", 0)),
+                        updated_at=float(data.get("updated_at", 0)),
+                        status=data.get("status", "idle"),
+                        message_count=int(data.get("message_count", 0)),
+                        search_text=data.get("search_text", ""),
+                        pinned=data.get("pinned", "0") == "1",
+                        pinned_at=float(data.get("pinned_at", 0)),
+                    )
+            return out
+        except (RedisError, RuntimeError) as exc:
+            logger.warning("ThreadStore Redis read error: %s", exc)
+            return None
+
+    async def _sqlite_threads(self, tag: str) -> dict[str, ThreadMeta] | None:
+        """All thread metas from SQLite, keyed by thread_id. None if unavailable."""
+        db = await get_sqlite_connection()
+        if db is None:
+            return None
+        try:
+            cur = await db.execute(
+                "SELECT * FROM threads WHERE user_tag = ?", (tag,)
+            )
+            rows = await cur.fetchall()
+            return {
+                row["thread_id"]: ThreadMeta(
+                    thread_id=row["thread_id"],
+                    summary=row["summary"] or "",
+                    created_at=float(row["created_at"] or 0),
+                    updated_at=float(row["updated_at"] or 0),
+                    status=row["status"] or "idle",
+                    message_count=int(row["message_count"] or 0),
+                    search_text=row["search_text"] or "",
+                    pinned=bool(row["pinned"]),
+                    pinned_at=float(row["pinned_at"] or 0),
+                )
+                for row in rows
+            }
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("ThreadStore SQLite read error: %s", exc)
+            return None
+
+    async def _all_threads(self, user_id: str, tag: str) -> dict[str, ThreadMeta]:
+        """Merge thread metas from all stores; freshest copy (max updated_at) wins."""
+        merged: dict[str, ThreadMeta] = {}
+
+        def _merge(src: dict[str, ThreadMeta] | None) -> None:
+            if not src:
+                return
+            for tid, meta in src.items():
+                cur = merged.get(tid)
+                if cur is None or meta.updated_at >= cur.updated_at:
+                    merged[tid] = meta
+
+        _merge(await self._redis_threads(tag))
+        _merge(await self._sqlite_threads(tag))
+        _merge(self._mem.get(user_id, {}))
+        return merged
+
+    @staticmethod
+    def _sort_threads(threads: list[ThreadMeta]) -> list[ThreadMeta]:
+        """Pinned first (by pinned_at desc), then unpinned (by updated_at desc)."""
+        threads.sort(key=lambda t: (
+            not t.pinned,
+            -t.pinned_at if t.pinned else -t.updated_at,
+        ))
+        return threads
+
+    async def _redis_get_thread(self, tag: str, thread_id: str) -> dict | None:
+        """Raw hash for one thread from Redis. None on miss or error."""
+        r = await self._get_redis()
+        if r is None:
+            return None
+        try:
+            data = await r.hgetall(f"threads:{tag}:{thread_id}")
+            return data or None
+        except (RedisError, RuntimeError) as exc:
+            logger.warning("ThreadStore Redis get error: %s", exc)
+            return None
+
+    async def _sqlite_get_thread(self, tag: str, thread_id: str) -> dict | None:
+        """Raw row for one thread from SQLite. None on miss or error."""
+        db = await get_sqlite_connection()
+        if db is None:
+            return None
+        try:
+            cur = await db.execute(
+                "SELECT * FROM threads WHERE thread_id = ? AND user_tag = ?",
+                (thread_id, tag),
+            )
+            row = await cur.fetchone()
+            return dict(row) if row else None
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("ThreadStore SQLite get error: %s", exc)
+            return None
+
+    async def _existing_meta(self, user_id: str, tag: str, thread_id: str) -> ThreadMeta | None:
+        """Find the freshest existing meta for a thread across all stores."""
+        data = await self._redis_get_thread(tag, thread_id)
+        if data:
+            return ThreadMeta(
+                thread_id=data.get("thread_id", thread_id),
+                summary=data.get("summary", ""),
+                created_at=float(data.get("created_at", 0)),
+                updated_at=float(data.get("updated_at", 0)),
+                status=data.get("status", "idle"),
+                message_count=int(data.get("message_count", 0)),
+                search_text=data.get("search_text", ""),
+                pinned=data.get("pinned", "0") == "1",
+                pinned_at=float(data.get("pinned_at", 0)),
+            )
+        row = await self._sqlite_get_thread(tag, thread_id)
+        if row:
+            return ThreadMeta(
+                thread_id=row["thread_id"],
+                summary=row["summary"] or "",
+                created_at=float(row["created_at"] or 0),
+                updated_at=float(row["updated_at"] or 0),
+                status=row["status"] or "idle",
+                message_count=int(row["message_count"] or 0),
+                search_text=row["search_text"] or "",
+                pinned=bool(row["pinned"]),
+                pinned_at=float(row["pinned_at"] or 0),
+            )
+        return self._mem.get(user_id, {}).get(thread_id)
+
     async def list_threads(
         self, user_id: str, limit: int = 20, offset: int = 0
     ) -> list[ThreadMeta]:
         """Return the user's threads, pinned first (by pinned_at desc), then by updated_at desc, with pagination."""
         tag = _user_tag(user_id)
-        r = await self._get_redis()
-        if r is not None:
-            try:
-                thread_ids = await r.zrange(f"threads:{tag}", 0, -1)
-                if not thread_ids:
-                    return []
-                pipe = r.pipeline()
-                for tid in thread_ids:
-                    pipe.hgetall(f"threads:{tag}:{tid}")
-                results = await pipe.execute()
-                threads = []
-                for tid, data in zip(thread_ids, results, strict=False):
-                    if data:
-                        threads.append(ThreadMeta(
-                            thread_id=data.get("thread_id", tid),
-                            summary=data.get("summary", ""),
-                            created_at=float(data.get("created_at", 0)),
-                            updated_at=float(data.get("updated_at", 0)),
-                            status=data.get("status", "idle"),
-                            message_count=int(data.get("message_count", 0)),
-                            pinned=data.get("pinned", "0") == "1",
-                            pinned_at=float(data.get("pinned_at", 0)),
-                        ))
-                # Sort: pinned first (by pinned_at desc), then unpinned (by updated_at desc)
-                threads.sort(key=lambda t: (
-                    not t.pinned,  # False (pinned) sorts before True (not pinned)
-                    -t.pinned_at if t.pinned else -t.updated_at,
-                ))
-                return threads[offset : offset + limit]
-            except (RedisError, RuntimeError) as exc:
-                logger.warning("ThreadStore list_threads Redis error — falling back: %s", exc)
-
-        # SQLite fallback
-        db = await get_sqlite_connection()
-        if db is not None:
-            try:
-                cur = await db.execute(
-                    "SELECT * FROM threads WHERE user_tag = ? ORDER BY pinned DESC, pinned_at DESC, updated_at DESC",
-                    (tag,),
-                )
-                rows = await cur.fetchall()
-                threads = [
-                    ThreadMeta(
-                        thread_id=r["thread_id"],
-                        summary=r["summary"] or "",
-                        created_at=float(r["created_at"] or 0),
-                        updated_at=float(r["updated_at"] or 0),
-                        status=r["status"] or "idle",
-                        message_count=int(r["message_count"] or 0),
-                        search_text=r["search_text"] or "",
-                        pinned=bool(r["pinned"]),
-                        pinned_at=float(r["pinned_at"] or 0),
-                    )
-                    for r in rows
-                ]
-                threads.sort(key=lambda t: (
-                    not t.pinned,
-                    -t.pinned_at if t.pinned else -t.updated_at,
-                ))
-                return threads[offset : offset + limit]
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("ThreadStore list_threads SQLite error — falling back: %s", exc)
-
-        # In-memory fallback
-        user_threads = self._mem.get(user_id, {})
-        all_threads = list(user_threads.values())
-        all_threads.sort(key=lambda t: (
-            not t.pinned,
-            -t.pinned_at if t.pinned else -t.updated_at,
-        ))
-        return all_threads[offset : offset + limit]
+        merged = await self._all_threads(user_id, tag)
+        threads = self._sort_threads(list(merged.values()))
+        return threads[offset : offset + limit]
 
     async def upsert_thread(
         self,
@@ -159,21 +241,23 @@ class ThreadStore:
         """Insert or update a thread's metadata. Updates summary, status, and updated_at."""
         tag = _user_tag(user_id)
         now = time.time()
+
+        # Merge with the freshest existing copy found in ANY store
+        existing = await self._existing_meta(user_id, tag, thread_id)
+        created_at = existing.created_at if existing else now
+        prev_count = existing.message_count if existing else 0
+        prev_search = existing.search_text if existing else ""
+        prev_pinned = existing.pinned if existing else False
+        prev_pinned_at = existing.pinned_at if existing else 0.0
+        count = message_count if message_count > 0 else prev_count
+        final_search = search_text if search_text else prev_search
+        persisted = False
+
         r = await self._get_redis()
         if r is not None:
             try:
                 key = f"threads:{tag}:{thread_id}"
-                existing = await r.hgetall(key)
-                created_at = float(existing.get("created_at", now)) if existing else now
-                prev_count = int(existing.get("message_count", 0)) if existing else 0
-                prev_search = existing.get("search_text", "") if existing else ""
-                # If message_count not provided, preserve existing count
-                count = message_count if message_count > 0 else prev_count
-                # Accumulate search_text if not provided
-                final_search = search_text if search_text else prev_search
                 pipe = r.pipeline()
-                prev_pinned = existing.get("pinned", "0") == "1" if existing else False
-                prev_pinned_at = float(existing.get("pinned_at", 0)) if existing else 0.0
                 pipe.hset(key, mapping={
                     "thread_id": thread_id,
                     "summary": summary[:50],
@@ -188,70 +272,53 @@ class ThreadStore:
                 pipe.zadd(f"threads:{tag}", {thread_id: now})
                 pipe.expire(key, _TTL_SECONDS)
                 await pipe.execute()
-                return
+                persisted = True
             except (RedisError, RuntimeError) as exc:
-                logger.warning("ThreadStore upsert_thread Redis error — falling back: %s", exc)
+                logger.warning("ThreadStore upsert_thread Redis error: %s", exc)
 
-        # SQLite fallback
+        # SQLite write-through (durable copy alongside Redis)
         db = await get_sqlite_connection()
         if db is not None:
             try:
-                cur = await db.execute(
-                    "SELECT * FROM threads WHERE thread_id = ?", (thread_id,)
-                )
-                row = await cur.fetchone()
-                created_at = float(row["created_at"]) if row else now
-                prev_count = int(row["message_count"]) if row else 0
-                prev_search = row["search_text"] if row else ""
-                prev_pinned = bool(row["pinned"]) if row else False
-                prev_pinned_at = float(row["pinned_at"] or 0) if row else 0.0
-                count = message_count if message_count > 0 else prev_count
-                final_search = search_text if search_text else prev_search
                 await db.execute(
                     "INSERT OR REPLACE INTO threads (thread_id, user_tag, summary, created_at, updated_at, status, message_count, search_text, pinned, pinned_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (thread_id, tag, summary[:50], created_at, now, status, count, final_search[:1000], 1 if prev_pinned else 0, prev_pinned_at),
                 )
                 await db.commit()
-                return
+                persisted = True
             except Exception as exc:  # noqa: BLE001
-                logger.warning("ThreadStore upsert_thread SQLite error — falling back: %s", exc)
+                logger.warning("ThreadStore upsert_thread SQLite error: %s", exc)
 
-        # In-memory fallback
-        user_threads = self._mem.setdefault(user_id, {})
-        existing = user_threads.get(thread_id)
-        created_at = existing.created_at if existing else now
-        prev_count = existing.message_count if existing else 0
-        prev_search = existing.search_text if existing else ""
-        prev_pinned = existing.pinned if existing else False
-        prev_pinned_at = existing.pinned_at if existing else 0.0
-        count = message_count if message_count > 0 else prev_count
-        final_search = search_text if search_text else prev_search
-        user_threads[thread_id] = ThreadMeta(
-            thread_id=thread_id,
-            summary=summary[:50],
-            created_at=created_at,
-            updated_at=now,
-            status=status,
-            message_count=count,
-            search_text=final_search[:1000],
-            pinned=prev_pinned,
-            pinned_at=prev_pinned_at,
-        )
+        if not persisted:
+            # In-memory last resort
+            user_threads = self._mem.setdefault(user_id, {})
+            user_threads[thread_id] = ThreadMeta(
+                thread_id=thread_id,
+                summary=summary[:50],
+                created_at=created_at,
+                updated_at=now,
+                status=status,
+                message_count=count,
+                search_text=final_search[:1000],
+                pinned=prev_pinned,
+                pinned_at=prev_pinned_at,
+            )
 
     async def delete_thread(self, user_id: str, thread_id: str) -> bool:
-        """Remove a thread from the metadata index. Returns True if it existed."""
+        """Remove a thread from ALL stores. Returns True if it existed anywhere."""
         tag = _user_tag(user_id)
+        existed = False
+
         r = await self._get_redis()
         if r is not None:
             try:
                 key = f"threads:{tag}:{thread_id}"
                 deleted = await r.delete(key)
                 await r.zrem(f"threads:{tag}", thread_id)
-                return deleted > 0
+                existed = deleted > 0
             except (RedisError, RuntimeError) as exc:
-                logger.warning("ThreadStore delete_thread Redis error — falling back: %s", exc)
+                logger.warning("ThreadStore delete_thread Redis error: %s", exc)
 
-        # SQLite fallback
         db = await get_sqlite_connection()
         if db is not None:
             try:
@@ -259,86 +326,38 @@ class ThreadStore:
                     "DELETE FROM threads WHERE thread_id = ? AND user_tag = ?", (thread_id, tag)
                 )
                 await db.commit()
-                return cur.rowcount > 0
+                existed = existed or cur.rowcount > 0
             except Exception as exc:  # noqa: BLE001
-                logger.warning("ThreadStore delete_thread SQLite error — falling back: %s", exc)
+                logger.warning("ThreadStore delete_thread SQLite error: %s", exc)
 
-        # In-memory fallback
         user_threads = self._mem.get(user_id, {})
         if thread_id in user_threads:
             del user_threads[thread_id]
-            return True
-        return False
+            existed = True
+
+        return existed
 
     async def get_thread(self, user_id: str, thread_id: str) -> ThreadMeta | None:
-        """Get a single thread's metadata, or None if not found."""
+        """Get a single thread's metadata, or None if not found in any store."""
         tag = _user_tag(user_id)
-        r = await self._get_redis()
-        if r is not None:
-            try:
-                data = await r.hgetall(f"threads:{tag}:{thread_id}")
-                if not data:
-                    return None
-                return ThreadMeta(
-                    thread_id=data.get("thread_id", thread_id),
-                    summary=data.get("summary", ""),
-                    created_at=float(data.get("created_at", 0)),
-                    updated_at=float(data.get("updated_at", 0)),
-                    status=data.get("status", "idle"),
-                    message_count=int(data.get("message_count", 0)),
-                    pinned=data.get("pinned", "0") == "1",
-                    pinned_at=float(data.get("pinned_at", 0)),
-                )
-            except (RedisError, RuntimeError) as exc:
-                logger.warning("ThreadStore get_thread Redis error — falling back: %s", exc)
-
-        # SQLite fallback
-        db = await get_sqlite_connection()
-        if db is not None:
-            try:
-                cur = await db.execute(
-                    "SELECT * FROM threads WHERE thread_id = ? AND user_tag = ?", (thread_id, tag)
-                )
-                row = await cur.fetchone()
-                if not row:
-                    return None
-                return ThreadMeta(
-                    thread_id=row["thread_id"],
-                    summary=row["summary"] or "",
-                    created_at=float(row["created_at"] or 0),
-                    updated_at=float(row["updated_at"] or 0),
-                    status=row["status"] or "idle",
-                    message_count=int(row["message_count"] or 0),
-                    search_text=row["search_text"] or "",
-                    pinned=bool(row["pinned"]),
-                    pinned_at=float(row["pinned_at"] or 0),
-                )
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("ThreadStore get_thread SQLite error — falling back: %s", exc)
-
-        # In-memory fallback
-        user_threads = self._mem.get(user_id, {})
-        return user_threads.get(thread_id)
+        return await self._existing_meta(user_id, tag, thread_id)
 
     async def update_status(self, user_id: str, thread_id: str, status: str) -> None:
-        """Update only the status field of a thread (e.g., busy → idle)."""
+        """Update only the status field of a thread (e.g., busy → idle) in every store."""
         tag = _user_tag(user_id)
+
         r = await self._get_redis()
         if r is not None:
             try:
                 key = f"threads:{tag}:{thread_id}"
-                exists = await r.exists(key)
-                if not exists:
-                    return
-                pipe = r.pipeline()
-                pipe.hset(key, "status", status)
-                pipe.expire(key, _TTL_SECONDS)
-                await pipe.execute()
-                return
+                if await r.exists(key):
+                    pipe = r.pipeline()
+                    pipe.hset(key, "status", status)
+                    pipe.expire(key, _TTL_SECONDS)
+                    await pipe.execute()
             except (RedisError, RuntimeError) as exc:
-                logger.warning("ThreadStore update_status Redis error — falling back: %s", exc)
+                logger.warning("ThreadStore update_status Redis error: %s", exc)
 
-        # SQLite fallback
         db = await get_sqlite_connection()
         if db is not None:
             try:
@@ -347,11 +366,9 @@ class ThreadStore:
                     (status, thread_id, tag),
                 )
                 await db.commit()
-                return
             except Exception as exc:  # noqa: BLE001
-                logger.warning("ThreadStore update_status SQLite error — falling back: %s", exc)
+                logger.warning("ThreadStore update_status SQLite error: %s", exc)
 
-        # In-memory fallback
         user_threads = self._mem.get(user_id, {})
         if thread_id in user_threads:
             user_threads[thread_id].status = status
@@ -359,28 +376,27 @@ class ThreadStore:
     async def update_pin_status(
         self, user_id: str, thread_id: str, pinned: bool
     ) -> bool:
-        """Set or clear the pinned status of a thread. Returns True if thread exists."""
+        """Set or clear the pinned status of a thread in every store. Returns True if thread exists."""
         tag = _user_tag(user_id)
         now = time.time()
+        existed = False
+
         r = await self._get_redis()
         if r is not None:
             try:
                 key = f"threads:{tag}:{thread_id}"
-                exists = await r.exists(key)
-                if not exists:
-                    return False
-                pipe = r.pipeline()
-                pipe.hset(key, mapping={
-                    "pinned": "1" if pinned else "0",
-                    "pinned_at": str(now) if pinned else "0",
-                })
-                pipe.expire(key, _TTL_SECONDS)
-                await pipe.execute()
-                return True
+                if await r.exists(key):
+                    pipe = r.pipeline()
+                    pipe.hset(key, mapping={
+                        "pinned": "1" if pinned else "0",
+                        "pinned_at": str(now) if pinned else "0",
+                    })
+                    pipe.expire(key, _TTL_SECONDS)
+                    await pipe.execute()
+                    existed = True
             except (RedisError, RuntimeError) as exc:
                 logger.warning("ThreadStore update_pin_status Redis error: %s", exc)
 
-        # SQLite fallback
         db = await get_sqlite_connection()
         if db is not None:
             try:
@@ -389,42 +405,23 @@ class ThreadStore:
                     (1 if pinned else 0, now if pinned else 0.0, thread_id, tag),
                 )
                 await db.commit()
-                return cur.rowcount > 0
+                existed = existed or cur.rowcount > 0
             except Exception as exc:  # noqa: BLE001
                 logger.warning("ThreadStore update_pin_status SQLite error: %s", exc)
 
-        # In-memory fallback
         user_threads = self._mem.get(user_id, {})
-        if thread_id not in user_threads:
-            return False
-        user_threads[thread_id].pinned = pinned
-        user_threads[thread_id].pinned_at = now if pinned else 0.0
-        return True
+        if thread_id in user_threads:
+            user_threads[thread_id].pinned = pinned
+            user_threads[thread_id].pinned_at = now if pinned else 0.0
+            existed = True
+
+        return existed
 
     async def count_threads(self, user_id: str) -> int:
-        """Return the total number of threads for a user."""
+        """Return the total number of threads for a user across all stores."""
         tag = _user_tag(user_id)
-        r = await self._get_redis()
-        if r is not None:
-            try:
-                return await r.zcard(f"threads:{tag}")
-            except (RedisError, RuntimeError) as exc:
-                logger.warning("ThreadStore count_threads Redis error — falling back: %s", exc)
-
-        # SQLite fallback
-        db = await get_sqlite_connection()
-        if db is not None:
-            try:
-                cur = await db.execute(
-                    "SELECT COUNT(*) FROM threads WHERE user_tag = ?", (tag,)
-                )
-                row = await cur.fetchone()
-                return int(row[0]) if row else 0
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("ThreadStore count_threads SQLite error — falling back: %s", exc)
-
-        # In-memory fallback
-        return len(self._mem.get(user_id, {}))
+        merged = await self._all_threads(user_id, tag)
+        return len(merged)
 
     async def search_threads(
         self, user_id: str, query: str, limit: int = 20, offset: int = 0
@@ -436,92 +433,19 @@ class ThreadStore:
         """
         tag = _user_tag(user_id)
         query_lower = query.lower()
+        merged = await self._all_threads(user_id, tag)
 
-        r = await self._get_redis()
-        if r is not None:
-            try:
-                thread_ids = await r.zrange(f"threads:{tag}", 0, -1)
-                if not thread_ids:
-                    return [], 0
-                pipe = r.pipeline()
-                for tid in thread_ids:
-                    pipe.hgetall(f"threads:{tag}:{tid}")
-                results_raw = await pipe.execute()
-
-                matches = []
-                for tid, data in zip(thread_ids, results_raw, strict=False):
-                    if not data:
-                        continue
-                    search_text = data.get("search_text", "")
-                    idx = search_text.lower().find(query_lower)
-                    if idx >= 0:
-                        start = max(0, idx - 75)
-                        end = min(len(search_text), idx + len(query) + 75)
-                        snippet = (
-                            ("..." if start > 0 else "")
-                            + search_text[start:end]
-                            + ("..." if end < len(search_text) else "")
-                        )
-                        matches.append({
-                            "thread_id": data.get("thread_id", tid),
-                            "summary": data.get("summary", ""),
-                            "snippet": snippet,
-                            "updated_at": float(data.get("updated_at", 0)),
-                            "message_count": int(data.get("message_count", 0)),
-                        })
-
-                matches.sort(key=lambda m: m["updated_at"], reverse=True)
-                total = len(matches)
-                return matches[offset : offset + limit], total
-            except (RedisError, RuntimeError) as exc:
-                logger.warning("ThreadStore search_threads Redis error: %s", exc)
-
-        # SQLite fallback
-        db = await get_sqlite_connection()
-        if db is not None:
-            try:
-                cur = await db.execute(
-                    "SELECT * FROM threads WHERE user_tag = ?", (tag,)
-                )
-                rows = await cur.fetchall()
-                matches = []
-                for row in rows:
-                    search_text = row["search_text"] or ""
-                    idx = search_text.lower().find(query_lower)
-                    if idx >= 0:
-                        start = max(0, idx - 75)
-                        end = min(len(search_text), idx + len(query) + 75)
-                        snippet = (
-                            ("..." if start > 0 else "")
-                            + search_text[start:end]
-                            + ("..." if end < len(search_text) else "")
-                        )
-                        matches.append({
-                            "thread_id": row["thread_id"],
-                            "summary": row["summary"] or "",
-                            "snippet": snippet,
-                            "updated_at": float(row["updated_at"] or 0),
-                            "message_count": int(row["message_count"] or 0),
-                        })
-                matches.sort(key=lambda m: m["updated_at"], reverse=True)
-                total = len(matches)
-                return matches[offset : offset + limit], total
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("ThreadStore search_threads SQLite error: %s", exc)
-
-        # In-memory fallback
-        user_threads = self._mem.get(user_id, {})
         matches = []
-        for meta in user_threads.values():
+        for meta in merged.values():
             search_text = meta.search_text or ""
             idx = search_text.lower().find(query_lower)
             if idx >= 0:
-                start = max(0, idx - 75)
-                end = min(len(search_text), idx + len(query) + 75)
+                start_i = max(0, idx - 75)
+                end_i = min(len(search_text), idx + len(query) + 75)
                 snippet = (
-                    ("..." if start > 0 else "")
-                    + search_text[start:end]
-                    + ("..." if end < len(search_text) else "")
+                    ("..." if start_i > 0 else "")
+                    + search_text[start_i:end_i]
+                    + ("..." if end_i < len(search_text) else "")
                 )
                 matches.append({
                     "thread_id": meta.thread_id,
