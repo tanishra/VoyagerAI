@@ -160,6 +160,8 @@ class ObservabilityStore:
             "timezone": timezone,
         }
 
+        persisted = False
+
         r = await self._get_redis()
         if r is not None:
             try:
@@ -169,11 +171,11 @@ class ObservabilityStore:
                 pipe.zadd("observability:sessions", {thread_id: now})
                 pipe.expire("observability:sessions", _TTL_SECONDS)
                 await pipe.execute()
-                return
+                persisted = True
             except (RedisError, RuntimeError) as exc:
                 logger.warning("ObservabilityStore start_session Redis error: %s", exc)
 
-        # SQLite fallback
+        # SQLite write-through (durable copy alongside Redis)
         db = await get_sqlite_connection()
         if db is not None:
             try:
@@ -186,11 +188,12 @@ class ObservabilityStore:
                     (thread_id, user_hash, now, now + _TTL_SECONDS),
                 )
                 await db.commit()
-                return
+                persisted = True
             except Exception as exc:  # noqa: BLE001
                 logger.warning("ObservabilityStore start_session SQLite error: %s", exc)
 
-        self._mem_sessions[thread_id] = {**session_data, "start_time": now}
+        if not persisted:
+            self._mem_sessions[thread_id] = {**session_data, "start_time": now}
 
     async def record_event(
         self,
@@ -229,6 +232,8 @@ class ObservabilityStore:
             "timestamp": now,
         }
 
+        persisted = False
+
         r = await self._get_redis()
         if r is not None:
             try:
@@ -241,11 +246,11 @@ class ObservabilityStore:
                     pipe.zadd("observability:errors", {f"{thread_id}:{now}": now})
                     pipe.expire("observability:errors", _TTL_SECONDS)
                 await pipe.execute()
-                return
+                persisted = True
             except (RedisError, RuntimeError) as exc:
                 logger.warning("ObservabilityStore record_event Redis error: %s", exc)
 
-        # SQLite fallback
+        # SQLite write-through (durable copy alongside Redis)
         db = await get_sqlite_connection()
         if db is not None:
             try:
@@ -269,19 +274,20 @@ class ObservabilityStore:
                         (thread_id, "", name, error[:500], now, now + _TTL_SECONDS),
                     )
                 await db.commit()
-                return
+                persisted = True
             except Exception as exc:  # noqa: BLE001
                 logger.warning("ObservabilityStore record_event SQLite error: %s", exc)
 
-        self._mem_events.setdefault(thread_id, []).append(event_record)
-        if event_type == "tool_error" and error:
-            self._mem_errors.setdefault(thread_id, []).append({
-                "thread_id": thread_id,
-                "subagent_name": "",
-                "tool_name": name,
-                "error_message": error[:500],
-                "timestamp": now,
-            })
+        if not persisted:
+            self._mem_events.setdefault(thread_id, []).append(event_record)
+            if event_type == "tool_error" and error:
+                self._mem_errors.setdefault(thread_id, []).append({
+                    "thread_id": thread_id,
+                    "subagent_name": "",
+                    "tool_name": name,
+                    "error_message": error[:500],
+                    "timestamp": now,
+                })
 
     async def finalize_session(
         self,
@@ -294,7 +300,7 @@ class ObservabilityStore:
         total_cost_usd: float = 0.0,
         model_used: str = "",
     ) -> None:
-        """Finalize a session with end time and final status."""
+        """Finalize a session with end time and final status — updates every store that has it."""
         now = time.time()
 
         r = await self._get_redis()
@@ -302,27 +308,26 @@ class ObservabilityStore:
             try:
                 key = f"observability:session:{thread_id}"
                 session = await r.hgetall(key)
-                start_time = float(session.get("start_time", now)) if session else now
-                duration = round(now - start_time, 2) if start_time else 0.0
-                pipe = r.pipeline()
-                pipe.hset(key, mapping={
-                    "end_time": str(now),
-                    "duration_seconds": str(duration),
-                    "status": status,
-                    "subagent_count": str(subagent_count),
-                    "tool_call_count": str(tool_call_count),
-                    "total_tokens_in": str(total_tokens_in),
-                    "total_tokens_out": str(total_tokens_out),
-                    "total_cost_usd": str(round(total_cost_usd, 6)),
-                    "model_used": model_used,
-                })
-                pipe.expire(key, _TTL_SECONDS)
-                await pipe.execute()
-                return
+                if session:
+                    start_time = float(session.get("start_time", now))
+                    duration = round(now - start_time, 2)
+                    pipe = r.pipeline()
+                    pipe.hset(key, mapping={
+                        "end_time": str(now),
+                        "duration_seconds": str(duration),
+                        "status": status,
+                        "subagent_count": str(subagent_count),
+                        "tool_call_count": str(tool_call_count),
+                        "total_tokens_in": str(total_tokens_in),
+                        "total_tokens_out": str(total_tokens_out),
+                        "total_cost_usd": str(round(total_cost_usd, 6)),
+                        "model_used": model_used,
+                    })
+                    pipe.expire(key, _TTL_SECONDS)
+                    await pipe.execute()
             except (RedisError, RuntimeError) as exc:
                 logger.warning("ObservabilityStore finalize_session Redis error: %s", exc)
 
-        # SQLite fallback
         db = await get_sqlite_connection()
         if db is not None:
             try:
@@ -331,25 +336,25 @@ class ObservabilityStore:
                     (thread_id,),
                 )
                 row = await cur.fetchone()
-                start_time = float(row["start_time"]) if row else now
-                duration = round(now - start_time, 2)
-                await db.execute(
-                    "UPDATE observability_sessions SET "
-                    "end_time = ?, duration_seconds = ?, status = ?, "
-                    "subagent_count = ?, tool_call_count = ?, "
-                    "total_tokens_in = ?, total_tokens_out = ?, "
-                    "total_cost_usd = ?, model_used = ? "
-                    "WHERE thread_id = ?",
-                    (
-                        now, duration, status,
-                        subagent_count, tool_call_count,
-                        total_tokens_in, total_tokens_out,
-                        round(total_cost_usd, 6), model_used,
-                        thread_id,
-                    ),
-                )
-                await db.commit()
-                return
+                if row:
+                    start_time = float(row["start_time"])
+                    duration = round(now - start_time, 2)
+                    await db.execute(
+                        "UPDATE observability_sessions SET "
+                        "end_time = ?, duration_seconds = ?, status = ?, "
+                        "subagent_count = ?, tool_call_count = ?, "
+                        "total_tokens_in = ?, total_tokens_out = ?, "
+                        "total_cost_usd = ?, model_used = ? "
+                        "WHERE thread_id = ?",
+                        (
+                            now, duration, status,
+                            subagent_count, tool_call_count,
+                            total_tokens_in, total_tokens_out,
+                            round(total_cost_usd, 6), model_used,
+                            thread_id,
+                        ),
+                    )
+                    await db.commit()
             except Exception as exc:  # noqa: BLE001
                 logger.warning("ObservabilityStore finalize_session SQLite error: %s", exc)
 
@@ -381,12 +386,23 @@ class ObservabilityStore:
         limit: int = 50,
         offset: int = 0,
     ) -> dict:
-        """Get paginated list of sessions with filters.
+        """Get paginated list of sessions with filters, merged across all stores.
 
         Returns {"sessions": [...], "total": int, "limit": int, "offset": int}.
         """
         if to_ts == 0:
             to_ts = time.time()
+
+        merged: dict[str, dict] = {}
+
+        def _merge(tid: str, normalized: dict) -> None:
+            cur = merged.get(tid)
+            if cur is None:
+                merged[tid] = normalized
+            else:
+                # Prefer the finalized copy (has end_time), then latest end_time
+                if normalized.get("end_time") and not cur.get("end_time"):
+                    merged[tid] = normalized
 
         r = await self._get_redis()
         if r is not None:
@@ -394,66 +410,39 @@ class ObservabilityStore:
                 all_thread_ids = await r.zrangebyscore(
                     "observability:sessions", from_ts, to_ts
                 )
-                total = len(all_thread_ids)
-
-                # Apply status filter and paginate
-                page_ids = all_thread_ids[offset:offset + limit]
-                pipe = r.pipeline()
-                for tid in page_ids:
-                    pipe.hgetall(f"observability:session:{tid}")
-                sessions_raw = await pipe.execute()
-
-                sessions = []
-                for tid, data in zip(page_ids, sessions_raw, strict=False):
-                    if not data:
-                        continue
-                    if status and data.get("status", "") != status:
-                        continue
-                    sessions.append(self._normalize_session(tid, data))
-
-                return {"sessions": sessions, "total": total, "limit": limit, "offset": offset}
+                if all_thread_ids:
+                    pipe = r.pipeline()
+                    for tid in all_thread_ids:
+                        pipe.hgetall(f"observability:session:{tid}")
+                    sessions_raw = await pipe.execute()
+                    for tid, data in zip(all_thread_ids, sessions_raw, strict=False):
+                        if data:
+                            _merge(tid, self._normalize_session(tid, data))
             except (RedisError, RuntimeError) as exc:
                 logger.warning("ObservabilityStore get_sessions Redis error: %s", exc)
 
-        # SQLite fallback
         db = await get_sqlite_connection()
         if db is not None:
             try:
-                where_clauses = ["start_time >= ?", "start_time <= ?"]
-                params: list = [from_ts, to_ts]
-                if status:
-                    where_clauses.append("status = ?")
-                    params.append(status)
-                where_sql = " AND ".join(where_clauses)
-
                 cur = await db.execute(
-                    f"SELECT COUNT(*) FROM observability_sessions WHERE {where_sql}",
-                    params,
+                    "SELECT * FROM observability_sessions "
+                    "WHERE start_time >= ? AND start_time <= ?",
+                    (from_ts, to_ts),
                 )
-                row = await cur.fetchone()
-                total = int(row[0]) if row else 0
-
-                cur = await db.execute(
-                    f"SELECT * FROM observability_sessions WHERE {where_sql} "
-                    f"ORDER BY start_time DESC LIMIT ? OFFSET ?",
-                    [*params, limit, offset],
-                )
-                rows = await cur.fetchall()
-                sessions = [self._normalize_session_row(row) for row in rows]
-                return {"sessions": sessions, "total": total, "limit": limit, "offset": offset}
+                for row in await cur.fetchall():
+                    _merge(row["thread_id"], self._normalize_session_row(row))
             except Exception as exc:  # noqa: BLE001
                 logger.warning("ObservabilityStore get_sessions SQLite error: %s", exc)
 
-        # In-memory fallback
-        all_sessions = []
         for tid, data in self._mem_sessions.items():
             start = float(data.get("start_time", 0))
-            if start < from_ts or start > to_ts:
-                continue
-            if status and data.get("status", "") != status:
-                continue
-            all_sessions.append(self._normalize_session(tid, data))
+            if from_ts <= start <= to_ts:
+                _merge(tid, self._normalize_session(tid, data))
+
+        all_sessions = sorted(merged.values(), key=lambda x: x["start_time"])
         total = len(all_sessions)
+        if status:
+            all_sessions = [x for x in all_sessions if x.get("status") == status]
         sessions = all_sessions[offset:offset + limit]
         return {"sessions": sessions, "total": total, "limit": limit, "offset": offset}
 
@@ -490,22 +479,30 @@ class ObservabilityStore:
         }
 
     async def get_session_events(self, thread_id: str) -> list[dict]:
-        """Get ordered event list for a session (for waterfall rendering)."""
+        """Get ordered event list for a session, merged across all stores."""
+        merged: dict[tuple, dict] = {}
+
+        def _add(evt: dict) -> None:
+            key = (
+                evt.get("run_id", ""),
+                evt.get("event_type", ""),
+                evt.get("name", ""),
+                evt.get("timestamp", 0),
+            )
+            merged.setdefault(key, evt)
+
         r = await self._get_redis()
         if r is not None:
             try:
                 raw = await r.lrange(f"observability:events:{thread_id}", 0, -1)
-                events = []
                 for item in raw:
                     try:
-                        events.append(json.loads(item))
+                        _add(json.loads(item))
                     except (json.JSONDecodeError, TypeError):
                         continue
-                return events
             except (RedisError, RuntimeError) as exc:
                 logger.warning("ObservabilityStore get_session_events Redis error: %s", exc)
 
-        # SQLite fallback
         db = await get_sqlite_connection()
         if db is not None:
             try:
@@ -513,15 +510,13 @@ class ObservabilityStore:
                     "SELECT * FROM observability_events WHERE thread_id = ? ORDER BY timestamp",
                     (thread_id,),
                 )
-                rows = await cur.fetchall()
-                events = []
-                for row in rows:
+                for row in await cur.fetchall():
                     input_str = row["input"] or ""
                     try:
                         input_data = json.loads(input_str) if input_str else None
                     except (json.JSONDecodeError, TypeError):
                         input_data = input_str if input_str else None
-                    events.append({
+                    _add({
                         "thread_id": row["thread_id"],
                         "event_type": row["event_type"],
                         "run_id": row["run_id"] or "",
@@ -537,11 +532,13 @@ class ObservabilityStore:
                         "model": row["model"] or "",
                         "timestamp": float(row["timestamp"] or 0),
                     })
-                return events
             except Exception as exc:  # noqa: BLE001
                 logger.warning("ObservabilityStore get_session_events SQLite error: %s", exc)
 
-        return self._mem_events.get(thread_id, [])
+        for evt in self._mem_events.get(thread_id, []):
+            _add(evt)
+
+        return sorted(merged.values(), key=lambda x: x.get("timestamp", 0))
 
     async def get_errors(
         self,
@@ -551,20 +548,32 @@ class ObservabilityStore:
         tool: str = "",
         limit: int = 50,
     ) -> list[dict]:
-        """Get error events with filters."""
+        """Get error events with filters, merged across all stores."""
         if to_ts == 0:
             to_ts = time.time()
+
+        merged: dict[tuple, dict] = {}
+
+        def _add(err: dict) -> None:
+            ts = err.get("timestamp", 0)
+            if ts < from_ts or ts > to_ts:
+                return
+            if subagent and err.get("subagent_name", "") != subagent:
+                return
+            if tool and err.get("tool_name", "") != tool:
+                return
+            key = (err.get("thread_id", ""), ts, err.get("error_message", ""), err.get("tool_name", ""))
+            merged.setdefault(key, err)
 
         r = await self._get_redis()
         if r is not None:
             try:
                 error_keys = await r.zrangebyscore("observability:errors", from_ts, to_ts)
-                errors = []
                 for key in error_keys:
                     parts = key.rsplit(":", 1)
                     if len(parts) < 2:
                         continue
-                    tid, ts_str = parts
+                    tid, _ts_str = parts
                     events = await r.lrange(f"observability:events:{tid}", 0, -1)
                     for item in events:
                         try:
@@ -573,26 +582,16 @@ class ObservabilityStore:
                             continue
                         if evt.get("event_type") != "tool_error":
                             continue
-                        if subagent and evt.get("name", "") != subagent:
-                            continue
-                        if tool and evt.get("name", "") != tool:
-                            continue
-                        errors.append({
+                        _add({
                             "thread_id": tid,
                             "subagent_name": evt.get("name", ""),
                             "tool_name": evt.get("name", ""),
                             "error_message": evt.get("error", ""),
                             "timestamp": evt.get("timestamp", 0),
                         })
-                        if len(errors) >= limit:
-                            break
-                    if len(errors) >= limit:
-                        break
-                return errors
             except (RedisError, RuntimeError) as exc:
                 logger.warning("ObservabilityStore get_errors Redis error: %s", exc)
 
-        # SQLite fallback
         db = await get_sqlite_connection()
         if db is not None:
             try:
@@ -610,35 +609,23 @@ class ObservabilityStore:
                     f"ORDER BY timestamp DESC LIMIT ?",
                     [*params, limit],
                 )
-                rows = await cur.fetchall()
-                return [
-                    {
+                for row in await cur.fetchall():
+                    _add({
                         "thread_id": row["thread_id"],
                         "subagent_name": row["subagent_name"] or "",
                         "tool_name": row["tool_name"] or "",
                         "error_message": row["error_message"] or "",
                         "timestamp": float(row["timestamp"] or 0),
-                    }
-                    for row in rows
-                ]
+                    })
             except Exception as exc:  # noqa: BLE001
                 logger.warning("ObservabilityStore get_errors SQLite error: %s", exc)
 
-        # In-memory
-        errors = []
         for tid, errs in self._mem_errors.items():
             for err in errs:
-                ts = err.get("timestamp", 0)
-                if ts < from_ts or ts > to_ts:
-                    continue
-                if subagent and err.get("subagent_name", "") != subagent:
-                    continue
-                if tool and err.get("tool_name", "") != tool:
-                    continue
-                errors.append({**err, "thread_id": tid})
-                if len(errors) >= limit:
-                    break
-        return errors
+                _add({**err, "thread_id": tid})
+
+        errors = sorted(merged.values(), key=lambda x: x.get("timestamp", 0), reverse=True)
+        return errors[:limit]
 
     async def get_error_summary(
         self,
