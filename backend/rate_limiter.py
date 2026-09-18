@@ -50,6 +50,7 @@ class RateLimiter:
     def __init__(self) -> None:
         self._redis: Redis | None = None
         self._mem: dict[str, list[float]] = {}  # key -> [timestamps]
+        self._last_ts: dict[str, float] = {}  # key -> last recorded timestamp
 
     async def _get_redis(self) -> Redis | None:
         if self._redis is None:
@@ -75,7 +76,19 @@ class RateLimiter:
         """
         key = f"ratelimit:{user_id}:{endpoint_type}"
         now = time.time()
+        # Guarantee a unique timestamp per hit — identical `now` values would
+        # collapse in the cross-store union and undercount rapid requests.
+        last = self._last_ts.get(key, 0.0)
+        if now <= last:
+            now = last + 1e-6
+        self._last_ts[key] = now
         window_start = now - window_seconds
+
+        # Record the request in every available store, then count the
+        # union of timestamps — hits recorded during a Redis blip still
+        # count after Redis recovers.
+        seen: set[float] = {now}
+        persisted = False
 
         # --- Redis (sliding window via sorted set) ---
         r = await self._get_redis()
@@ -84,22 +97,16 @@ class RateLimiter:
                 pipe = r.pipeline()
                 pipe.zremrangebyscore(key, 0, window_start)
                 pipe.zadd(key, {str(now): now})
-                pipe.zcard(key)
+                pipe.zrangebyscore(key, window_start, "+inf", withscores=True)
                 pipe.expire(key, window_seconds)
                 results = await pipe.execute()
-                count = results[2]
-                if count <= limit:
-                    return True, 0
-                # Calculate retry-after: time until oldest entry expires
-                oldest = await r.zrange(key, 0, 0, withscores=True)
-                if oldest:
-                    retry_after = int(oldest[0][1] + window_seconds - now) + 1
-                    return False, max(retry_after, 1)
-                return False, window_seconds
+                for _member, score in results[2]:
+                    seen.add(float(score))
+                persisted = True
             except (RedisError, RuntimeError) as exc:
-                logger.warning("RateLimiter Redis error — falling back: %s", exc)
+                logger.warning("RateLimiter Redis error: %s", exc)
 
-        # --- SQLite fallback ---
+        # --- SQLite write-through ---
         db = await get_sqlite_connection()
         if db is not None:
             try:
@@ -107,40 +114,36 @@ class RateLimiter:
                     "DELETE FROM rate_limits WHERE key = ? AND timestamp < ?",
                     (key, window_start),
                 )
-                cur = await db.execute(
-                    "SELECT COUNT(*) FROM rate_limits WHERE key = ?", (key,)
+                await db.execute(
+                    "INSERT OR REPLACE INTO rate_limits (key, timestamp) VALUES (?, ?)",
+                    (key, now),
                 )
-                row = await cur.fetchone()
-                count = int(row[0]) if row else 0
-                if count < limit:
-                    await db.execute(
-                        "INSERT OR REPLACE INTO rate_limits (key, timestamp) VALUES (?, ?)",
-                        (key, now),
-                    )
-                    await db.commit()
-                    return True, 0
-                # Retry-after: oldest entry in window
                 cur = await db.execute(
-                    "SELECT MIN(timestamp) FROM rate_limits WHERE key = ?", (key,)
+                    "SELECT timestamp FROM rate_limits WHERE key = ? AND timestamp >= ?",
+                    (key, window_start),
                 )
-                row = await cur.fetchone()
-                if row and row[0]:
-                    retry_after = int(float(row[0]) + window_seconds - now) + 1
-                    return False, max(retry_after, 1)
-                return False, window_seconds
+                for row in await cur.fetchall():
+                    seen.add(float(row[0]))
+                await db.commit()
+                persisted = True
             except Exception as exc:  # noqa: BLE001
-                logger.warning("RateLimiter SQLite error — falling back: %s", exc)
+                logger.warning("RateLimiter SQLite error: %s", exc)
 
-        # --- In-memory fallback ---
-        timestamps = self._mem.get(key, [])
-        timestamps = [t for t in timestamps if t > window_start]
-        if len(timestamps) < limit:
+        if not persisted:
+            # --- In-memory last resort ---
+            timestamps = [t for t in self._mem.get(key, []) if t > window_start]
             timestamps.append(now)
             self._mem[key] = timestamps
+            seen.update(timestamps)
+
+        count = len(seen)
+        if count <= limit:
             return True, 0
-        self._mem[key] = timestamps
-        retry_after = int(timestamps[0] + window_seconds - now) + 1
+        # Retry-after: time until the oldest in-window hit expires
+        oldest = min(seen)
+        retry_after = int(oldest + window_seconds - now) + 1
         return False, max(retry_after, 1)
+
 
 
 # Singleton
