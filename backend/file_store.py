@@ -2,7 +2,9 @@
 
 Stores uploaded files (images, PDFs) as base64 in Redis hashes with a
 configurable TTL (default 1 hour). Files auto-expire and are cleaned up
-by Redis. Falls back to SQLite (persistent) then in-memory when Redis is unavailable.
+by Redis. Writes go through to SQLite as well so a Redis blip can't
+hide a file that was uploaded while Redis was down. In-memory is the
+last-resort fallback.
 """
 
 from __future__ import annotations
@@ -41,7 +43,7 @@ def _user_tag(user_id: str) -> str:
 
 
 class FileStore:
-    """Redis-backed file store with SQLite + in-memory fallback."""
+    """Redis-backed file store with SQLite write-through + in-memory fallback."""
 
     def __init__(self) -> None:
         self._redis: Redis | None = None
@@ -65,13 +67,21 @@ class FileStore:
         content_type: str,
         data: bytes,
     ) -> dict:
-        """Store file in Redis, return metadata dict with data_url."""
+        """Store file in Redis + SQLite, return metadata dict with data_url."""
         file_id = str(uuid.uuid4())
         tag = _user_tag(user_id)
         b64_data = base64.b64encode(data).decode("ascii")
         now = time.time()
         size = len(data)
         data_url = f"data:{content_type};base64,{b64_data}"
+        result = {
+            "file_id": file_id,
+            "data_url": data_url,
+            "filename": filename,
+            "content_type": content_type,
+            "size": size,
+        }
+        persisted = False
 
         r = await self._get_redis()
         if r is not None:
@@ -88,75 +98,56 @@ class FileStore:
                 })
                 pipe.expire(key, _TTL_SECONDS)
                 await pipe.execute()
-                return {
-                    "file_id": file_id,
-                    "data_url": data_url,
-                    "filename": filename,
-                    "content_type": content_type,
-                    "size": size,
-                }
+                persisted = True
             except (RedisError, RuntimeError) as exc:
-                logger.warning("FileStore upload Redis error — falling back: %s", exc)
+                logger.warning("FileStore upload Redis error: %s", exc)
 
-        # SQLite fallback
+        # SQLite write-through (durable copy alongside Redis)
         db = await get_sqlite_connection()
         if db is not None:
             try:
                 await db.execute(
-                    "INSERT INTO files (file_id, user_tag, filename, content_type, size, data_base64, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT OR REPLACE INTO files (file_id, user_tag, filename, content_type, size, data_base64, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                     (file_id, tag, filename[:200], content_type, size, b64_data, now, now + _TTL_SECONDS),
                 )
                 await db.commit()
-                return {
-                    "file_id": file_id,
-                    "data_url": data_url,
-                    "filename": filename,
-                    "content_type": content_type,
-                    "size": size,
-                }
+                persisted = True
             except Exception as exc:  # noqa: BLE001
-                logger.warning("FileStore upload SQLite error — falling back: %s", exc)
+                logger.warning("FileStore upload SQLite error: %s", exc)
 
-        # In-memory fallback
-        user_files = self._mem.setdefault(user_id, {})
-        user_files[file_id] = {
-            "file_id": file_id,
-            "filename": filename[:200],
-            "content_type": content_type,
-            "size": size,
-            "data": b64_data,
-            "created_at": now,
-        }
-        return {
-            "file_id": file_id,
-            "data_url": data_url,
-            "filename": filename,
-            "content_type": content_type,
-            "size": size,
-        }
+        if not persisted:
+            # In-memory last resort
+            user_files = self._mem.setdefault(user_id, {})
+            user_files[file_id] = {
+                "file_id": file_id,
+                "filename": filename[:200],
+                "content_type": content_type,
+                "size": size,
+                "data": b64_data,
+                "created_at": now,
+            }
+        return result
 
     async def get(self, user_id: str, file_id: str) -> FileMeta | None:
-        """Retrieve file metadata + data from Redis."""
+        """Retrieve file metadata + data from the first store that has it."""
         tag = _user_tag(user_id)
+
         r = await self._get_redis()
         if r is not None:
             try:
-                key = f"files:{tag}:{file_id}"
-                data = await r.hgetall(key)
-                if not data:
-                    return None
-                return FileMeta(
-                    file_id=data.get("file_id", file_id),
-                    filename=data.get("filename", ""),
-                    content_type=data.get("content_type", ""),
-                    size=int(data.get("size", 0)),
-                    data=data.get("data", ""),
-                    created_at=float(data.get("created_at", 0)),
-                )
+                data = await r.hgetall(f"files:{tag}:{file_id}")
+                if data:
+                    return FileMeta(
+                        file_id=data.get("file_id", file_id),
+                        filename=data.get("filename", ""),
+                        content_type=data.get("content_type", ""),
+                        size=int(data.get("size", 0)),
+                        data=data.get("data", ""),
+                        created_at=float(data.get("created_at", 0)),
+                    )
             except (RedisError, RuntimeError) as exc:
-                logger.warning("FileStore get Redis error — falling back: %s", exc)
+                logger.warning("FileStore get Redis error: %s", exc)
 
-        # SQLite fallback
         db = await get_sqlite_connection()
         if db is not None:
             try:
@@ -168,18 +159,17 @@ class FileStore:
                     if float(row["expires_at"]) < time.time():
                         await db.execute("DELETE FROM files WHERE file_id = ?", (file_id,))
                         await db.commit()
-                        return None
-                    return FileMeta(
-                        file_id=row["file_id"],
-                        filename=row["filename"] or "",
-                        content_type=row["content_type"] or "",
-                        size=int(row["size"] or 0),
-                        data=row["data_base64"] or "",
-                        created_at=float(row["created_at"] or 0),
-                    )
-                return None
+                    else:
+                        return FileMeta(
+                            file_id=row["file_id"],
+                            filename=row["filename"] or "",
+                            content_type=row["content_type"] or "",
+                            size=int(row["size"] or 0),
+                            data=row["data_base64"] or "",
+                            created_at=float(row["created_at"] or 0),
+                        )
             except Exception as exc:  # noqa: BLE001
-                logger.warning("FileStore get SQLite error — falling back: %s", exc)
+                logger.warning("FileStore get SQLite error: %s", exc)
 
         # In-memory fallback
         user_files = self._mem.get(user_id, {})
@@ -196,18 +186,18 @@ class FileStore:
         )
 
     async def delete(self, user_id: str, file_id: str) -> bool:
-        """Delete a file from Redis."""
+        """Delete a file from ALL stores. Returns True if it existed anywhere."""
         tag = _user_tag(user_id)
+        existed = False
+
         r = await self._get_redis()
         if r is not None:
             try:
-                key = f"files:{tag}:{file_id}"
-                deleted = await r.delete(key)
-                return deleted > 0
+                deleted = await r.delete(f"files:{tag}:{file_id}")
+                existed = deleted > 0
             except (RedisError, RuntimeError) as exc:
-                logger.warning("FileStore delete Redis error — falling back: %s", exc)
+                logger.warning("FileStore delete Redis error: %s", exc)
 
-        # SQLite fallback
         db = await get_sqlite_connection()
         if db is not None:
             try:
@@ -215,16 +205,16 @@ class FileStore:
                     "DELETE FROM files WHERE file_id = ? AND user_tag = ?", (file_id, tag)
                 )
                 await db.commit()
-                return cur.rowcount > 0
+                existed = existed or cur.rowcount > 0
             except Exception as exc:  # noqa: BLE001
-                logger.warning("FileStore delete SQLite error — falling back: %s", exc)
+                logger.warning("FileStore delete SQLite error: %s", exc)
 
-        # In-memory fallback
         user_files = self._mem.get(user_id, {})
         if file_id in user_files:
             del user_files[file_id]
-            return True
-        return False
+            existed = True
+
+        return existed
 
 
 file_store = FileStore()
