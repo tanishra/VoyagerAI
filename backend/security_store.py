@@ -93,6 +93,8 @@ class SecurityStore:
             "created_at": str(now),
         }
 
+        persisted = False
+
         r = await self._get_redis()
         if r is not None:
             try:
@@ -104,24 +106,25 @@ class SecurityStore:
                 pipe.zadd("security:index", {flag_id: now})
                 pipe.expire("security:index", _TTL_SECONDS)
                 await pipe.execute()
-                return flag_id
+                persisted = True
             except (RedisError, RuntimeError) as exc:
                 logger.warning("SecurityStore record_flag Redis error: %s", exc)
 
-        # SQLite fallback
+        # SQLite write-through (durable copy alongside Redis)
         db = await get_sqlite_connection()
         if db is not None:
             try:
                 await db.execute(
-                    "INSERT INTO security_flags (flag_id, user_hash, category, confidence, source, thread_id, reasoning_snippet, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT OR REPLACE INTO security_flags (flag_id, user_hash, category, confidence, source, thread_id, reasoning_snippet, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                     (flag_id, user_hash, category, confidence, source, thread_hash, reasoning[:200], now),
                 )
                 await db.commit()
-                return flag_id
+                persisted = True
             except Exception as exc:  # noqa: BLE001
                 logger.warning("SecurityStore record_flag SQLite error: %s", exc)
 
-        self._mem_flags.setdefault(user_hash, []).append(entry)
+        if not persisted:
+            self._mem_flags.setdefault(user_hash, []).append(entry)
         return flag_id
 
     # -----------------------------------------------------------------
@@ -129,10 +132,11 @@ class SecurityStore:
     # -----------------------------------------------------------------
 
     async def record_strike(self, user_id: str) -> int:
-        """Record a strike for a user. Returns current strike count in rolling window."""
+        """Record a strike for a user in all stores. Returns current strike count in rolling window."""
         user_hash = _hash_user_id(user_id)
         now = time.time()
         window_start = now - _STRIKE_WINDOW
+        persisted = False
 
         r = await self._get_redis()
         if r is not None:
@@ -141,47 +145,35 @@ class SecurityStore:
                 pipe = r.pipeline()
                 pipe.zremrangebyscore(key, 0, window_start)
                 pipe.zadd(key, {uuid.uuid4().hex[:16]: now})
-                pipe.zcard(key)
                 pipe.expire(key, _TTL_SECONDS)
-                results = await pipe.execute()
-                return int(results[2])
+                await pipe.execute()
+                persisted = True
             except (RedisError, RuntimeError) as exc:
                 logger.warning("SecurityStore record_strike Redis error: %s", exc)
 
-        # SQLite fallback
         db = await get_sqlite_connection()
         if db is not None:
             try:
-                strike_id = uuid.uuid4().hex[:16]
-                await db.execute(
-                    "DELETE FROM security_strikes WHERE user_hash = ? AND created_at < ?",
-                    (user_hash, window_start),
-                )
                 await db.execute(
                     "INSERT INTO security_strikes (user_hash, created_at) VALUES (?, ?)",
                     (user_hash, now),
                 )
                 await db.commit()
-                cur = await db.execute(
-                    "SELECT COUNT(*) FROM security_strikes WHERE user_hash = ? AND created_at >= ?",
-                    (user_hash, window_start),
-                )
-                row = await cur.fetchone()
-                return int(row[0]) if row else 1
+                persisted = True
             except Exception as exc:  # noqa: BLE001
                 logger.warning("SecurityStore record_strike SQLite error: %s", exc)
 
-        strikes = self._mem_strikes.setdefault(user_hash, [])
-        strikes = [s for s in strikes if s > window_start]
-        strikes.append(now)
-        self._mem_strikes[user_hash] = strikes
-        return len(strikes)
+        if not persisted:
+            self._mem_strikes.setdefault(user_hash, []).append(now)
+
+        return await self.get_strike_count(user_id)
 
     async def get_strike_count(self, user_id: str) -> int:
-        """Get current strike count within the rolling window."""
+        """Get current strike count within the rolling window — max across all stores."""
         user_hash = _hash_user_id(user_id)
         now = time.time()
         window_start = now - _STRIKE_WINDOW
+        count = 0
 
         r = await self._get_redis()
         if r is not None:
@@ -191,11 +183,10 @@ class SecurityStore:
                 pipe.zremrangebyscore(key, 0, window_start)
                 pipe.zcard(key)
                 results = await pipe.execute()
-                return int(results[1])
+                count = max(count, int(results[1]))
             except (RedisError, RuntimeError) as exc:
                 logger.warning("SecurityStore get_strike_count Redis error: %s", exc)
 
-        # SQLite fallback
         db = await get_sqlite_connection()
         if db is not None:
             try:
@@ -205,17 +196,16 @@ class SecurityStore:
                 )
                 await db.commit()
                 cur = await db.execute(
-                    "SELECT COUNT(*) FROM security_strikes WHERE user_hash = ?",
-                    (user_hash,),
+                    "SELECT COUNT(*) FROM security_strikes WHERE user_hash = ? AND created_at >= ?",
+                    (user_hash, window_start),
                 )
                 row = await cur.fetchone()
-                return int(row[0]) if row else 0
+                count = max(count, int(row[0]) if row else 0)
             except Exception as exc:  # noqa: BLE001
                 logger.warning("SecurityStore get_strike_count SQLite error: %s", exc)
 
-        strikes = self._mem_strikes.get(user_hash, [])
-        strikes = [s for s in strikes if s > window_start]
-        return len(strikes)
+        strikes = [s for s in self._mem_strikes.get(user_hash, []) if s > window_start]
+        return max(count, len(strikes))
 
     # -----------------------------------------------------------------
     # Cooldown
@@ -230,13 +220,11 @@ class SecurityStore:
         if r is not None:
             try:
                 until = await r.get(f"security:cooldown:{user_hash}")
-                if until is not None:
-                    return float(until) > now
-                return False
+                if until is not None and float(until) > now:
+                    return True
             except (RedisError, RuntimeError) as exc:
                 logger.warning("SecurityStore is_in_cooldown Redis error: %s", exc)
 
-        # SQLite fallback
         db = await get_sqlite_connection()
         if db is not None:
             try:
@@ -245,9 +233,8 @@ class SecurityStore:
                     (user_hash,),
                 )
                 row = await cur.fetchone()
-                if row:
-                    return float(row["cooldown_until"]) > now
-                return False
+                if row and float(row["cooldown_until"]) > now:
+                    return True
             except Exception as exc:  # noqa: BLE001
                 logger.warning("SecurityStore is_in_cooldown SQLite error: %s", exc)
 
@@ -260,15 +247,16 @@ class SecurityStore:
         seconds = (minutes or settings.INJECTION_COOLDOWN_MINUTES) * 60
         until = time.time() + seconds
 
+        persisted = False
+
         r = await self._get_redis()
         if r is not None:
             try:
                 await r.set(f"security:cooldown:{user_hash}", str(until), ex=seconds + 60)
-                return
+                persisted = True
             except (RedisError, RuntimeError) as exc:
                 logger.warning("SecurityStore apply_cooldown Redis error: %s", exc)
 
-        # SQLite fallback
         db = await get_sqlite_connection()
         if db is not None:
             try:
@@ -277,23 +265,25 @@ class SecurityStore:
                     (user_hash, until),
                 )
                 await db.commit()
-                return
+                persisted = True
             except Exception as exc:  # noqa: BLE001
                 logger.warning("SecurityStore apply_cooldown SQLite error: %s", exc)
 
-        self._mem_cooldowns[user_hash] = until
+        if not persisted:
+            self._mem_cooldowns[user_hash] = until
 
     async def remove_cooldown(self, user_hash: str) -> bool:
         """Manually remove a cooldown (admin unblock). Returns True if removed."""
+        existed = False
+
         r = await self._get_redis()
         if r is not None:
             try:
                 deleted = await r.delete(f"security:cooldown:{user_hash}")
-                return deleted > 0
+                existed = deleted > 0
             except (RedisError, RuntimeError) as exc:
                 logger.warning("SecurityStore remove_cooldown Redis error: %s", exc)
 
-        # SQLite fallback
         db = await get_sqlite_connection()
         if db is not None:
             try:
@@ -301,14 +291,14 @@ class SecurityStore:
                     "DELETE FROM security_cooldowns WHERE user_hash = ?", (user_hash,)
                 )
                 await db.commit()
-                return cur.rowcount > 0
+                existed = existed or cur.rowcount > 0
             except Exception as exc:  # noqa: BLE001
                 logger.warning("SecurityStore remove_cooldown SQLite error: %s", exc)
 
         if user_hash in self._mem_cooldowns:
             del self._mem_cooldowns[user_hash]
-            return True
-        return False
+            existed = True
+        return existed
 
     # -----------------------------------------------------------------
     # Admin queries
@@ -320,57 +310,93 @@ class SecurityStore:
         period_seconds = {"day": 86400, "week": 604800, "month": 2592000}.get(period, 604800)
         since = now - period_seconds
 
+        merged: dict[str, dict] = {}
+
         r = await self._get_redis()
         if r is not None:
             try:
                 flag_ids = await r.zrangebyscore("security:index", since, now)
-                if not flag_ids:
-                    return self._empty_stats()
-
-                pipe = r.pipeline()
-                for fid in flag_ids:
-                    pipe.hgetall(f"security:flag:{fid}")
-                results = await pipe.execute()
-
-                return self._compute_stats(flag_ids, results)
+                if flag_ids:
+                    pipe = r.pipeline()
+                    for fid in flag_ids:
+                        pipe.hgetall(f"security:flag:{fid}")
+                    results = await pipe.execute()
+                    for fid, data in zip(flag_ids, results, strict=False):
+                        if data:
+                            merged[fid] = dict(data)
             except (RedisError, RuntimeError) as exc:
                 logger.warning("SecurityStore get_aggregate_stats Redis error: %s", exc)
 
-        all_flags = []
+        db = await get_sqlite_connection()
+        if db is not None:
+            try:
+                cur = await db.execute(
+                    "SELECT * FROM security_flags WHERE created_at > ?", (since,)
+                )
+                for row in await cur.fetchall():
+                    fid = row["flag_id"]
+                    if fid not in merged:
+                        merged[fid] = {
+                            "flag_id": fid,
+                            "user_hash": row["user_hash"] or "",
+                            "category": row["category"] or "unknown",
+                            "confidence": row["confidence"] or "unknown",
+                            "source": row["source"] or "unknown",
+                            "reasoning_snippet": row["reasoning_snippet"] or "",
+                            "created_at": str(row["created_at"] or 0),
+                        }
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("SecurityStore get_aggregate_stats SQLite error: %s", exc)
+
         for flags in self._mem_flags.values():
-            all_flags.extend(f for f in flags if float(f.get("created_at", 0)) > since)
-        return self._compute_stats([f["flag_id"] for f in all_flags], all_flags)
+            for f in flags:
+                if float(f.get("created_at", 0)) > since:
+                    merged.setdefault(f["flag_id"], f)
+
+        flag_ids = list(merged.keys())
+        return self._compute_stats(flag_ids, [merged[f] for f in flag_ids])
 
     async def get_active_cooldowns(self) -> list[dict]:
         """Get all currently active cooldowns for admin review."""
         now = time.time()
+        merged: dict[str, float] = {}
+
         r = await self._get_redis()
         if r is not None:
             try:
                 keys = await r.keys("security:cooldown:*")
-                if not keys:
-                    return []
-                pipe = r.pipeline()
-                for k in keys:
-                    pipe.get(k)
-                results = await pipe.execute()
-                cooldowns = []
-                for k, v in zip(keys, results, strict=False):
-                    if v is not None and float(v) > now:
-                        user_hash = k.split(":")[-1]
-                        cooldowns.append({
-                            "user_hash": user_hash,
-                            "until": float(v),
-                            "remaining_seconds": int(float(v) - now),
-                        })
-                return cooldowns
+                if keys:
+                    pipe = r.pipeline()
+                    for k in keys:
+                        pipe.get(k)
+                    results = await pipe.execute()
+                    for k, v in zip(keys, results, strict=False):
+                        if v is not None and float(v) > now:
+                            user_hash = k.split(":")[-1]
+                            merged[user_hash] = max(merged.get(user_hash, 0), float(v))
             except (RedisError, RuntimeError) as exc:
                 logger.warning("SecurityStore get_active_cooldowns Redis error: %s", exc)
 
+        db = await get_sqlite_connection()
+        if db is not None:
+            try:
+                cur = await db.execute(
+                    "SELECT user_hash, cooldown_until FROM security_cooldowns WHERE cooldown_until > ?",
+                    (now,),
+                )
+                for row in await cur.fetchall():
+                    h = row["user_hash"]
+                    merged[h] = max(merged.get(h, 0), float(row["cooldown_until"]))
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("SecurityStore get_active_cooldowns SQLite error: %s", exc)
+
+        for h, v in self._mem_cooldowns.items():
+            if v > now:
+                merged[h] = max(merged.get(h, 0), v)
+
         return [
             {"user_hash": h, "until": v, "remaining_seconds": int(v - now)}
-            for h, v in self._mem_cooldowns.items()
-            if v > now
+            for h, v in merged.items()
         ]
 
     def _empty_stats(self) -> dict:
