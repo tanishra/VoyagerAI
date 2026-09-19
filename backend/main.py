@@ -261,17 +261,29 @@ async def get_openapi_schema() -> dict:
     return app.openapi()
 
 
-def _scoped_chat_thread_id(client_thread_id: str | None, user_id: str) -> str:
+def _scoped_chat_thread_id(
+    client_thread_id: str | None,
+    user_id: str,
+    client_message_id: str | None = None,
+) -> str:
     """Namespace chat thread ids per user so checkpoints can't be resumed cross-user.
 
     Client-supplied ids are treated as opaque and stored under a user-scoped key.
-    Already-scoped ids (resume) pass through unchanged.
+    Already-scoped ids (resume) pass through unchanged. When no thread id is
+    supplied, a stable id derived from client_message_id keeps stream retries
+    on the same checkpoint instead of minting an orphan thread per retry.
     """
     user_tag = hashlib.sha256(user_id.encode()).hexdigest()[:12]
     prefix = f"chat:{user_tag}:"
     if client_thread_id and client_thread_id.startswith(prefix):
         return client_thread_id
-    return prefix + (client_thread_id or uuid.uuid4().hex[:12])
+    if client_thread_id:
+        return prefix + client_thread_id
+    if client_message_id:
+        safe = "".join(c for c in client_message_id if c.isalnum() or c in "-_")[:64]
+        if safe:
+            return prefix + safe
+    return prefix + uuid.uuid4().hex[:12]
 
 
 def _sse(event: str, data: object) -> dict:
@@ -1496,7 +1508,7 @@ async def chat_stream(
     _msg_safe = sanitize_prompt_input(chat_req.message, "message")
 
     user_id = user["user_id"]
-    thread_id = _scoped_chat_thread_id(chat_req.thread_id, user_id)
+    thread_id = _scoped_chat_thread_id(chat_req.thread_id, user_id, chat_req.client_message_id)
 
     # Determine locale: explicit request field takes priority, then Accept-Language header
     locale = extract_locale(request, chat_req.locale)
@@ -1614,6 +1626,7 @@ async def chat_stream(
                 currency=chat_req.currency,
                 cancel_event=cancel_event,
                 attachments=[a.model_dump() for a in chat_req.attachments] if chat_req.attachments else None,
+                client_message_id=chat_req.client_message_id,
             ):
                 if cancel_event.is_set():
                     was_cancelled = True
@@ -1925,7 +1938,7 @@ async def chat_edit(
     new_message = body.get("message", "")
     if not new_message:
         raise HTTPException(status_code=400, detail="message required")
-    _validate_body_fields(body, {"thread_id": 200, "message": 2000, "locale": 10, "timezone": 50, "currency": 10})
+    _validate_body_fields(body, {"thread_id": 200, "message": 2000, "locale": 10, "timezone": 50, "currency": 10, "client_message_id": 100})
 
     user_id = user["user_id"]
     thread_id = _scoped_chat_thread_id(raw_thread_id, user_id)
@@ -1981,6 +1994,7 @@ async def chat_edit(
                 timezone=timezone,
                 currency=currency,
                 cancel_event=cancel_event,
+                client_message_id=body.get("client_message_id"),
             ):
                 if cancel_event.is_set():
                     yield _sse("cancelled", None)
