@@ -509,6 +509,20 @@ export default function ChatPage() {
           },
           onReconnecting: (attempt, max) => {
             setReconnecting({ attempt, max });
+            accumulatedText = '';
+            accumulatedItinerary = null;
+            accumulatedComparison = null;
+            accumulatedImages = [];
+            accumulatedCharts = [];
+            streamingActivityRef.current = null;
+            setStreamingText('');
+            setStreamingItinerary(null);
+            setStreamingComparison(null);
+            setStreamingImages([]);
+            setStreamingCharts([]);
+            setStreamingActivity(null);
+            setActiveWorkers([]);
+            setProgressMap({});
           },
           onError: (msg) => {
             streamFailed = true;
@@ -824,6 +838,20 @@ export default function ChatPage() {
           },
           onReconnecting: (attempt, max) => {
             setReconnecting({ attempt, max });
+            accumulatedText = '';
+            accumulatedItinerary = null;
+            accumulatedComparison = null;
+            accumulatedImages = [];
+            accumulatedCharts = [];
+            streamingActivityRef.current = null;
+            setStreamingText('');
+            setStreamingItinerary(null);
+            setStreamingComparison(null);
+            setStreamingImages([]);
+            setStreamingCharts([]);
+            setStreamingActivity(null);
+            setActiveWorkers([]);
+            setProgressMap({});
           },
           onError: (msg) => {
             streamFailed = true;
@@ -1068,6 +1096,20 @@ export default function ChatPage() {
           },
           onReconnecting: (attempt, max) => {
             setReconnecting({ attempt, max });
+            accumulatedText = '';
+            accumulatedItinerary = null;
+            accumulatedComparison = null;
+            accumulatedImages = [];
+            accumulatedCharts = [];
+            streamingActivityRef.current = null;
+            setStreamingText('');
+            setStreamingItinerary(null);
+            setStreamingComparison(null);
+            setStreamingImages([]);
+            setStreamingCharts([]);
+            setStreamingActivity(null);
+            setActiveWorkers([]);
+            setProgressMap({});
           },
           onError: (msg) => {
             streamFailed = true;
@@ -1191,7 +1233,7 @@ export default function ChatPage() {
           let errorMessage = '';
 
           await streamChat(
-            { message: msg.content, thread_id: msg.thread_id ?? undefined, locale, timezone: userTimezone, currency },
+            { message: msg.content, thread_id: msg.thread_id ?? undefined, locale, timezone: userTimezone, currency, client_message_id: `offline-${msg.id}` },
             {
               onToken: (token) => {
                 accumulatedText += token;
@@ -1268,6 +1310,23 @@ export default function ChatPage() {
               },
               onSubagentProgress: (data) => {
                 setProgressMap((prev) => ({ ...prev, [data.run_id]: data.description }));
+              },
+              onReconnecting: (attempt, max) => {
+                setReconnecting({ attempt, max });
+                accumulatedText = '';
+                accumulatedItinerary = null;
+                accumulatedComparison = null;
+                accumulatedImages = [];
+                accumulatedCharts = [];
+                streamingActivityRef.current = null;
+                setStreamingText('');
+                setStreamingItinerary(null);
+                setStreamingComparison(null);
+                setStreamingImages([]);
+                setStreamingCharts([]);
+                setStreamingActivity(null);
+                setActiveWorkers([]);
+                setProgressMap({});
               },
               onError: (msg) => {
                 streamFailed = true;
