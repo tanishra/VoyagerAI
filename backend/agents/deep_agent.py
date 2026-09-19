@@ -6,6 +6,9 @@ import json
 import logging
 import os
 import re
+import uuid
+
+from langchain_core.messages import HumanMessage
 
 import aiosqlite
 from deepagents import FilesystemPermission, create_deep_agent
@@ -1076,6 +1079,7 @@ async def stream_chat_agent(
     cancel_event=None,
     attachments: list[dict] | None = None,
     currency: str | None = None,
+    client_message_id: str | None = None,
 ):
     reset_orchestrator_search_count()
     set_current_thread_id(thread_id)
@@ -1138,11 +1142,58 @@ async def stream_chat_agent(
     else:
         msg_content = message
 
+    user_msg = HumanMessage(content=msg_content, id=client_message_id or uuid.uuid4().hex)
+
+    # Retry dedup: retries reuse client_message_id. If the checkpoint already
+    # holds this message, never append it again — replay the finished reply or
+    # resume the interrupted run instead.
+    inputs: dict | None = {"messages": [user_msg]}
+    resume = False
+    prepend_text = ""
+    replay_text: str | None = None
+    if client_message_id:
+        try:
+            state = await agent.aget_state(config)
+            prior = state.values.get("messages", [])
+            if any(getattr(m, "id", None) == client_message_id for m in prior):
+                pending = bool(getattr(state, "next", None))
+                last_is_ai = bool(prior) and getattr(prior[-1], "type", "") == "ai"
+                if pending:
+                    resume = True
+                    inputs = None
+                    # An AI reply with no pending tool calls won't re-emit its
+                    # tokens on resume — send them first so the client isn't blank.
+                    if last_is_ai and not getattr(prior[-1], "tool_calls", None):
+                        prepend_text = _last_assistant_text(state.values)
+                elif last_is_ai:
+                    replay_text = _last_assistant_text(state.values)
+                # Completed state with no AI reply → fall through; the id-stamped
+                # input merges into existing state without duplicating.
+        except Exception:  # noqa: BLE001 (dedup must never break a stream)
+            logger.warning("Checkpoint dedup check failed for %s", thread_id, exc_info=True)
+
+    if replay_text is not None:
+        # The original run completed but the client never saw it — replay the
+        # saved response instead of paying for another LLM call.
+        yield {"event": "token", "data": replay_text}
+        try:
+            plan_kind = await _detect_plan_kind(replay_text)
+            comparison = _extract_comparison_from_text(replay_text) if plan_kind == "comparison" else None
+            itinerary = _extract_itinerary_from_text(replay_text) if plan_kind == "itinerary" else None
+            if comparison is not None:
+                yield {"event": "comparison", "data": comparison}
+            elif itinerary is not None:
+                itinerary = await _enrich_itinerary_with_coordinates(itinerary)
+                yield {"event": "itinerary", "data": itinerary}
+            yield {"event": "done", "data": {"budget_reached": False}}
+        except (ValueError, json.JSONDecodeError) as exc:
+            yield {"event": "error", "data": str(exc)}
+        return
+
     stream = _ModelStream(agent, config)
-    async for event in stream.events(
-        {"messages": [{"role": "user", "content": msg_content}]},
-        cancel_event=cancel_event,
-    ):
+    if prepend_text:
+        yield {"event": "token", "data": prepend_text}
+    async for event in stream.events(inputs, cancel_event=cancel_event):
         yield event
 
     if cancel_event and cancel_event.is_set():
@@ -1171,7 +1222,7 @@ async def stream_chat_agent(
     except Exception:
         logger.warning("Failed to persist cost data for thread %s", thread_id, exc_info=True)
 
-    stream_text = stream.last_text()
+    stream_text = prepend_text + stream.last_text()
     plan_kind = await _detect_plan_kind(stream_text)
     logger.info("stream finished: last_text len=%d, plan_kind=%s", len(stream_text), plan_kind)
 
@@ -1439,6 +1490,7 @@ async def edit_chat_agent(
     timezone: str | None = None,
     cancel_event=None,
     currency: str | None = None,
+    client_message_id: str | None = None,
 ):
     """Edit the last user message and regenerate the assistant response.
 
@@ -1455,20 +1507,54 @@ async def edit_chat_agent(
         "recursion_limit": 100,
     }
 
-    fork_config = await _find_edit_fork_checkpoint(agent, config)
-    if fork_config is None:
-        yield {"event": "error", "data": "No messages to edit"}
-        return
+    # Retry dedup: a retried edit reuses client_message_id. The first attempt's
+    # fork already became the latest checkpoint — if it holds this message id,
+    # resume/replay instead of forking a second branch.
+    run_config = None
+    prepend_text = ""
+    if client_message_id:
+        try:
+            state = await agent.aget_state(config)
+            prior = state.values.get("messages", [])
+            if any(getattr(m, "id", None) == client_message_id for m in prior):
+                run_config = config
+                if getattr(state, "next", None):
+                    if getattr(prior[-1], "type", "") == "ai" and not getattr(prior[-1], "tool_calls", None):
+                        prepend_text = _last_assistant_text(state.values)
+                    run_inputs = None
+                else:
+                    replay_text = _last_assistant_text(state.values) if getattr(prior[-1], "type", "") == "ai" else ""
+                    yield {"event": "token", "data": replay_text}
+                    try:
+                        plan_kind = await _detect_plan_kind(replay_text)
+                        comparison = _extract_comparison_from_text(replay_text) if plan_kind == "comparison" else None
+                        itinerary = _extract_itinerary_from_text(replay_text) if plan_kind == "itinerary" else None
+                        if comparison is not None:
+                            yield {"event": "comparison", "data": comparison}
+                        elif itinerary is not None:
+                            itinerary = await _enrich_itinerary_with_coordinates(itinerary)
+                            yield {"event": "itinerary", "data": itinerary}
+                        yield {"event": "done", "data": {"budget_reached": False}}
+                    except (ValueError, json.JSONDecodeError) as exc:
+                        yield {"event": "error", "data": str(exc)}
+                    return
+        except Exception:  # noqa: BLE001
+            logger.warning("Edit dedup check failed for %s", thread_id, exc_info=True)
 
-    forked_config = await agent.aupdate_state(fork_config, None)
+    if run_config is None:
+        fork_config = await _find_edit_fork_checkpoint(agent, config)
+        if fork_config is None:
+            yield {"event": "error", "data": "No messages to edit"}
+            return
+        run_config = await agent.aupdate_state(fork_config, None)
+        run_inputs = {"messages": [HumanMessage(content=new_message, id=client_message_id or uuid.uuid4().hex)]}
 
     set_current_thread_id(thread_id)
 
-    stream = _ModelStream(agent, forked_config)
-    async for event in stream.events(
-        {"messages": [{"role": "user", "content": new_message}]},
-        cancel_event=cancel_event,
-    ):
+    stream = _ModelStream(agent, run_config)
+    if prepend_text:
+        yield {"event": "token", "data": prepend_text}
+    async for event in stream.events(run_inputs, cancel_event=cancel_event):
         yield event
 
     if cancel_event and cancel_event.is_set():
@@ -1481,7 +1567,7 @@ async def edit_chat_agent(
         except Exception:
             store = InMemoryStore()
         try:
-            state = await agent.aget_state(forked_config)
+            state = await agent.aget_state(run_config)
             msg_count = len(state.values.get("messages", []))
             message_index = msg_count - 1
         except Exception:
@@ -1513,11 +1599,11 @@ async def edit_chat_agent(
         # plan_kind == "itinerary"
         itinerary = _extract_itinerary_from_text(stream_text) if stream_text else None
         if itinerary is None:
-            state = await agent.aget_state(forked_config)
+            state = await agent.aget_state(run_config)
             itinerary = _extract_chat_itinerary(state.values)
 
         if itinerary is None:
-            retry = _ModelStream(agent, forked_config)
+            retry = _ModelStream(agent, run_config)
             async for event in retry.events(
                 {
                     "messages": [
@@ -1538,7 +1624,7 @@ async def edit_chat_agent(
             stream_text = stream.last_text() or retry.last_text()
             itinerary = _extract_itinerary_from_text(stream_text) if stream_text else None
             if itinerary is None:
-                state = await agent.aget_state(forked_config)
+                state = await agent.aget_state(run_config)
                 itinerary = _extract_chat_itinerary(state.values)
 
         if itinerary is None:
