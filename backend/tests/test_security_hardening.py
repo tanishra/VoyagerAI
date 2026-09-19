@@ -237,7 +237,7 @@ class TestInputLengthValidation:
         """POST /chat/edit with oversized message should return 422."""
         import main as main_module
 
-        async def fake_edit(*, thread_id, new_message, user_id, locale, timezone, cancel_event):
+        async def fake_edit(*, thread_id, new_message, user_id, locale, timezone, cancel_event, client_message_id=None):
             yield {"event": "done", "data": None}
 
         monkeypatch.setattr(main_module, "edit_chat_agent", fake_edit)
