@@ -355,3 +355,124 @@ class TestStructuredLogging:
         assert ctx["request_id"] == req_id
         assert ctx["user_id"] == "alice"
         assert ctx["thread_id"] == "t1"
+
+
+# ---------------------------------------------------------------------------
+# Bug #4 — update_session_total must preserve created_at
+# Bug #5 — daily window must be computed in UTC, not local time
+# ---------------------------------------------------------------------------
+
+
+class TestCreatedAtPreserved:
+    @pytest.mark.asyncio
+    async def test_update_session_total_preserves_created_at(self):
+        """Second update on the same thread keeps the original created_at."""
+        store = CostStore()
+        with patch.object(CostStore, "_get_redis", _no_redis):
+            await store.update_session_total(
+                thread_id="t1", user_id="alice",
+                total_input_tokens=100, total_output_tokens=50,
+                total_cost_usd=0.05, budget_limit_usd=0.50,
+                budget_reached=False,
+            )
+            first = await store.get_session_cost("t1")
+            assert first is not None
+            original_created = first["created_at"]
+
+            time.sleep(0.05)
+            await store.update_session_total(
+                thread_id="t1", user_id="alice",
+                total_input_tokens=200, total_output_tokens=100,
+                total_cost_usd=0.15, budget_limit_usd=0.50,
+                budget_reached=False,
+            )
+            second = await store.get_session_cost("t1")
+            assert second is not None
+            assert second["created_at"] == pytest.approx(original_created, abs=1e-6)
+            assert second["total_cost_usd"] == pytest.approx(0.15, abs=1e-6)
+
+    @pytest.mark.asyncio
+    async def test_resumed_old_thread_not_counted_in_hourly_spend(self):
+        """A resumed old thread's cumulative cost must not enter the last-hour window."""
+        store = CostStore()
+        with patch.object(CostStore, "_get_redis", _no_redis):
+            await store.update_session_total(
+                thread_id="t1", user_id="alice",
+                total_input_tokens=100, total_output_tokens=50,
+                total_cost_usd=0.05, budget_limit_usd=0.50,
+                budget_reached=False,
+            )
+            # Backdate the session to 3 hours ago
+            db = await sqlite_fallback.get_sqlite_connection()
+            old_ts = time.time() - 3 * 3600
+            await db.execute(
+                "UPDATE costs_session SET created_at = ? WHERE thread_id = ?",
+                (old_ts, "t1"),
+            )
+            await db.commit()
+
+            # Resume the thread — cumulative total grows
+            await store.update_session_total(
+                thread_id="t1", user_id="alice",
+                total_input_tokens=200, total_output_tokens=100,
+                total_cost_usd=0.50, budget_limit_usd=0.50,
+                budget_reached=False,
+            )
+
+            assert await store.get_hourly_platform_spend() == 0.0
+
+
+class TestUtcStartOfDay:
+    def test_aligned_to_epoch_day(self):
+        """Result must be an exact multiple of 86400 — true UTC midnight."""
+        from cost_store import _utc_start_of_day
+        ts = 1789756237.5  # arbitrary instant
+        result = _utc_start_of_day(ts)
+        assert result % 86400 == 0
+        assert result <= ts < result + 86400
+
+    def test_independent_of_local_tz(self):
+        """Result must not change with the TZ environment variable."""
+        from cost_store import _utc_start_of_day
+        ts = 1789756237.5
+        expected = _utc_start_of_day(ts)
+        for tz in ("America/New_York", "Asia/Kolkata", "Pacific/Auckland"):
+            os.environ["TZ"] = tz
+            time.tzset()
+            try:
+                assert _utc_start_of_day(ts) == expected
+            finally:
+                os.environ.pop("TZ", None)
+                time.tzset()
+
+    @pytest.mark.asyncio
+    async def test_daily_spend_boundary_utc(self):
+        """Sessions just before UTC midnight excluded; just after included."""
+        from cost_store import _utc_start_of_day
+        store = CostStore()
+        with patch.object(CostStore, "_get_redis", _no_redis):
+            now = time.time()
+            sod = _utc_start_of_day(now)
+            await store.update_session_total(
+                thread_id="old", user_id="alice",
+                total_input_tokens=10, total_output_tokens=5,
+                total_cost_usd=1.0, budget_limit_usd=10.0,
+                budget_reached=False,
+            )
+            await store.update_session_total(
+                thread_id="new", user_id="alice",
+                total_input_tokens=10, total_output_tokens=5,
+                total_cost_usd=2.0, budget_limit_usd=10.0,
+                budget_reached=False,
+            )
+            db = await sqlite_fallback.get_sqlite_connection()
+            await db.execute(
+                "UPDATE costs_session SET created_at = ? WHERE thread_id = 'old'",
+                (sod - 1,),
+            )
+            await db.execute(
+                "UPDATE costs_session SET created_at = ? WHERE thread_id = 'new'",
+                (sod + 1,),
+            )
+            await db.commit()
+            assert await store.get_user_daily_spend("alice") == pytest.approx(2.0, abs=1e-6)
