@@ -44,6 +44,7 @@ describe('editStream', () => {
     expect(JSON.parse(options.body)).toEqual({
       thread_id: 'test-thread-123',
       message: 'edited content',
+      client_message_id: expect.any(String),
     });
   });
 
