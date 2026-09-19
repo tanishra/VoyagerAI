@@ -32,8 +32,12 @@ function parseSSELine(line: string): { event?: string; data?: string } | null {
   return null;
 }
 
+function makeClientMessageId(): string {
+  return globalThis.crypto?.randomUUID?.() ?? `cm-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
 export async function streamChat(
-  body: { message: string; thread_id?: string; locale?: string; timezone?: string; currency?: string; attachments?: import('./upload-api').UploadedFile[] },
+  body: { message: string; thread_id?: string; locale?: string; timezone?: string; currency?: string; attachments?: import('./upload-api').UploadedFile[]; client_message_id?: string },
   callbacks: ChatStreamCallbacks,
 ): Promise<string | undefined> {
   const { onToken, onItinerary, onComparison, onImage, onChart, onStatus, onThreadId, onDone, onError, onAbort, onCancelled, signal, errorMessages, onThinking, onToolStart, onToolEnd, onToolError, onUsage, onSubagentProgress, onReconnecting } = callbacks;
@@ -48,7 +52,9 @@ export async function streamChat(
     Accept: 'text/event-stream',
     ...(body.locale ? { 'Accept-Language': body.locale } : {}),
   };
-  const bodyStr = JSON.stringify(body);
+  // One id per logical send — retries reuse it so the backend can dedupe
+  // the message instead of appending it to the checkpoint twice.
+  const bodyStr = JSON.stringify({ ...body, client_message_id: body.client_message_id ?? makeClientMessageId() });
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
@@ -542,7 +548,7 @@ export async function getBranches(threadId: string): Promise<BranchInfo[]> {
 }
 
 export async function editStream(
-  body: { thread_id: string; message: string; locale?: string; timezone?: string; currency?: string },
+  body: { thread_id: string; message: string; locale?: string; timezone?: string; currency?: string; client_message_id?: string },
   callbacks: ChatStreamCallbacks,
 ): Promise<string | undefined> {
   const { onToken, onItinerary, onComparison, onImage, onChart, onStatus, onThreadId, onDone, onError, onAbort, onCancelled, signal, errorMessages, onThinking, onToolStart, onToolEnd, onToolError, onUsage, onSubagentProgress, onReconnecting } = callbacks;
@@ -553,7 +559,7 @@ export async function editStream(
     Accept: 'text/event-stream',
     ...(body.locale ? { 'Accept-Language': body.locale } : {}),
   };
-  const bodyStr = JSON.stringify(body);
+  const bodyStr = JSON.stringify({ ...body, client_message_id: body.client_message_id ?? makeClientMessageId() });
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
