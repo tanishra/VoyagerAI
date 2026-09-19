@@ -258,3 +258,52 @@ describe('streamChat — retry logic', () => {
     expect(onDone).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('streamChat — client_message_id dedup (Bug #6)', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('sends the same client_message_id on every retry attempt', async () => {
+    const mockFetch = vi.fn()
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockResolvedValueOnce(makeDoneStream());
+    vi.stubGlobal('fetch', mockFetch);
+
+    const promise = streamChat({ message: 'test' }, {});
+    await vi.advanceTimersByTimeAsync(1100);
+    await promise;
+
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+    const body1 = JSON.parse(mockFetch.mock.calls[0][1].body);
+    const body2 = JSON.parse(mockFetch.mock.calls[1][1].body);
+    expect(body1.client_message_id).toBeTruthy();
+    expect(body1.client_message_id).toBe(body2.client_message_id);
+  });
+
+  it('passes through a caller-supplied client_message_id unchanged', async () => {
+    const mockFetch = vi.fn().mockResolvedValue(makeDoneStream());
+    vi.stubGlobal('fetch', mockFetch);
+
+    await streamChat({ message: 'test', client_message_id: 'offline-42' }, {});
+
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+    expect(body.client_message_id).toBe('offline-42');
+  });
+
+  it('generates a fresh client_message_id per logical send', async () => {
+    const mockFetch = vi.fn().mockImplementation(() => Promise.resolve(makeDoneStream()));
+    vi.stubGlobal('fetch', mockFetch);
+
+    await streamChat({ message: 'one' }, {});
+    await streamChat({ message: 'two' }, {});
+
+    const id1 = JSON.parse(mockFetch.mock.calls[0][1].body).client_message_id;
+    const id2 = JSON.parse(mockFetch.mock.calls[1][1].body).client_message_id;
+    expect(id1).not.toBe(id2);
+  });
+});
