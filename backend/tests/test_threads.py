@@ -66,7 +66,7 @@ def client(fresh_store, monkeypatch):
         yield c
 
 
-async def _fake_stream(message, thread_id, user_id=None, locale=None, timezone=None, currency=None, cancel_event=None, attachments=None):
+async def _fake_stream(message, thread_id, user_id=None, locale=None, timezone=None, currency=None, cancel_event=None, attachments=None, client_message_id=None):
     yield {"event": "done", "data": None}
 
 
