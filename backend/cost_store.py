@@ -13,6 +13,7 @@ Redis key layout:
 
 from __future__ import annotations
 
+import calendar
 import hashlib
 import json
 import logging
@@ -28,6 +29,12 @@ from sqlite_fallback import get_sqlite_connection
 logger = logging.getLogger("travel_agent.cost_store")
 
 _TTL_SECONDS: int = settings.THREAD_TTL_DAYS * 86_400
+
+
+def _utc_start_of_day(now: float) -> float:
+    """Return the Unix timestamp of UTC midnight for the day containing *now*."""
+    today = time.strftime("%Y-%m-%d", time.gmtime(now))
+    return calendar.timegm(time.strptime(today, "%Y-%m-%d"))
 
 
 @dataclass
@@ -139,6 +146,11 @@ class CostStore:
             total_input_tokens / max(total_output_tokens, 1)
         )
         now = time.time()
+        # Keep the original session start — resetting it on every update
+        # mis-attributes spend to the last update time (budget caps and the
+        # hourly circuit breaker both key off created_at).
+        existing = await self.get_session_cost(thread_id)
+        created_at = existing["created_at"] if existing else now
         data = {
             "thread_id": thread_id,
             "user_id": user_id,
@@ -148,7 +160,7 @@ class CostStore:
             "efficiency_ratio": efficiency_ratio,
             "budget_limit_usd": budget_limit_usd,
             "budget_reached": "1" if budget_reached else "0",
-            "created_at": str(now),
+            "created_at": str(created_at),
         }
         daily_key = f"costs:daily:{time.strftime('%Y-%m-%d', time.gmtime(now))}"
 
@@ -177,7 +189,7 @@ class CostStore:
             try:
                 await db.execute(
                     "INSERT OR REPLACE INTO costs_session (thread_id, user_id, total_input_tokens, total_output_tokens, total_cost_usd, efficiency_ratio, budget_limit_usd, budget_reached, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    (thread_id, user_id, total_input_tokens, total_output_tokens, total_cost_usd, efficiency_ratio, budget_limit_usd, 1 if budget_reached else 0, now),
+                    (thread_id, user_id, total_input_tokens, total_output_tokens, total_cost_usd, efficiency_ratio, budget_limit_usd, 1 if budget_reached else 0, created_at),
                 )
                 await db.commit()
                 persisted = True
@@ -538,8 +550,7 @@ class CostStore:
     async def get_user_daily_spend(self, user_id: str) -> float:
         """Return total USD spent by *user_id* since UTC midnight."""
         now = time.time()
-        today_str = time.strftime("%Y-%m-%d", time.gmtime(now))
-        start_of_day = time.mktime(time.strptime(today_str, "%Y-%m-%d"))
+        start_of_day = _utc_start_of_day(now)
 
         merged = await self._all_sessions()
         total = 0.0
@@ -630,8 +641,7 @@ class CostStore:
         # Daily cap = hourly cap * 24 (approximate daily platform cap)
         daily_cap = settings.HOURLY_PLATFORM_CAP_USD * 24
         now = time.time()
-        today_str = time.strftime("%Y-%m-%d", time.gmtime(now))
-        start_of_day = time.mktime(time.strptime(today_str, "%Y-%m-%d"))
+        start_of_day = _utc_start_of_day(now)
 
         merged = await self._all_sessions()
         daily_spend = 0.0
