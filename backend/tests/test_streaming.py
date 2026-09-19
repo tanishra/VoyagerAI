@@ -798,7 +798,7 @@ class TestChatStreamEndpoint:
 
         import main as main_module
 
-        async def fake_stream_chat_agent(message, thread_id, user_id=None, locale=None, timezone=None, currency=None, cancel_event=None, attachments=None):
+        async def fake_stream_chat_agent(message, thread_id, user_id=None, locale=None, timezone=None, currency=None, cancel_event=None, attachments=None, client_message_id=None):
             yield {"event": "on_chat_model_stream", "data": {"chunk": _Chunk([{"type": "text-delta", "text": "Hi"}])}}
             yield {"event": "on_tool_start", "name": "task", "run_id": "r1", "data": {"input": {"subagent_type": "researcher"}}}
             yield {"event": "on_tool_end", "name": "task", "run_id": "r1", "data": {"output": "ok"}}
@@ -840,7 +840,7 @@ class TestChatStreamEndpoint:
 
         import main as main_module
 
-        async def fake_stream_chat_agent(message, thread_id, user_id=None, locale=None, timezone=None, currency=None, cancel_event=None, attachments=None):
+        async def fake_stream_chat_agent(message, thread_id, user_id=None, locale=None, timezone=None, currency=None, cancel_event=None, attachments=None, client_message_id=None):
             yield {"event": "on_tool_start", "name": "task", "run_id": "r9", "data": {"input": {"subagent_type": "risk_detector"}}}
             yield {"event": "on_tool_error", "name": "task", "run_id": "r9", "data": {"error": "boom"}}
             yield {"event": "done", "data": None}
@@ -953,7 +953,7 @@ class TestChatStreamEndpoint:
 
         import main as main_module
 
-        async def failing_stream_chat_agent(message, thread_id, user_id=None, locale=None, timezone=None, currency=None, cancel_event=None, attachments=None):
+        async def failing_stream_chat_agent(message, thread_id, user_id=None, locale=None, timezone=None, currency=None, cancel_event=None, attachments=None, client_message_id=None):
             yield {"event": "on_chat_model_stream", "data": {"chunk": "part"}}
             raise RuntimeError("boom")
 
@@ -982,7 +982,7 @@ class TestChatStreamEndpoint:
 
         import main as main_module
 
-        async def failing_stream_chat_agent(message, thread_id, user_id=None, locale=None, timezone=None, currency=None, cancel_event=None, attachments=None):
+        async def failing_stream_chat_agent(message, thread_id, user_id=None, locale=None, timezone=None, currency=None, cancel_event=None, attachments=None, client_message_id=None):
             yield {"event": "on_chat_model_stream", "data": {"chunk": "part"}}
             raise RuntimeError("boom")
 
@@ -1018,7 +1018,7 @@ class TestConversationModeGate:
 
         import main as main_module
 
-        async def conversational_stream(message, thread_id, user_id=None, locale=None, timezone=None, currency=None, cancel_event=None, attachments=None):
+        async def conversational_stream(message, thread_id, user_id=None, locale=None, timezone=None, currency=None, cancel_event=None, attachments=None, client_message_id=None):
             yield {"event": "on_chat_model_stream", "data": {"chunk": _Chunk([{"type": "text-delta", "text": "Where would you like to go?"}])}}
             yield {"event": "done", "data": None}
 
@@ -1094,7 +1094,7 @@ class TestConversationModeGate:
             "Total Cost: ₹860 per person\n"
         )
 
-        async def comparison_stream(message, thread_id, user_id=None, locale=None, timezone=None, currency=None, cancel_event=None, attachments=None):
+        async def comparison_stream(message, thread_id, user_id=None, locale=None, timezone=None, currency=None, cancel_event=None, attachments=None, client_message_id=None):
             yield {"event": "on_chat_model_stream", "data": {"chunk": _Chunk([{"type": "text-delta", "text": _COMPARISON_PROSE}])}}
             yield {"event": "done", "data": None}
 
@@ -1201,3 +1201,199 @@ class TestSubagentProgress:
         # After 2+ seconds, original run_id should pass again
         stream._last_progress_time["run-1"] = time.monotonic() - 2.1
         assert stream._maybe_yield_progress("run-1", "desc4") is True
+
+
+class TestClientMessageIdDedup:
+    """Bug #6: retried sends carrying the same client_message_id must not
+    append the user message to the checkpoint twice."""
+
+    class _Msg:
+        def __init__(self, content, id=None, type="ai", tool_calls=None):
+            self.content = content
+            self.id = id
+            self.type = type
+            self.tool_calls = tool_calls or []
+
+    class _Snap:
+        def __init__(self, values, next_=()):
+            self.values = values
+            self.next = next_
+
+    async def _collect(self, agen):
+        return [(e["event"], e.get("data")) async for e in agen]
+
+    def _patch_agent(self, monkeypatch, state, stream_events=None, state_error=None):
+        import agents.deep_agent as deep_agent_module
+
+        outer = self
+
+        class _FakeAgent:
+            def __init__(self):
+                self.inputs = []
+                self.stream_calls = 0
+
+            async def astream_events(self, inputs, *a, **kw):
+                self.stream_calls += 1
+                self.inputs.append(inputs)
+                for e in (stream_events or []):
+                    yield e
+
+            async def aget_state(self, config):
+                if state_error is not None:
+                    raise state_error
+                return state
+
+        fake = _FakeAgent()
+
+        async def _factory(**kw):
+            return fake
+
+        monkeypatch.setattr(deep_agent_module, "create_chat_agent", _factory)
+        monkeypatch.setattr(
+            deep_agent_module, "_detect_plan_kind",
+            lambda *a, **kw: asyncio.sleep(0, result="none"),
+        )
+        return fake
+
+    def test_completed_run_replays_without_llm_call(self, monkeypatch):
+        import agents.deep_agent as deep_agent_module
+
+        state = self._Snap({"messages": [
+            self._Msg("plan a trip", id="cm-1", type="human"),
+            self._Msg("Here is your Paris trip."),
+        ]})
+        fake = self._patch_agent(monkeypatch, state)
+
+        events = asyncio.run(self._collect(
+            deep_agent_module.stream_chat_agent("plan a trip", "t1", "u1", client_message_id="cm-1")
+        ))
+
+        assert fake.stream_calls == 0  # replay — no graph execution, no LLM cost
+        assert ("token", "Here is your Paris trip.") in events
+        assert events[-1] == ("done", {"budget_reached": False})
+
+    def test_completed_run_replays_itinerary_event(self, monkeypatch):
+        import agents.deep_agent as deep_agent_module
+
+        text = 'ok <itinerary>{"destination": "Paris", "days": []}</itinerary>'
+        state = self._Snap({"messages": [
+            self._Msg("plan a trip", id="cm-1", type="human"),
+            self._Msg(text),
+        ]})
+        fake = self._patch_agent(monkeypatch, state)
+
+        async def _real_kind(t):
+            return "itinerary" if "<itinerary>" in t else "none"
+
+        async def _no_enrich(it):
+            return it
+
+        monkeypatch.setattr(deep_agent_module, "_detect_plan_kind", _real_kind)
+        monkeypatch.setattr(deep_agent_module, "_enrich_itinerary_with_coordinates", _no_enrich)
+
+        events = asyncio.run(self._collect(
+            deep_agent_module.stream_chat_agent("plan a trip", "t1", "u1", client_message_id="cm-1")
+        ))
+
+        assert fake.stream_calls == 0
+        assert ("itinerary", {"destination": "Paris", "days": []}) in events
+        assert events[-1] == ("done", {"budget_reached": False})
+
+    def test_interrupted_run_resumes_with_none_input(self, monkeypatch):
+        import agents.deep_agent as deep_agent_module
+
+        state = self._Snap(
+            {"messages": [self._Msg("hi", id="cm-1", type="human")]},
+            next_=("agent",),
+        )
+        fake = self._patch_agent(
+            monkeypatch, state,
+            stream_events=[{"event": "on_chat_model_stream", "run_id": "r1",
+                            "data": {"chunk": _Chunk("Hello there")}}],
+        )
+
+        events = asyncio.run(self._collect(
+            deep_agent_module.stream_chat_agent("hi", "t1", "u1", client_message_id="cm-1")
+        ))
+
+        assert fake.stream_calls == 1
+        assert fake.inputs[0] is None  # resumed pending run, message not re-appended
+        assert events[-1][0] == "done"
+
+    def test_new_id_appends_with_stamped_message_id(self, monkeypatch):
+        import agents.deep_agent as deep_agent_module
+
+        state = self._Snap({"messages": [self._Msg("old", id="cm-old", type="human")]})
+        fake = self._patch_agent(
+            monkeypatch, state,
+            stream_events=[{"event": "on_chat_model_stream", "run_id": "r1",
+                            "data": {"chunk": _Chunk("Hi")}}],
+        )
+
+        asyncio.run(self._collect(
+            deep_agent_module.stream_chat_agent("hi", "t1", "u1", client_message_id="cm-new")
+        ))
+
+        assert fake.stream_calls == 1
+        msgs = fake.inputs[0]["messages"]
+        assert len(msgs) == 1
+        assert msgs[0].id == "cm-new"
+
+    def test_state_lookup_failure_falls_back_to_fresh_send(self, monkeypatch):
+        import agents.deep_agent as deep_agent_module
+
+        fake = self._patch_agent(
+            monkeypatch, None, state_error=RuntimeError("checkpointer down"),
+            stream_events=[{"event": "on_chat_model_stream", "run_id": "r1",
+                            "data": {"chunk": _Chunk("Hi")}}],
+        )
+
+        events = asyncio.run(self._collect(
+            deep_agent_module.stream_chat_agent("hi", "t1", "u1", client_message_id="cm-1")
+        ))
+
+        assert fake.stream_calls == 1
+        assert fake.inputs[0]["messages"][0].id == "cm-1"
+        assert events[-1][0] == "done"
+
+    def test_no_client_message_id_behaves_as_before(self, monkeypatch):
+        import agents.deep_agent as deep_agent_module
+
+        state = self._Snap({"messages": [self._Msg("x", id="anything", type="human")]})
+        fake = self._patch_agent(
+            monkeypatch, state,
+            stream_events=[{"event": "on_chat_model_stream", "run_id": "r1",
+                            "data": {"chunk": _Chunk("Hi")}}],
+        )
+
+        asyncio.run(self._collect(
+            deep_agent_module.stream_chat_agent("hi", "t1", "u1")
+        ))
+
+        assert fake.stream_calls == 1
+        msgs = fake.inputs[0]["messages"]
+        assert msgs[0].id  # auto-generated id stamped
+        assert msgs[0].id != "anything"
+
+
+def test_scoped_thread_id_deterministic_with_client_message_id():
+    """Retries on a new chat must land on the same thread checkpoint."""
+    from main import _scoped_chat_thread_id
+
+    a = _scoped_chat_thread_id(None, "u1", "cm-abc-123")
+    b = _scoped_chat_thread_id(None, "u1", "cm-abc-123")
+    assert a == b
+    assert a.endswith("cm-abc-123")
+
+    # No client_message_id → still random per call (unchanged behavior)
+    assert _scoped_chat_thread_id(None, "u1") != _scoped_chat_thread_id(None, "u1")
+
+    # Already-scoped thread id passes through unchanged
+    import hashlib
+    tag = hashlib.sha256("u1".encode()).hexdigest()[:12]
+    tid = _scoped_chat_thread_id(f"chat:{tag}:xyz", "u1", "cm-abc")
+    assert tid == f"chat:{tag}:xyz"
+
+    # Unscoped client thread id still gets prefixed
+    tid2 = _scoped_chat_thread_id("xyz", "u1", "cm-abc")
+    assert tid2.endswith("xyz")
