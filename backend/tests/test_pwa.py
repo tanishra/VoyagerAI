@@ -77,6 +77,9 @@ class TestCacheHeaders:
         assert resp.status_code == 200
         assert "cache-control" in resp.headers
         assert "max-age=300" in resp.headers["cache-control"]
+        # Bug #9: per-user data must never be stored by shared caches/proxies
+        assert "private" in resp.headers["cache-control"]
+        assert "public" not in resp.headers["cache-control"]
 
     def test_thread_history_has_cache_control(self, client):
         import main as main_module
@@ -98,3 +101,6 @@ class TestCacheHeaders:
             if resp.status_code == 200:
                 assert "cache-control" in resp.headers
                 assert "max-age=300" in resp.headers["cache-control"]
+                # Bug #9: per-user data must never be stored by shared caches
+                assert "private" in resp.headers["cache-control"]
+                assert "public" not in resp.headers["cache-control"]
