@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import hashlib
 import json
 import logging
 import os
@@ -610,8 +611,11 @@ async def create_chat_agent(checkpointer=None, store=None, user_id=None, locale=
 
     uid = user_id or "anonymous"
 
+    # Per-user workspace — a shared /tmp/agent_fs would let one user's agent
+    # read or overwrite another user's files. Hash keeps raw ids out of paths.
+    fs_tag = hashlib.sha256(uid.encode()).hexdigest()[:12]
     backend = CompositeBackend(
-        default=FilesystemBackend(root_dir="/tmp/agent_fs"),
+        default=FilesystemBackend(root_dir=f"/tmp/agent_fs/{fs_tag}"),
         routes={
             "/memories/": StoreBackend(
                 store=get_redis_file_store(),
