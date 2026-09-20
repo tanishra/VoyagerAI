@@ -2220,7 +2220,7 @@ async def list_threads(
             "threads": [asdict(t) for t in threads],
             "has_more": (offset + limit) < total,
         },
-        headers={"Cache-Control": "public, max-age=300"},
+        headers={"Cache-Control": "private, max-age=300"},
     )
 
 
@@ -2396,7 +2396,7 @@ async def get_thread_history(
 
     return JSONResponse(
         content=result,
-        headers={"Cache-Control": "public, max-age=300"},
+        headers={"Cache-Control": "private, max-age=300"},
     )
 
 
