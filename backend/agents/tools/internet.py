@@ -175,7 +175,9 @@ def get_internet_tools() -> list:
 _RATE_LIMIT = 3
 _SUMMARY_MAX_CHARS = 200
 
-_orchestrator_search_count: int = 0
+# Per-thread quick-lookup counts — a module-global counter let one user's
+# stream reset or consume another user's quota (Bug #8).
+_search_counts: dict[str, int] = {}
 _orchestrator_search_lock: asyncio.Lock | None = None
 
 
@@ -186,10 +188,16 @@ def _get_search_lock() -> asyncio.Lock:
     return _orchestrator_search_lock
 
 
-def reset_orchestrator_search_count() -> None:
-    """Reset the per-turn search counter. Called at the start of each stream_chat_agent invocation."""
-    global _orchestrator_search_count
-    _orchestrator_search_count = 0
+def reset_orchestrator_search_count(thread_id: str | None = None) -> None:
+    """Reset the per-turn search counter for one thread.
+
+    Called at the start of each agent stream invocation. Resolves the thread
+    from the ContextVar when no explicit id is given.
+    """
+    from agents.tools.visuals import get_current_thread_id
+
+    tid = thread_id or get_current_thread_id()
+    _search_counts.pop(tid, None)
 
 
 def _format_concise_results(results: dict) -> str:
@@ -292,11 +300,12 @@ async def quick_web_lookup(
     if not query or not query.strip():
         return "Query must not be empty."
 
-    global _orchestrator_search_count
+    from agents.tools.visuals import get_current_thread_id
 
+    tid = get_current_thread_id()
     async with _get_search_lock():
-        _orchestrator_search_count += 1
-        current_count = _orchestrator_search_count
+        current_count = _search_counts.get(tid, 0) + 1
+        _search_counts[tid] = current_count
 
     if current_count > _RATE_LIMIT:
         return (
