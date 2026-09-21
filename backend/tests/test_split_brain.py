@@ -473,3 +473,220 @@ class TestRateLimiterSplitBrain:
             allowed, retry = await rl.check_rate_limit("alice", "chat", 10)
             assert allowed is False
             assert retry > 0
+
+
+# ---------------------------------------------------------------------------
+# In-memory fallback TTL — _mem dicts honor the same expiry as Redis/SQLite
+# ---------------------------------------------------------------------------
+
+
+class TestMemTTL:
+    @pytest.mark.asyncio
+    async def test_expired_mem_file_not_returned(self):
+        store = FileStore()
+        fid = "f-old"
+        store._mem["alice"] = {fid: {
+            "file_id": fid, "filename": "a.txt", "content_type": "text/plain",
+            "size": 1, "data": "eA==", "created_at": time.time() - 7200,
+        }}
+        with patch.object(FileStore, "_get_redis", _no_redis()):
+            assert await store.get("alice", fid) is None
+        assert fid not in store._mem.get("alice", {})
+
+    @pytest.mark.asyncio
+    async def test_fresh_mem_file_returned(self):
+        store = FileStore()
+        fid = "f-new"
+        store._mem["alice"] = {fid: {
+            "file_id": fid, "filename": "a.txt", "content_type": "text/plain",
+            "size": 1, "data": "eA==", "created_at": time.time(),
+        }}
+        with patch.object(FileStore, "_get_redis", _no_redis()):
+            got = await store.get("alice", fid)
+            assert got is not None and got.filename == "a.txt"
+
+    @pytest.mark.asyncio
+    async def test_stale_mem_thread_excluded(self):
+        from threads import ThreadMeta
+        store = ThreadStore()
+        old = time.time() - 40 * 86400
+        stale = ThreadMeta(
+            thread_id="t-old", summary="s", created_at=old,
+            updated_at=old, status="idle", message_count=1,
+        )
+        fresh = ThreadMeta(
+            thread_id="t-new", summary="s", created_at=time.time(),
+            updated_at=time.time(), status="idle", message_count=1,
+        )
+        store._mem["alice"] = {"t-old": stale, "t-new": fresh}
+        store._mem["bob"] = {"t-bob-old": ThreadMeta(
+            thread_id="t-bob-old", summary="s", created_at=old,
+            updated_at=old, status="idle", message_count=1,
+        )}
+        with patch.object(ThreadStore, "_get_redis", _no_redis()):
+            # get_thread exercises the expiry check in _existing_meta
+            assert await store.get_thread("bob", "t-bob-old") is None
+            metas = await store.list_threads("alice")
+            assert [m.thread_id for m in metas] == ["t-new"]
+        assert "t-bob-old" not in store._mem.get("bob", {})
+        assert "t-old" not in store._mem["alice"]
+
+    @pytest.mark.asyncio
+    async def test_prune_mem_threads_returns_expired_ids(self):
+        from threads import ThreadMeta
+        store = ThreadStore()
+        store._mem["alice"] = {"t-old": ThreadMeta(
+            thread_id="t-old", summary="s", created_at=1, updated_at=1,
+            status="idle", message_count=1,
+        )}
+        assert store._prune_mem() == ["t-old"]
+        assert store._mem == {}
+
+    @pytest.mark.asyncio
+    async def test_expired_mem_share_pruned_on_write(self):
+        store = ShareStore()
+        store._mem["alice"] = {"tok-old": {
+            "token": "tok-old", "thread_id": "t", "destination": "d",
+            "itinerary_json": "{}", "created_at": 1, "expires_at": 1,
+        }}
+        store._prune_mem()
+        assert store._mem == {}
+
+    @pytest.mark.asyncio
+    async def test_expired_mem_strike_pruned(self):
+        from security_store import _hash_user_id
+        store = SecurityStore()
+        user = "u-strikes"
+        store._mem_strikes[_hash_user_id(user)] = [1.0]  # far outside the window
+        with patch.object(SecurityStore, "_get_redis", _no_redis()):
+            count = await store.get_strike_count(user)
+        assert count == 0
+        assert _hash_user_id(user) not in store._mem_strikes
+
+    def test_prune_mem_security(self):
+        store = SecurityStore()
+        store._mem_strikes["h1"] = [1.0]
+        store._mem_cooldowns["h1"] = time.time() - 10
+        store._mem_flags["h1"] = [{"flag_id": "f", "created_at": str(time.time() - 40 * 86400)}]
+        store._prune_mem()
+        assert store._mem_strikes == {}
+        assert store._mem_cooldowns == {}
+        assert store._mem_flags == {}
+
+    @pytest.mark.asyncio
+    async def test_expired_mem_cooldown_inactive(self):
+        store = SecurityStore()
+        user = "u-cd"
+        from security_store import _hash_user_id
+        store._mem_cooldowns[_hash_user_id(user)] = time.time() - 5
+        with patch.object(SecurityStore, "_get_redis", _no_redis()):
+            assert await store.is_in_cooldown(user) is False
+        assert store._mem_cooldowns == {}
+
+    @pytest.mark.asyncio
+    async def test_expired_mem_cost_session(self):
+        store = CostStore()
+        store._mem_sessions["t1"] = ({"thread_id": "t1", "created_at": "1"}, time.time() - 1)
+        with patch.object(CostStore, "_get_redis", _no_redis()):
+            assert await store.get_session_cost("t1") is None
+        assert store._mem_sessions == {}
+
+    def test_prune_mem_cost(self):
+        store = CostStore()
+        store._mem_sessions["t1"] = ({"thread_id": "t1"}, time.time() - 1)
+        store._mem_subagents["t1"] = [{"subagent_name": "a", "timestamp": 1}]
+        expired = store._prune_mem()
+        assert expired == ["t1"]
+        assert store._mem_sessions == {} and store._mem_subagents == {}
+
+    def test_prune_mem_observability(self):
+        from observability_store import ObservabilityStore
+        store = ObservabilityStore()
+        old = time.time() - 40 * 86400
+        store._mem_sessions["t1"] = {"start_time": old}
+        store._mem_events["t1"] = [{"timestamp": old}]
+        store._mem_errors["t1"] = [{"timestamp": old}]
+        store._prune_mem()
+        assert store._mem_sessions == {}
+        assert store._mem_events == {}
+        assert store._mem_errors == {}
+
+    @pytest.mark.asyncio
+    async def test_expired_mem_feedback(self):
+        store = FeedbackStore()
+        store._mem_feedback["alice:m1"] = {
+            "user_id": "alice", "message_id": "m1", "rating": "up",
+            "created_at": "1", "updated_at": "1",
+        }
+        with patch.object(FeedbackStore, "_get_redis", _no_redis()):
+            assert await store.get_feedback("alice", "m1") is None
+        assert store._mem_feedback == {}
+
+    @pytest.mark.asyncio
+    async def test_expired_mem_geocode(self):
+        from geocode_cache import _cache_key
+        store = GeocodeCache()
+        key = _cache_key("atlantis")
+        store._mem[key] = {"lat": 1.0, "lng": 2.0, "_exp": time.time() - 1}
+        store._mem[_cache_key("legacy")] = {"lat": 1.0, "lng": 2.0}  # no _exp
+        mp = pytest.MonkeyPatch()
+        mp.setattr("geocode_cache.get_sqlite_connection", lambda: _none_db())
+        with patch.object(GeocodeCache, "_get_redis", _no_redis()):
+            assert await store.get("atlantis") is None
+            assert await store.get("legacy") is None
+        mp.undo()
+        assert key not in store._mem
+        assert _cache_key("legacy") not in store._mem
+
+    @pytest.mark.asyncio
+    async def test_mem_geocode_fresh_hit(self):
+        from geocode_cache import _cache_key
+        store = GeocodeCache()
+        key = _cache_key("paris")
+        store._mem[key] = {"lat": 48.85, "lng": 2.35, "_exp": time.time() + 60}
+        mp = pytest.MonkeyPatch()
+        mp.setattr("geocode_cache.get_sqlite_connection", lambda: _none_db())
+        with patch.object(GeocodeCache, "_get_redis", _no_redis()):
+            got = await store.get("paris")
+        mp.undo()
+        assert got == {"lat": 48.85, "lng": 2.35}
+
+    @pytest.mark.asyncio
+    async def test_rate_limiter_prunes_empty_keys(self):
+        rl = RateLimiter()
+        rl._mem["dead:key"] = [1.0]  # all timestamps out of window
+        mp = pytest.MonkeyPatch()
+        mp.setattr(rl_module, "get_sqlite_connection", lambda: _none_db())
+        with patch.object(RateLimiter, "_get_redis", _no_redis()):
+            allowed, _ = await rl.check_rate_limit("alice", "chat", 10)
+        mp.undo()
+        assert allowed is True
+        assert "dead:key" not in rl._mem
+
+
+async def _none_db():
+    return None
+
+
+class TestMultiWorkerWarning:
+    @pytest.mark.asyncio
+    async def test_warns_when_workers_gt_1(self, monkeypatch, caplog):
+        import logging
+        import main as main_module
+
+        monkeypatch.setenv("UVICORN_WORKERS", "4")
+        with caplog.at_level(logging.WARNING):
+            await main_module._warn_multi_worker()
+        assert any("multi-worker" in r.message for r in caplog.records)
+
+    @pytest.mark.asyncio
+    async def test_silent_when_single_worker(self, monkeypatch, caplog):
+        import logging
+        import main as main_module
+
+        for var in ("UVICORN_WORKERS", "WEB_CONCURRENCY", "GUNICORN_WORKERS"):
+            monkeypatch.delenv(var, raising=False)
+        monkeypatch.setenv("UVICORN_WORKERS", "1")
+        with caplog.at_level(logging.WARNING):
+            await main_module._warn_multi_worker()
+        assert not any("multi-worker" in r.message for r in caplog.records)
