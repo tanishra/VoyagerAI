@@ -43,6 +43,13 @@ SESSION_REDIS_PREFIX = "session:"
 # In-memory session fallback (used when Redis is unavailable — same pattern as cache.py / threads.py)
 _mem_sessions: dict[str, dict] = {}
 
+
+def _prune_mem_sessions() -> None:
+    """Drop expired entries from the in-memory session fallback."""
+    now = time.time()
+    for sid in [sid for sid, p in _mem_sessions.items() if float(p.get("exp", 0)) <= now]:
+        _mem_sessions.pop(sid, None)
+
 # Mock user for test session injection (not used for runtime bypass)
 DEV_USER: dict = {
     "user_id": "dev@localhost",
@@ -128,6 +135,7 @@ async def create_session(user_info: dict) -> str:
             logger.warning("Session SQLite write failed: %s", exc)
 
     if not persisted:
+        _prune_mem_sessions()
         _mem_sessions[session_id] = payload
     return session_id
 
@@ -175,6 +183,9 @@ async def get_session(session_id: str) -> dict | None:
             logger.warning("Session SQLite read failed — using in-memory: %s", exc)
 
     session = _mem_sessions.get(session_id)
+    if session is not None and float(session.get("exp", 0)) <= time.time():
+        _mem_sessions.pop(session_id, None)
+        session = None
     if session is None and store_errors:
         raise SessionStoreUnavailable(f"{store_errors} session store(s) failed during lookup")
     return session
