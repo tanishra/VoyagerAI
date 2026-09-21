@@ -65,8 +65,22 @@ class CostStore:
 
     def __init__(self) -> None:
         self._redis: Redis | None = None
-        self._mem_sessions: dict[str, dict] = {}
+        self._mem_sessions: dict[str, tuple[dict, float]] = {}  # thread_id → (data, expires_at)
         self._mem_subagents: dict[str, list[dict]] = {}
+
+    def _prune_mem(self) -> list[str]:
+        """Drop expired in-memory entries (same TTL as Redis/SQLite)."""
+        now = time.time()
+        cutoff = now - _TTL_SECONDS
+        expired: list[str] = []
+        for tid in [tid for tid, (_, exp) in self._mem_sessions.items() if exp <= now]:
+            del self._mem_sessions[tid]
+            expired.append(tid)
+        for tid in list(self._mem_subagents):
+            self._mem_subagents[tid] = [e for e in self._mem_subagents[tid] if float(e.get("timestamp", 0)) > cutoff]
+            if not self._mem_subagents[tid]:
+                del self._mem_subagents[tid]
+        return expired
 
     async def _get_redis(self) -> Redis | None:
         if self._redis is None:
@@ -129,6 +143,7 @@ class CostStore:
                 logger.warning("CostStore record_subagent_cost SQLite error: %s", exc)
 
         if not persisted:
+            self._prune_mem()
             self._mem_subagents.setdefault(thread_id, []).append(entry)
 
     async def update_session_total(
@@ -197,7 +212,8 @@ class CostStore:
                 logger.warning("CostStore update_session_total SQLite error: %s", exc)
 
         if not persisted:
-            self._mem_sessions[thread_id] = data
+            self._prune_mem()
+            self._mem_sessions[thread_id] = (data, now + _TTL_SECONDS)
 
     async def get_session_cost(self, thread_id: str) -> dict | None:
         """Get the session-level cost summary for a thread."""
@@ -240,12 +256,15 @@ class CostStore:
                         "budget_reached": bool(row["budget_reached"]),
                         "created_at": float(row["created_at"] or 0),
                     }
-                return None
             except Exception as exc:  # noqa: BLE001
                 logger.warning("CostStore get_session_cost SQLite error: %s", exc)
 
-        mem_data = self._mem_sessions.get(thread_id)
-        if mem_data is None:
+        mem_entry = self._mem_sessions.get(thread_id)
+        if mem_entry is None:
+            return None
+        mem_data, mem_exp = mem_entry
+        if mem_exp <= time.time():
+            del self._mem_sessions[thread_id]
             return None
         return self._normalize_session(mem_data)
 
@@ -301,8 +320,10 @@ class CostStore:
             except Exception as exc:  # noqa: BLE001
                 logger.warning("CostStore get_subagent_breakdown SQLite error: %s", exc)
 
+        cutoff = time.time() - _TTL_SECONDS
         for entry in self._mem_subagents.get(thread_id, []):
-            merged.setdefault((entry.get("subagent_name"), entry.get("timestamp")), entry)
+            if float(entry.get("timestamp", 0)) > cutoff:
+                merged.setdefault((entry.get("subagent_name"), entry.get("timestamp")), entry)
 
         results = list(merged.values())
         results.sort(key=lambda x: x.get("timestamp", 0))
@@ -354,8 +375,10 @@ class CostStore:
             except Exception as exc:  # noqa: BLE001
                 logger.warning("CostStore _all_sessions SQLite error: %s", exc)
 
-        for tid, data in self._mem_sessions.items():
-            _merge(tid, data)
+        now = time.time()
+        for tid, (data, exp) in self._mem_sessions.items():
+            if exp > now:
+                _merge(tid, data)
 
         return merged
 
@@ -429,9 +452,11 @@ class CostStore:
             except Exception as exc:  # noqa: BLE001
                 logger.warning("CostStore _all_subagent_entries SQLite error: %s", exc)
 
+        cutoff = time.time() - _TTL_SECONDS
         for tid, entries in self._mem_subagents.items():
             for entry in entries:
-                _add(tid, entry)
+                if float(entry.get("timestamp", 0)) > cutoff:
+                    _add(tid, entry)
 
         return list(merged.values())
 
@@ -518,7 +543,7 @@ class CostStore:
 
     async def cleanup_expired(self) -> list[str]:
         """Clean up cost data for expired threads. Returns cleaned thread IDs."""
-        cleaned: list[str] = []
+        cleaned: list[str] = self._prune_mem()
         r = await self._get_redis()
         if r is None:
             return cleaned
