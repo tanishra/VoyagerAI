@@ -44,6 +44,11 @@ def set_current_thread_id(thread_id: str) -> None:
     _current_thread_id.set(thread_id)
 
 
+def get_current_thread_id() -> str:
+    """Return the current thread_id (empty string when unset)."""
+    return _current_thread_id.get("")
+
+
 def get_pending_visual(visual_id: str) -> dict | None:
     """Retrieve and remove a pending visual result by its ID."""
     return _pending_visuals.pop(visual_id, None)
