@@ -9,7 +9,7 @@ import os
 import re
 import uuid
 
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import HumanMessage, RemoveMessage
 
 import aiosqlite
 from deepagents import FilesystemPermission, create_deep_agent
@@ -906,6 +906,15 @@ def _extraction_failure_hint(state: dict, stream_text: str | None = None) -> str
     )
 
 
+async def _remove_internal_message(agent, config: dict, message_id: str) -> None:
+    """Drop an internal retry-hint message from the checkpoint so it never
+    reaches history or the model's future context. Best-effort."""
+    try:
+        await agent.aupdate_state(config, {"messages": [RemoveMessage(id=message_id)]})
+    except Exception:  # noqa: BLE001
+        logger.warning("Failed to remove internal message %s", message_id, exc_info=True)
+
+
 class _ItineraryDay(BaseModel):
     day: int
     theme: str | None = None
@@ -1274,18 +1283,20 @@ async def stream_chat_agent(
             itinerary = _extract_chat_itinerary(state.values)
 
         if itinerary is None:
+            hint_id = f"extract-retry-{uuid.uuid4().hex[:12]}"
             retry = _ModelStream(agent, config)
             async for event in retry.events(
                 {
                     "messages": [
-                        {
-                            "role": "user",
-                            "content": _extraction_failure_hint(state.values, stream_text),
-                        }
+                        HumanMessage(
+                            content=_extraction_failure_hint(state.values, stream_text),
+                            id=hint_id,
+                        )
                     ]
                 }
             ):
                 yield event
+            await _remove_internal_message(agent, config, hint_id)
             retry_text = retry.last_text()
             stream.activity["thinking"].extend(retry.activity["thinking"])
             stream.activity["tool_calls"].extend(retry.activity["tool_calls"])
@@ -1436,18 +1447,20 @@ async def regenerate_chat_agent(
             itinerary = _extract_chat_itinerary(state.values)
 
         if itinerary is None:
+            hint_id = f"extract-retry-{uuid.uuid4().hex[:12]}"
             retry = _ModelStream(agent, forked_config)
             async for event in retry.events(
                 {
                     "messages": [
-                        {
-                            "role": "user",
-                            "content": _extraction_failure_hint(state.values, stream_text),
-                        }
+                        HumanMessage(
+                            content=_extraction_failure_hint(state.values, stream_text),
+                            id=hint_id,
+                        )
                     ]
                 }
             ):
                 yield event
+            await _remove_internal_message(agent, forked_config, hint_id)
             retry_text = retry.last_text()
             stream.activity["thinking"].extend(retry.activity["thinking"])
             stream.activity["tool_calls"].extend(retry.activity["tool_calls"])
@@ -1633,19 +1646,21 @@ async def edit_chat_agent(
             itinerary = _extract_chat_itinerary(state.values)
 
         if itinerary is None:
+            hint_id = f"extract-retry-{uuid.uuid4().hex[:12]}"
             retry = _ModelStream(agent, run_config)
             async for event in retry.events(
                 {
                     "messages": [
-                        {
-                            "role": "user",
-                            "content": _extraction_failure_hint(state.values, stream_text),
-                        }
+                        HumanMessage(
+                            content=_extraction_failure_hint(state.values, stream_text),
+                            id=hint_id,
+                        )
                     ]
                 },
                 cancel_event=cancel_event,
             ):
                 yield event
+            await _remove_internal_message(agent, run_config, hint_id)
 
             if cancel_event and cancel_event.is_set():
                 yield {"event": "cancelled", "data": None}
@@ -1771,19 +1786,21 @@ async def edit_itinerary_agent(
         itinerary = _extract_chat_itinerary(state.values)
 
     if itinerary is None:
+        hint_id = f"extract-retry-{uuid.uuid4().hex[:12]}"
         retry = _ModelStream(agent, config)
         async for event in retry.events(
             {
                 "messages": [
-                    {
-                        "role": "user",
-                        "content": _extraction_failure_hint(state.values, stream_text),
-                    }
+                    HumanMessage(
+                        content=_extraction_failure_hint(state.values, stream_text),
+                        id=hint_id,
+                    )
                 ]
             },
             cancel_event=cancel_event,
         ):
             yield event
+        await _remove_internal_message(agent, config, hint_id)
 
         if cancel_event and cancel_event.is_set():
             yield {"event": "cancelled", "data": None}
