@@ -237,25 +237,17 @@ class TestHistoryWithCheckpointId:
                 self.type = msg_type
                 self.content = content
 
-        class _FakeState:
-            values = {
+        async def fake_read(thread_id, checkpoint_id=None):
+            # Verify checkpoint_id is forwarded to the checkpoint reader
+            assert checkpoint_id == "branch-xyz"
+            return {
                 "messages": [
                     _Msg("human", "Plan a trip"),
                     _Msg("ai", "Sure!"),
                 ]
             }
 
-        class _FakeAgent:
-            async def aget_state(self, config):
-                # Verify checkpoint_id is in config
-                assert "checkpoint_id" in config.get("configurable", {})
-                assert config["configurable"]["checkpoint_id"] == "branch-xyz"
-                return _FakeState()
-
-        async def fake_create(**kw):
-            return _FakeAgent()
-
-        monkeypatch.setattr(main_module, "create_chat_agent", fake_create)
+        monkeypatch.setattr(main_module, "_read_thread_values", fake_read)
 
         scoped = _scoped_thread_id("history-branch")
         resp = client.get(f"/threads/{scoped}/history?checkpoint_id=branch-xyz")
@@ -274,24 +266,17 @@ class TestHistoryWithCheckpointId:
                 self.type = msg_type
                 self.content = content
 
-        class _FakeState:
-            values = {
+        async def fake_read(thread_id, checkpoint_id=None):
+            # checkpoint_id should NOT be set for a normal history read
+            assert checkpoint_id is None
+            return {
                 "messages": [
                     _Msg("human", "Hello"),
                     _Msg("ai", "Hi there!"),
                 ]
             }
 
-        class _FakeAgent:
-            async def aget_state(self, config):
-                # checkpoint_id should NOT be in config
-                assert "checkpoint_id" not in config.get("configurable", {})
-                return _FakeState()
-
-        async def fake_create(**kw):
-            return _FakeAgent()
-
-        monkeypatch.setattr(main_module, "create_chat_agent", fake_create)
+        monkeypatch.setattr(main_module, "_read_thread_values", fake_read)
 
         scoped = _scoped_thread_id("history-normal")
         resp = client.get(f"/threads/{scoped}/history")
