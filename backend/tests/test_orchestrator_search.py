@@ -236,3 +236,81 @@ class TestOrchestratorTools:
         tools = get_orchestrator_tools()
         assert len(tools) == 1
         assert tools[0].name == "quick_web_lookup"
+
+
+# ---------------------------------------------------------------------------
+# Bug #8 — per-thread quota isolation
+# ---------------------------------------------------------------------------
+
+class TestPerThreadQuota:
+    """Search quota must be scoped per thread — concurrent users can't reset
+    or consume each other's quick-lookup budget."""
+
+    def _tavily(self):
+        mock = MagicMock()
+        mock.search.return_value = _make_tavily_response([
+            _make_result("R", "https://example.com", "C"),
+        ])
+        return mock
+
+    @pytest.mark.asyncio
+    async def test_quota_isolated_between_threads(self):
+        from agents.tools.visuals import set_current_thread_id
+
+        mock_tavily = self._tavily()
+        with patch("agents.tools.internet._get_tavily", return_value=mock_tavily):
+            # Thread A exhausts its 3-call quota
+            set_current_thread_id("thread-a")
+            for i in range(3):
+                await quick_web_lookup.ainvoke({"query": f"a{i}"})
+            blocked = await quick_web_lookup.ainvoke({"query": "a3"})
+            assert "limit reached" in blocked.lower()
+
+            # Thread B starts fresh — unaffected by A's usage
+            set_current_thread_id("thread-b")
+            ok = await quick_web_lookup.ainvoke({"query": "b0"})
+            assert "Title: R" in ok
+
+            # A stays blocked on switch-back
+            set_current_thread_id("thread-a")
+            still_blocked = await quick_web_lookup.ainvoke({"query": "a4"})
+            assert "limit reached" in still_blocked.lower()
+            set_current_thread_id("")
+
+    @pytest.mark.asyncio
+    async def test_reset_clears_only_target_thread(self):
+        from agents.tools.visuals import set_current_thread_id
+
+        mock_tavily = self._tavily()
+        with patch("agents.tools.internet._get_tavily", return_value=mock_tavily):
+            set_current_thread_id("thread-a")
+            for i in range(3):
+                await quick_web_lookup.ainvoke({"query": f"a{i}"})
+            set_current_thread_id("thread-b")
+            for i in range(3):
+                await quick_web_lookup.ainvoke({"query": f"b{i}"})
+
+            # Reset only A — B remains exhausted
+            reset_orchestrator_search_count("thread-a")
+            set_current_thread_id("thread-a")
+            ok = await quick_web_lookup.ainvoke({"query": "a-new"})
+            assert "Title: R" in ok
+
+            set_current_thread_id("thread-b")
+            blocked = await quick_web_lookup.ainvoke({"query": "b4"})
+            assert "limit reached" in blocked.lower()
+            set_current_thread_id("")
+
+    @pytest.mark.asyncio
+    async def test_reset_with_no_args_uses_current_thread(self):
+        from agents.tools.visuals import set_current_thread_id
+
+        mock_tavily = self._tavily()
+        with patch("agents.tools.internet._get_tavily", return_value=mock_tavily):
+            set_current_thread_id("thread-a")
+            for i in range(3):
+                await quick_web_lookup.ainvoke({"query": f"a{i}"})
+            reset_orchestrator_search_count()  # resolves "thread-a" from context
+            ok = await quick_web_lookup.ainvoke({"query": "a-again"})
+            assert "Title: R" in ok
+            set_current_thread_id("")
