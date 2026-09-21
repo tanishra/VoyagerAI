@@ -1109,7 +1109,7 @@ async def stream_chat_agent(
     currency: str | None = None,
     client_message_id: str | None = None,
 ):
-    reset_orchestrator_search_count()
+    reset_orchestrator_search_count(thread_id)
     set_current_thread_id(thread_id)
     agent = await create_chat_agent(user_id=user_id, locale=locale, timezone=timezone, currency=currency)
     config = {
@@ -1376,6 +1376,7 @@ async def regenerate_chat_agent(
     # Create a pure fork — new checkpoint with same state, ready for fresh execution
     forked_config = await agent.aupdate_state(fork_config, None)
 
+    reset_orchestrator_search_count(thread_id)
     set_current_thread_id(thread_id)
 
     # Stream from the forked checkpoint — no new user message needed,
@@ -1577,6 +1578,7 @@ async def edit_chat_agent(
         run_config = await agent.aupdate_state(fork_config, None)
         run_inputs = {"messages": [HumanMessage(content=new_message, id=client_message_id or uuid.uuid4().hex)]}
 
+    reset_orchestrator_search_count(thread_id)
     set_current_thread_id(thread_id)
 
     stream = _ModelStream(agent, run_config)
@@ -1710,6 +1712,7 @@ async def edit_itinerary_agent(
         "recursion_limit": 100,
     }
 
+    reset_orchestrator_search_count(thread_id)
     set_current_thread_id(thread_id)
 
     validation_prompt = build_edit_itinerary_prompt(
