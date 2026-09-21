@@ -18,15 +18,14 @@ describe('editStream', () => {
   });
 
   it('sends POST with thread_id and message to /chat/edit', async () => {
-    const mockResponse = {
-      ok: true,
-      status: 200,
-      body: {
-        getReader: () => ({
-          read: async () => ({ done: true, value: undefined }),
-        }),
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream({
+      start(c) {
+        c.enqueue(encoder.encode('event: done\ndata: {"data":null}\n\n'));
+        c.close();
       },
-    };
+    });
+    const mockResponse = { ok: true, status: 200, body: stream };
     const mockFetch = vi.fn().mockResolvedValue(mockResponse);
     vi.stubGlobal('fetch', mockFetch);
 
@@ -49,15 +48,14 @@ describe('editStream', () => {
   });
 
   it('includes credentials for auth cookies', async () => {
-    const mockResponse = {
-      ok: true,
-      status: 200,
-      body: {
-        getReader: () => ({
-          read: async () => ({ done: true, value: undefined }),
-        }),
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream({
+      start(c) {
+        c.enqueue(encoder.encode('event: done\ndata: {"data":null}\n\n'));
+        c.close();
       },
-    };
+    });
+    const mockResponse = { ok: true, status: 200, body: stream };
     const mockFetch = vi.fn().mockResolvedValue(mockResponse);
     vi.stubGlobal('fetch', mockFetch);
 
