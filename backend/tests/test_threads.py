@@ -331,6 +331,51 @@ class TestThreadHistoryEndpoint:
         assert data[1]["role"] == "assistant"
         assert data[1]["content"] == "Sure! Let me help you plan that."
 
+    def test_get_history_attachment_message_not_repr(self, client, monkeypatch):
+        """Attachment user messages render as text + markers, never Python repr."""
+        user_tag = hashlib.sha256(b"dev@localhost").hexdigest()[:12]
+        thread_id = f"chat:{user_tag}:t1"
+
+        class _Msg:
+            def __init__(self, msg_type, content):
+                self.type = msg_type
+                self.content = content
+
+        pdf_block = "--- Attached PDF: visa.pdf ---\n" + ("extracted pdf body " * 500)
+
+        class _FakeState:
+            values: ClassVar[dict] = {
+                "messages": [
+                    _Msg("human", [
+                        {"type": "text", "text": "check my visa doc"},
+                        {"type": "image_url", "image_url": {"url": "data:image/png;base64,AAAA"}},
+                        {"type": "text", "text": pdf_block},
+                    ]),
+                    _Msg("ai", "Looks fine."),
+                ]
+            }
+
+        class _FakeAgent:
+            async def aget_state(self, config):
+                return _FakeState()
+
+        import main as main_module
+
+        async def _fake_create(**kw):
+            return _FakeAgent()
+
+        monkeypatch.setattr(main_module, "create_chat_agent", _fake_create)
+        resp = client.get(f"/threads/{thread_id}/history")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data) == 2
+        content = data[0]["content"]
+        assert "check my visa doc" in content
+        assert "[Image attached]" in content
+        assert "--- Attached PDF: visa.pdf" in content
+        assert "extracted pdf body" not in content  # body stripped, marker kept
+        assert "{'type'" not in content and '"type"' not in content
+
     def test_get_history_extracts_itinerary(self, client, monkeypatch):
         user_tag = hashlib.sha256(b"dev@localhost").hexdigest()[:12]
         thread_id = f"chat:{user_tag}:t1"
