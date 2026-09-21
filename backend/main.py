@@ -304,6 +304,19 @@ def _sse(event: str, data: object) -> dict:
     return {"event": event, "data": json.dumps({"event": event, "data": data})}
 
 
+async def _read_thread_values(thread_id: str, checkpoint_id: str | None = None) -> dict | None:
+    """Read a thread's checkpoint channel_values without building the agent."""
+    from agents.deep_agent import create_checkpointer
+    saver = await create_checkpointer()
+    config: dict = {"configurable": {"thread_id": thread_id}}
+    if checkpoint_id:
+        config["configurable"]["checkpoint_id"] = checkpoint_id
+    tup = await saver.aget_tuple(config)
+    if tup is None:
+        return None
+    return tup.checkpoint.get("channel_values", {})
+
+
 def _history_message_text(content) -> str:
     """Render message content for history — joins text blocks and marks
     attachments instead of dumping the Python repr of the block list."""
@@ -2336,22 +2349,15 @@ async def get_thread_history(
         raise HTTPException(status_code=403, detail="Thread does not belong to this user")
 
     try:
-        agent = await create_chat_agent(user_id=user_id)
-        config = {
-            "configurable": {"thread_id": thread_id, "user_id": user_id},
-            "recursion_limit": 100,
-        }
-        if checkpoint_id:
-            config["configurable"]["checkpoint_id"] = checkpoint_id
-        state = await agent.aget_state(config)
+        values = await _read_thread_values(thread_id, checkpoint_id)
     except Exception:  # noqa: BLE001 (intentional fallback handler)
         logger.warning("Failed to load thread history for %s", thread_id, exc_info=True)
         raise HTTPException(status_code=503, detail="Failed to load thread history")
 
-    if state is None or not state.values or not state.values.get("messages"):
+    if not values or not values.get("messages"):
         raise HTTPException(status_code=404, detail="Thread not found or empty")
 
-    messages = state.values.get("messages", [])
+    messages = values.get("messages", [])
     result: list[dict] = []
 
     # Load persisted activity metadata for this thread (per-message)
@@ -2826,18 +2832,13 @@ async def _get_latest_itinerary(thread_id: str, user_id: str) -> dict | None:
     if not thread_id.startswith(f"chat:{user_tag}:"):
         return None
     try:
-        agent = await create_chat_agent(user_id=user_id)
-        config = {
-            "configurable": {"thread_id": thread_id, "user_id": user_id},
-            "recursion_limit": 100,
-        }
-        state = await agent.aget_state(config)
+        values = await _read_thread_values(thread_id)
     except Exception:  # noqa: BLE001
         logger.warning("Failed to load state for export/share thread=%s", thread_id, exc_info=True)
         return None
-    if state is None or not state.values:
+    if not values:
         return None
-    return _extract_chat_itinerary(state.values)
+    return _extract_chat_itinerary(values)
 
 
 @app.post(
