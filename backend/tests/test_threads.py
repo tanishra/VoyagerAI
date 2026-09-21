@@ -278,20 +278,12 @@ class TestThreadHistoryEndpoint:
         user_tag = hashlib.sha256(b"dev@localhost").hexdigest()[:12]
         thread_id = f"chat:{user_tag}:nonexistent"
 
-        # Mock create_chat_agent to return an agent with empty state
-        class _FakeState:
-            values: ClassVar[dict] = {}
-
-        class _FakeAgent:
-            async def aget_state(self, config):
-                return _FakeState()
-
         import main as main_module
 
-        async def _fake_create(**kw):
-            return _FakeAgent()
+        async def _no_values(thread_id, checkpoint_id=None):
+            return None
 
-        monkeypatch.setattr(main_module, "create_chat_agent", _fake_create)
+        monkeypatch.setattr(main_module, "_read_thread_values", _no_values)
         resp = client.get(f"/threads/{thread_id}/history")
         assert resp.status_code == 404
 
@@ -304,24 +296,17 @@ class TestThreadHistoryEndpoint:
                 self.type = msg_type
                 self.content = content
 
-        class _FakeState:
-            values: ClassVar[dict] = {
+        import main as main_module
+
+        async def _values(tid, checkpoint_id=None):
+            return {
                 "messages": [
                     _Msg("human", "Plan a Tokyo trip"),
                     _Msg("ai", "Sure! Let me help you plan that."),
                 ]
             }
 
-        class _FakeAgent:
-            async def aget_state(self, config):
-                return _FakeState()
-
-        import main as main_module
-
-        async def _fake_create(**kw):
-            return _FakeAgent()
-
-        monkeypatch.setattr(main_module, "create_chat_agent", _fake_create)
+        monkeypatch.setattr(main_module, "_read_thread_values", _values)
         resp = client.get(f"/threads/{thread_id}/history")
         assert resp.status_code == 200
         data = resp.json()
@@ -343,8 +328,10 @@ class TestThreadHistoryEndpoint:
 
         pdf_block = "--- Attached PDF: visa.pdf ---\n" + ("extracted pdf body " * 500)
 
-        class _FakeState:
-            values: ClassVar[dict] = {
+        import main as main_module
+
+        async def _values(tid, checkpoint_id=None):
+            return {
                 "messages": [
                     _Msg("human", [
                         {"type": "text", "text": "check my visa doc"},
@@ -355,16 +342,7 @@ class TestThreadHistoryEndpoint:
                 ]
             }
 
-        class _FakeAgent:
-            async def aget_state(self, config):
-                return _FakeState()
-
-        import main as main_module
-
-        async def _fake_create(**kw):
-            return _FakeAgent()
-
-        monkeypatch.setattr(main_module, "create_chat_agent", _fake_create)
+        monkeypatch.setattr(main_module, "_read_thread_values", _values)
         resp = client.get(f"/threads/{thread_id}/history")
         assert resp.status_code == 200
         data = resp.json()
@@ -387,24 +365,17 @@ class TestThreadHistoryEndpoint:
                 self.type = msg_type
                 self.content = content
 
-        class _FakeState:
-            values: ClassVar[dict] = {
+        import main as main_module
+
+        async def _values(tid, checkpoint_id=None):
+            return {
                 "messages": [
                     _Msg("human", "Plan a Tokyo trip"),
                     _Msg("ai", f"Here is your plan:\n<itinerary>{itinerary_json}</itinerary>"),
                 ]
             }
 
-        class _FakeAgent:
-            async def aget_state(self, config):
-                return _FakeState()
-
-        import main as main_module
-
-        async def _fake_create(**kw):
-            return _FakeAgent()
-
-        monkeypatch.setattr(main_module, "create_chat_agent", _fake_create)
+        monkeypatch.setattr(main_module, "_read_thread_values", _values)
         resp = client.get(f"/threads/{thread_id}/history")
         assert resp.status_code == 200
         data = resp.json()
@@ -445,3 +416,67 @@ class TestThreadAutoSave:
         assert len(threads) == 1
         assert "Tokyo" in threads[0].summary
         assert threads[0].status == "idle"
+
+
+class TestReadThreadValues:
+    """Lightweight checkpoint reader — no agent graph build."""
+
+    @pytest.mark.asyncio
+    async def test_reads_channel_values(self, monkeypatch):
+        import main as main_module
+
+        class _Tup:
+            checkpoint = {"channel_values": {"messages": ["hello"]}}
+
+        class _Saver:
+            async def aget_tuple(self, config):
+                assert config["configurable"]["thread_id"] == "t-mem"
+                return _Tup()
+
+        async def _fake_checkpointer():
+            return _Saver()
+
+        import agents.deep_agent as da
+        monkeypatch.setattr(da, "create_checkpointer", _fake_checkpointer)
+
+        values = await main_module._read_thread_values("t-mem")
+        assert values == {"messages": ["hello"]}
+
+    @pytest.mark.asyncio
+    async def test_passes_checkpoint_id(self, monkeypatch):
+        import main as main_module
+
+        seen = {}
+
+        class _Tup:
+            checkpoint = {"channel_values": {"messages": []}}
+
+        class _Saver:
+            async def aget_tuple(self, config):
+                seen.update(config["configurable"])
+                return _Tup()
+
+        async def _fake_checkpointer():
+            return _Saver()
+
+        import agents.deep_agent as da
+        monkeypatch.setattr(da, "create_checkpointer", _fake_checkpointer)
+
+        await main_module._read_thread_values("t1", checkpoint_id="cp-9")
+        assert seen == {"thread_id": "t1", "checkpoint_id": "cp-9"}
+
+    @pytest.mark.asyncio
+    async def test_returns_none_for_missing_thread(self, monkeypatch):
+        import main as main_module
+
+        class _Saver:
+            async def aget_tuple(self, config):
+                return None
+
+        async def _fake_checkpointer():
+            return _Saver()
+
+        import agents.deep_agent as da
+        monkeypatch.setattr(da, "create_checkpointer", _fake_checkpointer)
+
+        assert await main_module._read_thread_values("nope") is None
