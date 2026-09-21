@@ -49,6 +49,16 @@ class FileStore:
         self._redis: Redis | None = None
         self._mem: dict[str, dict[str, dict]] = {}  # user_id -> {file_id -> data}
 
+    def _prune_mem(self) -> None:
+        """Drop expired in-memory entries (same TTL as Redis/SQLite)."""
+        cutoff = time.time() - _TTL_SECONDS
+        for uid in list(self._mem):
+            files = self._mem[uid]
+            for fid in [fid for fid, e in files.items() if float(e.get("created_at", 0)) <= cutoff]:
+                del files[fid]
+            if not files:
+                del self._mem[uid]
+
     async def _get_redis(self) -> Redis | None:
         if self._redis is None:
             try:
@@ -117,6 +127,7 @@ class FileStore:
 
         if not persisted:
             # In-memory last resort
+            self._prune_mem()
             user_files = self._mem.setdefault(user_id, {})
             user_files[file_id] = {
                 "file_id": file_id,
@@ -175,6 +186,9 @@ class FileStore:
         user_files = self._mem.get(user_id, {})
         entry = user_files.get(file_id)
         if not entry:
+            return None
+        if float(entry.get("created_at", 0)) <= time.time() - _TTL_SECONDS:
+            del user_files[file_id]
             return None
         return FileMeta(
             file_id=entry["file_id"],
