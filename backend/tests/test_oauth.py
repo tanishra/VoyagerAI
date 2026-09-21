@@ -225,3 +225,53 @@ class TestRedisPooling:
 
 async def _none():
     return None
+
+
+class TestMemSessionTTL:
+    """_mem_sessions honors the session TTL like Redis/SQLite do."""
+
+    @pytest.mark.asyncio
+    async def test_expired_mem_session_returns_none(self, monkeypatch):
+        import oauth
+        import time
+
+        monkeypatch.setattr(oauth, "_redis_client", None)
+        monkeypatch.setattr(oauth.Redis, "from_url", lambda *a, **k: _no_redis_obj())
+        monkeypatch.setattr(oauth, "get_sqlite_connection", lambda: _none())
+        monkeypatch.setattr(oauth, "_mem_sessions", {
+            "sid-old": {"user_id": "u", "exp": time.time() - 1},
+        })
+
+        assert await oauth.get_session("sid-old") is None
+        assert "sid-old" not in oauth._mem_sessions
+
+    @pytest.mark.asyncio
+    async def test_fresh_mem_session_returned(self, monkeypatch):
+        import oauth
+        import time
+
+        payload = {"user_id": "u", "exp": time.time() + 60}
+        monkeypatch.setattr(oauth, "_redis_client", None)
+        monkeypatch.setattr(oauth.Redis, "from_url", lambda *a, **k: _no_redis_obj())
+        monkeypatch.setattr(oauth, "get_sqlite_connection", lambda: _none())
+        monkeypatch.setattr(oauth, "_mem_sessions", {"sid-ok": payload})
+
+        assert await oauth.get_session("sid-ok") == payload
+
+    def test_prune_mem_sessions(self, monkeypatch):
+        import oauth
+        import time
+
+        monkeypatch.setattr(oauth, "_mem_sessions", {
+            "dead": {"exp": time.time() - 1},
+            "live": {"exp": time.time() + 60},
+        })
+        oauth._prune_mem_sessions()
+        assert list(oauth._mem_sessions) == ["live"]
+
+
+def _no_redis_obj():
+    class _R:
+        async def ping(self):
+            raise RuntimeError("redis down")
+    return _R()
