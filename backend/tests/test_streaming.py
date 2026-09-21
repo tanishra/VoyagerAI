@@ -1397,3 +1397,132 @@ def test_scoped_thread_id_deterministic_with_client_message_id():
     # Unscoped client thread id still gets prefixed
     tid2 = _scoped_chat_thread_id("xyz", "u1", "cm-abc")
     assert tid2.endswith("xyz")
+
+
+class TestPersistCostsDelta:
+    """Bug #7: a second persist_costs call (extraction-retry path) must write
+    only the increment, not re-record every subagent's full total."""
+
+    class _FakeCostStore:
+        def __init__(self):
+            self.records = []
+            self.sessions = []
+
+        async def record_subagent_cost(self, **kw):
+            self.records.append(kw)
+
+        async def update_session_total(self, **kw):
+            self.sessions.append(kw)
+
+        async def get_hourly_platform_spend(self):
+            return 0.0
+
+        async def check_platform_alerts(self):
+            return {"daily_spend": 0.0, "level": "ok", "message": ""}
+
+    class _FakeMetric:
+        def __init__(self):
+            self.totals = {}
+
+        def labels(self, **kw):
+            key = tuple(sorted(kw.items()))
+            self.totals.setdefault(key, 0.0)
+
+            class _C:
+                def __init__(self, totals, k):
+                    self._t, self._k = totals, k
+
+                def inc(self, v=1):
+                    self._t[self._k] += v
+
+            return _C(self.totals, key)
+
+    def _make_stream(self, subagent_costs, in_tok=100, out_tok=50, cost=0.05):
+        from agents.deep_agent import _ModelStream
+
+        s = _ModelStream.__new__(_ModelStream)
+        s._subagent_costs = dict(subagent_costs)
+        s._persisted_subagent_costs = {}
+        s._session_cost = cost
+        s._budget_reached = False
+        s.activity = {
+            "thinking": [], "tool_calls": [], "usage": [],
+            "total_input_tokens": in_tok, "total_output_tokens": out_tok,
+            "images": [], "charts": [],
+        }
+        return s
+
+    def _patch(self, monkeypatch):
+        import agents.deep_agent as m
+
+        store = self._FakeCostStore()
+        metrics = {name: self._FakeMetric() for name in
+                   ("LLM_CALLS_TOTAL", "LLM_TOKENS_TOTAL", "LLM_COST_TOTAL")}
+        monkeypatch.setattr(m, "cost_store", store)
+        for name, metric in metrics.items():
+            monkeypatch.setattr(m, name, metric)
+        return store, metrics
+
+    def _persist(self, stream):
+        import agents.deep_agent as m
+        return asyncio.run(stream.persist_costs("t1", "u1"))
+
+    def test_second_persist_with_no_new_cost_writes_nothing(self, monkeypatch):
+        store, _ = self._patch(monkeypatch)
+        stream = self._make_stream({
+            "researcher": {"input_tokens": 100, "output_tokens": 50, "cost": 0.02, "model": "m1"},
+        })
+
+        self._persist(stream)
+        assert len(store.records) == 1
+        assert store.records[0]["cost_usd"] == 0.02
+
+        self._persist(stream)
+        assert len(store.records) == 1  # no duplicate row
+        assert len(store.sessions) == 2  # session total still refreshed
+
+    def test_second_persist_writes_only_delta(self, monkeypatch):
+        store, _ = self._patch(monkeypatch)
+        stream = self._make_stream({
+            "researcher": {"input_tokens": 100, "output_tokens": 50, "cost": 0.02, "model": "m1"},
+        })
+        self._persist(stream)
+
+        # Retry accumulates more cost on the same subagent
+        stream._subagent_costs["researcher"]["input_tokens"] += 40
+        stream._subagent_costs["researcher"]["output_tokens"] += 20
+        stream._subagent_costs["researcher"]["cost"] += 0.01
+
+        self._persist(stream)
+        assert len(store.records) == 2
+        d = store.records[1]
+        assert d["input_tokens"] == 40
+        assert d["output_tokens"] == 20
+        assert d["cost_usd"] == 0.01
+
+    def test_new_subagent_between_persists_recorded(self, monkeypatch):
+        store, _ = self._patch(monkeypatch)
+        stream = self._make_stream({
+            "researcher": {"input_tokens": 100, "output_tokens": 50, "cost": 0.02, "model": "m1"},
+        })
+        self._persist(stream)
+
+        stream._subagent_costs["planner"] = {"input_tokens": 10, "output_tokens": 5, "cost": 0.003, "model": "m2"}
+        self._persist(stream)
+
+        assert len(store.records) == 2
+        assert store.records[1]["subagent_name"] == "planner"
+        assert store.records[1]["cost_usd"] == 0.003
+
+    def test_metrics_increment_by_delta_only(self, monkeypatch):
+        store, metrics = self._patch(monkeypatch)
+        stream = self._make_stream({
+            "researcher": {"input_tokens": 100, "output_tokens": 50, "cost": 0.02, "model": "m1"},
+        })
+        self._persist(stream)
+        self._persist(stream)  # no new cost
+
+        cost_metric = metrics["LLM_COST_TOTAL"]
+        assert sum(cost_metric.totals.values()) == 0.02
+        calls_metric = metrics["LLM_CALLS_TOTAL"]
+        assert sum(calls_metric.totals.values()) == 1  # inc'd once, not twice
