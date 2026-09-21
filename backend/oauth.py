@@ -52,15 +52,38 @@ DEV_USER: dict = {
 }
 
 
+_redis_client: Redis | None = None
+
+
 async def _get_redis() -> Redis | None:
-    """Get a Redis connection for session storage."""
+    """Shared Redis client for session storage.
+
+    Cached after the first successful ping (redis.asyncio has an internal
+    connection pool — safe for concurrent use). Dropped via _drop_redis()
+    when an operation fails so the next call reconnects.
+    """
+    global _redis_client
+    if _redis_client is not None:
+        return _redis_client
     try:
         r = Redis.from_url(settings.REDIS_URL, decode_responses=True, socket_connect_timeout=2, socket_timeout=2)
         await r.ping()
+        _redis_client = r
         return r
     except (RedisError, RuntimeError) as exc:
         logger.warning("Session Redis unavailable: %s", exc)
         return None
+
+
+async def _drop_redis() -> None:
+    """Discard the pooled client after a failed op — next call reconnects."""
+    global _redis_client
+    r, _redis_client = _redis_client, None
+    if r is not None:
+        try:
+            await r.aclose()
+        except Exception:  # noqa: BLE001, S110
+            pass
 
 
 async def create_session(user_info: dict) -> str:
@@ -88,9 +111,8 @@ async def create_session(user_info: dict) -> str:
             )
             persisted = True
         except (RedisError, RuntimeError) as exc:
+            await _drop_redis()
             logger.warning("Session Redis write failed: %s", exc)
-        finally:
-            await r.aclose()
 
     # SQLite fallback (also acts as the durable copy when Redis is up)
     db = await get_sqlite_connection()
@@ -130,9 +152,8 @@ async def get_session(session_id: str) -> dict | None:
                 return json.loads(data)
         except (RedisError, RuntimeError):
             store_errors += 1
+            await _drop_redis()
             logger.warning("Failed to read session from Redis")
-        finally:
-            await r.aclose()
 
     # SQLite fallback
     db = await get_sqlite_connection()
@@ -167,9 +188,8 @@ async def delete_session(session_id: str) -> None:
         try:
             await r.delete(f"{SESSION_REDIS_PREFIX}{session_id}")
         except (RedisError, RuntimeError):
+            await _drop_redis()
             logger.warning("Failed to delete session from Redis")
-        finally:
-            await r.aclose()
 
     # SQLite fallback
     db = await get_sqlite_connection()
