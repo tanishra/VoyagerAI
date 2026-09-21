@@ -49,6 +49,22 @@ class SecurityStore:
         self._mem_strikes: dict[str, list[float]] = {}
         self._mem_cooldowns: dict[str, float] = {}
 
+    def _prune_mem(self) -> None:
+        """Drop expired in-memory entries (same TTL/window as Redis/SQLite)."""
+        now = time.time()
+        flag_cutoff = now - _TTL_SECONDS
+        window_start = now - _STRIKE_WINDOW
+        for h in list(self._mem_flags):
+            self._mem_flags[h] = [f for f in self._mem_flags[h] if float(f.get("created_at", 0)) > flag_cutoff]
+            if not self._mem_flags[h]:
+                del self._mem_flags[h]
+        for h in list(self._mem_strikes):
+            self._mem_strikes[h] = [s for s in self._mem_strikes[h] if s > window_start]
+            if not self._mem_strikes[h]:
+                del self._mem_strikes[h]
+        for h in [h for h, v in self._mem_cooldowns.items() if v <= now]:
+            del self._mem_cooldowns[h]
+
     async def _get_redis(self) -> Redis | None:
         if self._redis is None:
             try:
@@ -124,6 +140,7 @@ class SecurityStore:
                 logger.warning("SecurityStore record_flag SQLite error: %s", exc)
 
         if not persisted:
+            self._prune_mem()
             self._mem_flags.setdefault(user_hash, []).append(entry)
         return flag_id
 
@@ -164,6 +181,7 @@ class SecurityStore:
                 logger.warning("SecurityStore record_strike SQLite error: %s", exc)
 
         if not persisted:
+            self._prune_mem()
             self._mem_strikes.setdefault(user_hash, []).append(now)
 
         return await self.get_strike_count(user_id)
@@ -205,6 +223,11 @@ class SecurityStore:
                 logger.warning("SecurityStore get_strike_count SQLite error: %s", exc)
 
         strikes = [s for s in self._mem_strikes.get(user_hash, []) if s > window_start]
+        if user_hash in self._mem_strikes:
+            if strikes:
+                self._mem_strikes[user_hash] = strikes
+            else:
+                del self._mem_strikes[user_hash]
         return max(count, len(strikes))
 
     # -----------------------------------------------------------------
@@ -239,6 +262,8 @@ class SecurityStore:
                 logger.warning("SecurityStore is_in_cooldown SQLite error: %s", exc)
 
         until = self._mem_cooldowns.get(user_hash, 0)
+        if user_hash in self._mem_cooldowns and until <= now:
+            del self._mem_cooldowns[user_hash]
         return until > now
 
     async def apply_cooldown(self, user_id: str, minutes: int | None = None) -> None:
@@ -270,6 +295,7 @@ class SecurityStore:
                 logger.warning("SecurityStore apply_cooldown SQLite error: %s", exc)
 
         if not persisted:
+            self._prune_mem()
             self._mem_cooldowns[user_hash] = until
 
     async def remove_cooldown(self, user_hash: str) -> bool:
@@ -348,6 +374,7 @@ class SecurityStore:
             except Exception as exc:  # noqa: BLE001
                 logger.warning("SecurityStore get_aggregate_stats SQLite error: %s", exc)
 
+        self._prune_mem()
         for flags in self._mem_flags.values():
             for f in flags:
                 if float(f.get("created_at", 0)) > since:
@@ -390,9 +417,10 @@ class SecurityStore:
             except Exception as exc:  # noqa: BLE001
                 logger.warning("SecurityStore get_active_cooldowns SQLite error: %s", exc)
 
+        for h in [h for h, v in self._mem_cooldowns.items() if v <= now]:
+            del self._mem_cooldowns[h]
         for h, v in self._mem_cooldowns.items():
-            if v > now:
-                merged[h] = max(merged.get(h, 0), v)
+            merged[h] = max(merged.get(h, 0), v)
 
         return [
             {"user_hash": h, "until": v, "remaining_seconds": int(v - now)}
