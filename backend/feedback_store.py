@@ -33,6 +33,12 @@ class FeedbackStore:
         self._redis: Redis | None = None
         self._mem_feedback: dict[str, dict] = {}
 
+    def _prune_mem(self) -> None:
+        """Drop expired in-memory feedback (same TTL as Redis/SQLite)."""
+        cutoff = time.time() - _TTL_SECONDS
+        for k in [k for k, v in self._mem_feedback.items() if float(v.get("updated_at", 0)) <= cutoff]:
+            del self._mem_feedback[k]
+
     async def _get_redis(self) -> Redis | None:
         if self._redis is None:
             try:
@@ -98,6 +104,7 @@ class FeedbackStore:
                 logger.warning("FeedbackStore submit_feedback SQLite error: %s", exc)
 
         if not persisted:
+            self._prune_mem()
             self._mem_feedback[key] = data
         return {"status": "ok", "rating": rating}
 
@@ -139,12 +146,14 @@ class FeedbackStore:
                         "created_at": float(row["created_at"] or 0),
                         "updated_at": float(row["updated_at"] or 0),
                     }
-                return None
             except Exception as exc:  # noqa: BLE001
                 logger.warning("FeedbackStore get_feedback SQLite error: %s", exc)
 
         mem = self._mem_feedback.get(key)
         if mem is None:
+            return None
+        if float(mem.get("updated_at", 0)) <= time.time() - _TTL_SECONDS:
+            del self._mem_feedback[key]
             return None
         return {
             "user_id": mem.get("user_id", user_id),
@@ -202,6 +211,7 @@ class FeedbackStore:
             except Exception as exc:  # noqa: BLE001
                 logger.warning("FeedbackStore get_aggregate_stats SQLite error: %s", exc)
 
+        self._prune_mem()
         for k, v in self._mem_feedback.items():
             _merge(k, v)
 
