@@ -2741,7 +2741,7 @@
                     "destination": "Paris",
                     "created_at": 1735689600,
                     "expires_at": 1736294400,
-                    "share_url": "http://localhost:3000/share/abc123def456"
+                    "share_url": "https://app.example.com/en/share/abc123def456"
                   }
                 ]
               }
