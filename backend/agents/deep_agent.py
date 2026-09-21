@@ -264,6 +264,9 @@ class _ModelStream:
         self._budget_reached: bool = False
         self._budget_warned: bool = False
         self._subagent_costs: dict[str, dict] = {}
+        # Totals already written by persist_costs — later calls persist only
+        # the increment so a re-persist can't duplicate rows or metrics.
+        self._persisted_subagent_costs: dict[str, dict] = {}
         self._active_task_names: dict[str, str] = {}
         self._image_count: int = 0
         self._output_leak_buffer: str = ""
@@ -535,20 +538,41 @@ class _ModelStream:
         }
 
     async def persist_costs(self, thread_id: str, user_id: str) -> None:
-        """Persist cost data to the cost store."""
+        """Persist cost data to the cost store.
+
+        Delta-based: only the increment since the last persist is written.
+        The extraction-retry path calls this a second time after accumulating
+        more cost — without deltas, every subagent's full total would be
+        re-recorded and stats/metrics would double-count.
+        """
         summary = self.get_cost_summary()
-        # Record per-subagent costs
+        deltas: dict[str, dict] = {}
+        # Record per-subagent cost increments
         for name, data in summary["subagent_costs"].items():
+            prev = self._persisted_subagent_costs.get(
+                name, {"input_tokens": 0, "output_tokens": 0, "cost": 0.0}
+            )
+            d_in = data["input_tokens"] - prev["input_tokens"]
+            d_out = data["output_tokens"] - prev["output_tokens"]
+            d_cost = round(data["cost"] - prev["cost"], 6)
+            if d_in == 0 and d_out == 0 and d_cost == 0:
+                continue
             await cost_store.record_subagent_cost(
                 thread_id=thread_id,
                 user_id=user_id,
                 subagent_name=name,
-                input_tokens=data["input_tokens"],
-                output_tokens=data["output_tokens"],
-                cost_usd=data["cost"],
+                input_tokens=d_in,
+                output_tokens=d_out,
+                cost_usd=d_cost,
                 model_used=data["model"],
             )
-        # Update session total
+            deltas[name] = {"input_tokens": d_in, "output_tokens": d_out, "cost": d_cost, "model": data["model"]}
+            self._persisted_subagent_costs[name] = {
+                "input_tokens": data["input_tokens"],
+                "output_tokens": data["output_tokens"],
+                "cost": data["cost"],
+            }
+        # Update session total (cumulative overwrite — idempotent)
         await cost_store.update_session_total(
             thread_id=thread_id,
             user_id=user_id,
@@ -559,12 +583,12 @@ class _ModelStream:
             budget_reached=summary["budget_reached"],
         )
 
-        # --- Prometheus metrics (Phase 7.4) ---
-        for name, data in summary["subagent_costs"].items():
-            LLM_CALLS_TOTAL.labels(model=data["model"], subagent=name).inc()
-            LLM_TOKENS_TOTAL.labels(model=data["model"], direction="input").inc(data["input_tokens"])
-            LLM_TOKENS_TOTAL.labels(model=data["model"], direction="output").inc(data["output_tokens"])
-            LLM_COST_TOTAL.labels(model=data["model"]).inc(data["cost"])
+        # --- Prometheus metrics (Phase 7.4) — increment by delta only ---
+        for name, delta in deltas.items():
+            LLM_CALLS_TOTAL.labels(model=delta["model"], subagent=name).inc()
+            LLM_TOKENS_TOTAL.labels(model=delta["model"], direction="input").inc(delta["input_tokens"])
+            LLM_TOKENS_TOTAL.labels(model=delta["model"], direction="output").inc(delta["output_tokens"])
+            LLM_COST_TOTAL.labels(model=delta["model"]).inc(delta["cost"])
 
         # Update Prometheus gauges for platform spend
         try:
