@@ -177,6 +177,8 @@ _SUMMARY_MAX_CHARS = 200
 
 # Per-thread quick-lookup counts — a module-global counter let one user's
 # stream reset or consume another user's quota (Bug #8).
+# In-process only: quotas do not survive restarts and are per-worker under
+# multi-worker deployments (each worker grants its own quota).
 _search_counts: dict[str, int] = {}
 _orchestrator_search_lock: asyncio.Lock | None = None
 
