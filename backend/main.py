@@ -304,6 +304,74 @@ def _sse(event: str, data: object) -> dict:
     return {"event": event, "data": json.dumps({"event": event, "data": data})}
 
 
+class _ObsQueue:
+    """Ordered, referenced observability writes for one SSE stream.
+
+    Producers enqueue store callables; a single consumer task awaits them
+    FIFO — start_session precedes events, finalize_session lands last.
+    Fire-and-forget create_task calls could be GC'd mid-write and ran
+    unordered. Never raises into the stream.
+    """
+
+    _SENTINEL = object()
+
+    def __init__(self) -> None:
+        self._q: asyncio.Queue = asyncio.Queue()
+        self._task: asyncio.Task | None = None
+
+    def send(self, fn, *args, **kwargs) -> None:
+        try:
+            if self._task is None:
+                self._task = asyncio.create_task(self._drain())
+            self._q.put_nowait((fn, args, kwargs))
+        except Exception:  # noqa: BLE001, S110
+            pass
+
+    async def _drain(self) -> None:
+        while True:
+            item = await self._q.get()
+            if item is self._SENTINEL:
+                return
+            fn, args, kwargs = item
+            try:
+                await fn(*args, **kwargs)
+            except Exception:  # noqa: BLE001
+                logger.debug("observability write failed", exc_info=True)
+
+    async def close(self, timeout: float = 5.0) -> None:
+        if self._task is None:
+            return
+        self._q.put_nowait(self._SENTINEL)
+        try:
+            await asyncio.wait_for(asyncio.shield(self._task), timeout=timeout)
+        except Exception:  # noqa: BLE001
+            self._task.cancel()
+
+
+def _send_obs_event(obs: "_ObsQueue", thread_id: str, payload: dict) -> None:
+    """Enqueue an observability record_event for one SSE payload."""
+    try:
+        evt_data = json.loads(payload["data"]) if payload.get("data") else {}
+        if not isinstance(evt_data, dict):
+            evt_data = {}
+        obs.send(
+            observability_store.record_event,
+            thread_id=thread_id,
+            event_type=payload["event"],
+            name=evt_data.get("name", ""),
+            run_id=evt_data.get("run_id", ""),
+            parent_run_id=evt_data.get("parent_run_id", ""),
+            input_data=evt_data.get("input"),
+            output=evt_data.get("output", ""),
+            error=evt_data.get("error", ""),
+            tokens_in=evt_data.get("input_tokens", 0),
+            tokens_out=evt_data.get("output_tokens", 0),
+            model=evt_data.get("model", ""),
+        )
+    except Exception:  # noqa: BLE001, S110
+        pass
+
+
 def _validate_body_fields(body: dict, limits: dict[str, int]) -> None:
     """Validate that string fields in body dict don't exceed max length."""
     for field, max_len in limits.items():
@@ -1616,13 +1684,9 @@ async def chat_stream(
         stream_text = ""
         was_cancelled = False
 
-        # Start observability session
-        try:
-            asyncio.create_task(observability_store.start_session(
-                thread_id, user_id, locale=locale, timezone=chat_req.timezone or "",
-            ))
-        except Exception:  # noqa: BLE001, S110
-            pass
+        obs = _ObsQueue()
+        obs.send(observability_store.start_session,
+                 thread_id, user_id, locale=locale, timezone=chat_req.timezone or "")
 
         # Mark thread as busy at the start of the stream
         try:
@@ -1651,24 +1715,7 @@ async def chat_stream(
                         raw = json.loads(payload["data"])
                         stream_text += raw.get("data", "")
                     yield payload
-                    # Record event for observability (fire-and-forget)
-                    try:
-                        evt_data = json.loads(payload["data"]) if payload.get("data") else {}
-                        asyncio.create_task(observability_store.record_event(
-                            thread_id=thread_id,
-                            event_type=payload["event"],
-                            name=evt_data.get("name", "") if isinstance(evt_data, dict) else "",
-                            run_id=evt_data.get("run_id", "") if isinstance(evt_data, dict) else "",
-                            parent_run_id=evt_data.get("parent_run_id", "") if isinstance(evt_data, dict) else "",
-                            input_data=evt_data.get("input") if isinstance(evt_data, dict) else None,
-                            output=evt_data.get("output", "") if isinstance(evt_data, dict) else "",
-                            error=evt_data.get("error", "") if isinstance(evt_data, dict) else "",
-                            tokens_in=evt_data.get("input_tokens", 0) if isinstance(evt_data, dict) else 0,
-                            tokens_out=evt_data.get("output_tokens", 0) if isinstance(evt_data, dict) else 0,
-                            model=evt_data.get("model", "") if isinstance(evt_data, dict) else "",
-                        ))
-                    except Exception:  # noqa: BLE001, S110
-                        pass
+                    _send_obs_event(obs, thread_id, payload)
         except Exception as exc:  # noqa: BLE001 (intentional fallback handler)
             logger.error(
                 "Chat stream failed for thread=%s: %s",
@@ -1678,22 +1725,13 @@ async def chat_stream(
             )
             stream_failed = True
             yield _sse("error", get_error_message("streaming_failed", locale, error=str(exc)))
-            try:
-                asyncio.create_task(observability_store.record_event(
-                    thread_id=thread_id, event_type="error", error=str(exc)[:500],
-                ))
-            except Exception:  # noqa: BLE001, S110
-                pass
+            obs.send(observability_store.record_event,
+                     thread_id=thread_id, event_type="error", error=str(exc)[:500])
         finally:
             unregister_cancel(thread_id)
-            # Finalize observability session
-            try:
-                final_obs_status = "cancelled" if was_cancelled else ("error" if stream_failed else "completed")
-                asyncio.create_task(observability_store.finalize_session(
-                    thread_id, final_obs_status,
-                ))
-            except Exception:  # noqa: BLE001, S110
-                pass
+            final_obs_status = "cancelled" if was_cancelled else ("error" if stream_failed else "completed")
+            obs.send(observability_store.finalize_session, thread_id, final_obs_status)
+            await obs.close()
             # Save/update thread metadata with AI summary and status — never blocks stream
             try:
                 final_status = "error" if stream_failed else "idle"
@@ -1827,12 +1865,9 @@ async def chat_regenerate(
         stream_text = ""
 
         # Start observability session
-        try:
-            asyncio.create_task(observability_store.start_session(
-                thread_id, user_id, locale=locale, timezone=timezone or "",
-            ))
-        except Exception:  # noqa: BLE001, S110
-            pass
+        obs = _ObsQueue()
+        obs.send(observability_store.start_session,
+                 thread_id, user_id, locale=locale, timezone=timezone or "")
 
         try:
             await thread_store.update_status(user_id, thread_id, "busy")
@@ -1856,24 +1891,7 @@ async def chat_regenerate(
                         raw = json.loads(payload["data"])
                         stream_text += raw.get("data", "")
                     yield payload
-                    # Record event for observability (fire-and-forget)
-                    try:
-                        evt_data = json.loads(payload["data"]) if payload.get("data") else {}
-                        asyncio.create_task(observability_store.record_event(
-                            thread_id=thread_id,
-                            event_type=payload["event"],
-                            name=evt_data.get("name", "") if isinstance(evt_data, dict) else "",
-                            run_id=evt_data.get("run_id", "") if isinstance(evt_data, dict) else "",
-                            parent_run_id=evt_data.get("parent_run_id", "") if isinstance(evt_data, dict) else "",
-                            input_data=evt_data.get("input") if isinstance(evt_data, dict) else None,
-                            output=evt_data.get("output", "") if isinstance(evt_data, dict) else "",
-                            error=evt_data.get("error", "") if isinstance(evt_data, dict) else "",
-                            tokens_in=evt_data.get("input_tokens", 0) if isinstance(evt_data, dict) else 0,
-                            tokens_out=evt_data.get("output_tokens", 0) if isinstance(evt_data, dict) else 0,
-                            model=evt_data.get("model", "") if isinstance(evt_data, dict) else "",
-                        ))
-                    except Exception:  # noqa: BLE001, S110
-                        pass
+                    _send_obs_event(obs, thread_id, payload)
         except Exception as exc:  # noqa: BLE001
             logger.error(
                 "Chat regenerate failed for thread=%s: %s",
@@ -1883,22 +1901,13 @@ async def chat_regenerate(
             )
             stream_failed = True
             yield _sse("error", get_error_message("streaming_failed", locale, error=str(exc)))
-            try:
-                asyncio.create_task(observability_store.record_event(
-                    thread_id=thread_id, event_type="error", error=str(exc)[:500],
-                ))
-            except Exception:  # noqa: BLE001, S110
-                pass
+            obs.send(observability_store.record_event,
+                     thread_id=thread_id, event_type="error", error=str(exc)[:500])
         finally:
             unregister_cancel(thread_id)
-            # Finalize observability session
-            try:
-                final_obs_status = "error" if stream_failed else "completed"
-                asyncio.create_task(observability_store.finalize_session(
-                    thread_id, final_obs_status,
-                ))
-            except Exception:  # noqa: BLE001, S110
-                pass
+            final_obs_status = "error" if stream_failed else "completed"
+            obs.send(observability_store.finalize_session, thread_id, final_obs_status)
+            await obs.close()
             try:
                 final_status = "error" if stream_failed else "idle"
                 summary = await generate_summary("", stream_text, locale=locale)
@@ -1987,12 +1996,9 @@ async def chat_edit(
         stream_text = ""
 
         # Start observability session
-        try:
-            asyncio.create_task(observability_store.start_session(
-                thread_id, user_id, locale=locale, timezone=timezone or "",
-            ))
-        except Exception:  # noqa: BLE001, S110
-            pass
+        obs = _ObsQueue()
+        obs.send(observability_store.start_session,
+                 thread_id, user_id, locale=locale, timezone=timezone or "")
 
         try:
             await thread_store.update_status(user_id, thread_id, "busy")
@@ -2018,24 +2024,7 @@ async def chat_edit(
                         raw = json.loads(payload["data"])
                         stream_text += raw.get("data", "")
                     yield payload
-                    # Record event for observability (fire-and-forget)
-                    try:
-                        evt_data = json.loads(payload["data"]) if payload.get("data") else {}
-                        asyncio.create_task(observability_store.record_event(
-                            thread_id=thread_id,
-                            event_type=payload["event"],
-                            name=evt_data.get("name", "") if isinstance(evt_data, dict) else "",
-                            run_id=evt_data.get("run_id", "") if isinstance(evt_data, dict) else "",
-                            parent_run_id=evt_data.get("parent_run_id", "") if isinstance(evt_data, dict) else "",
-                            input_data=evt_data.get("input") if isinstance(evt_data, dict) else None,
-                            output=evt_data.get("output", "") if isinstance(evt_data, dict) else "",
-                            error=evt_data.get("error", "") if isinstance(evt_data, dict) else "",
-                            tokens_in=evt_data.get("input_tokens", 0) if isinstance(evt_data, dict) else 0,
-                            tokens_out=evt_data.get("output_tokens", 0) if isinstance(evt_data, dict) else 0,
-                            model=evt_data.get("model", "") if isinstance(evt_data, dict) else "",
-                        ))
-                    except Exception:  # noqa: BLE001, S110
-                        pass
+                    _send_obs_event(obs, thread_id, payload)
         except Exception as exc:  # noqa: BLE001
             logger.error(
                 "Chat edit failed for thread=%s: %s",
@@ -2045,22 +2034,13 @@ async def chat_edit(
             )
             stream_failed = True
             yield _sse("error", get_error_message("streaming_failed", locale, error=str(exc)))
-            try:
-                asyncio.create_task(observability_store.record_event(
-                    thread_id=thread_id, event_type="error", error=str(exc)[:500],
-                ))
-            except Exception:  # noqa: BLE001, S110
-                pass
+            obs.send(observability_store.record_event,
+                     thread_id=thread_id, event_type="error", error=str(exc)[:500])
         finally:
             unregister_cancel(thread_id)
-            # Finalize observability session
-            try:
-                final_obs_status = "error" if stream_failed else "completed"
-                asyncio.create_task(observability_store.finalize_session(
-                    thread_id, final_obs_status,
-                ))
-            except Exception:  # noqa: BLE001, S110
-                pass
+            final_obs_status = "error" if stream_failed else "completed"
+            obs.send(observability_store.finalize_session, thread_id, final_obs_status)
+            await obs.close()
             try:
                 final_status = "error" if stream_failed else "idle"
                 summary = await generate_summary(new_message, stream_text, locale=locale)
