@@ -3118,8 +3118,37 @@ async def _start_thread_cleanup_task() -> None:
                     logger.info("SQLite fallback cleanup: %d expired rows", deleted)
             except Exception:  # noqa: BLE001
                 logger.warning("SQLite fallback cleanup task error", exc_info=True)
+            try:
+                await cost_store.cleanup_expired()
+                await observability_store.cleanup_expired()
+            except Exception:  # noqa: BLE001
+                logger.warning("Store cleanup task error", exc_info=True)
 
     app.state._cleanup_task = asyncio.create_task(_cleanup_loop())
+
+
+@app.on_event("startup")
+async def _warn_multi_worker() -> None:
+    """Warn when running with >1 worker — several stores keep in-process state.
+
+    cancel_registry, per-thread search quota, _mem fallbacks, and checkpointer
+    caches are all per-process; multiple workers get divergent private copies.
+    """
+    import os
+    for var in ("UVICORN_WORKERS", "WEB_CONCURRENCY", "GUNICORN_WORKERS"):
+        try:
+            workers = int(os.getenv(var, "") or 0)
+        except ValueError:
+            continue
+        if workers > 1:
+            logger.warning(
+                "%s=%d: multi-worker deployment detected — in-process state "
+                "(cancel_registry, _search_counts, _mem fallbacks, checkpointer "
+                "caches) is per-worker and will diverge. Use a single worker or "
+                "shared durable stores.",
+                var, workers,
+            )
+            break
 
 
 @app.on_event("shutdown")
