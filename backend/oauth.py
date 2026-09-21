@@ -110,8 +110,18 @@ async def create_session(user_info: dict) -> str:
     return session_id
 
 
+class SessionStoreUnavailable(Exception):
+    """All durable session stores failed — lookup result can't be trusted."""
+
+
 async def get_session(session_id: str) -> dict | None:
-    """Read a session by ID from Redis (or SQLite / in-memory fallback)."""
+    """Read a session by ID from Redis (or SQLite / in-memory fallback).
+
+    Returns None when the session genuinely isn't found. Raises
+    SessionStoreUnavailable when a durable store errored and the session
+    was not found anywhere — a miss under failure isn't trustworthy.
+    """
+    store_errors = 0
     r = await _get_redis()
     if r is not None:
         try:
@@ -119,6 +129,7 @@ async def get_session(session_id: str) -> dict | None:
             if data:
                 return json.loads(data)
         except (RedisError, RuntimeError):
+            store_errors += 1
             logger.warning("Failed to read session from Redis")
         finally:
             await r.aclose()
@@ -139,10 +150,13 @@ async def get_session(session_id: str) -> dict | None:
                     return None
                 return json.loads(row["payload_json"])
         except Exception as exc:  # noqa: BLE001
+            store_errors += 1
             logger.warning("Session SQLite read failed — using in-memory: %s", exc)
 
-    # In-memory fallback
-    return _mem_sessions.get(session_id)
+    session = _mem_sessions.get(session_id)
+    if session is None and store_errors:
+        raise SessionStoreUnavailable(f"{store_errors} session store(s) failed during lookup")
+    return session
 
 
 async def delete_session(session_id: str) -> None:
@@ -192,10 +206,17 @@ async def get_current_user(request: Request) -> dict:
 
     # Try each candidate in turn — a stale cookie must not shadow a valid token.
     session = None
-    for session_id in dict.fromkeys(s for s in candidates if s):
-        session = await get_session(session_id)
-        if session:
-            break
+    try:
+        for session_id in dict.fromkeys(s for s in candidates if s):
+            session = await get_session(session_id)
+            if session:
+                break
+    except SessionStoreUnavailable:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Session store temporarily unavailable",
+            headers={"Retry-After": "2"},
+        )
     if not session:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
