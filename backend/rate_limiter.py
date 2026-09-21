@@ -131,6 +131,8 @@ class RateLimiter:
 
         if not persisted:
             # --- In-memory last resort ---
+            for k in [k for k, ts in self._mem.items() if not ts or max(ts) <= window_start]:
+                del self._mem[k]
             timestamps = [t for t in self._mem.get(key, []) if t > window_start]
             timestamps.append(now)
             self._mem[key] = timestamps
