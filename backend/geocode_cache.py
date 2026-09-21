@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import time
 
 from redis.asyncio import Redis
 from redis.exceptions import RedisError
@@ -69,12 +70,17 @@ class GeocodeCache:
                 row = await cur.fetchone()
                 if row:
                     return {"lat": float(row["lat"]), "lng": float(row["lng"])}
-                return None
             except Exception as exc:  # noqa: BLE001
                 logger.warning("GeocodeCache get SQLite error — falling back: %s", exc)
 
         # In-memory fallback
-        return self._mem.get(key)
+        entry = self._mem.get(key)
+        if entry is None:
+            return None
+        if entry.get("_exp", 0) <= time.time():
+            del self._mem[key]
+            return None
+        return {"lat": entry["lat"], "lng": entry["lng"]}
 
     async def set(self, query: str, lat: float, lng: float) -> None:
         """Cache coordinates for a query."""
@@ -106,7 +112,10 @@ class GeocodeCache:
 
         if not persisted:
             # In-memory last resort
-            self._mem[key] = {"lat": lat, "lng": lng}
+            now = time.time()
+            for k in [k for k, e in self._mem.items() if e.get("_exp", 0) <= now]:
+                del self._mem[k]
+            self._mem[key] = {"lat": lat, "lng": lng, "_exp": now + _TTL_SECONDS}
 
 
 geocode_cache = GeocodeCache()
