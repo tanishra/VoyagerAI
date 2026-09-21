@@ -85,3 +85,67 @@ class TestThreadOwnership:
         # Dev user hash is sha256("dev@localhost")[:12] — not "aaaaaabbbccc"
         resp = authed_client.get("/threads/chat:aaaaaabbbccc:fake/history")
         assert resp.status_code == 403
+
+
+class TestSessionStoreUnavailable:
+    """Improvement I2: store outage must yield 503, not 401 logout."""
+
+    @pytest.mark.asyncio
+    async def test_get_session_raises_when_all_stores_fail(self, monkeypatch):
+        import oauth
+
+        async def _failing_redis():
+            r = type("R", (), {})()
+            async def _get(k):
+                from redis.exceptions import RedisError
+                raise RedisError("down")
+            r.get = _get
+            async def _close():
+                pass
+            r.aclose = _close
+            return r
+
+        async def _failing_db():
+            db = type("DB", (), {})()
+            async def _execute(*a, **k):
+                raise RuntimeError("db down")
+            db.execute = _execute
+            return db
+
+        monkeypatch.setattr(oauth, "_get_redis", _failing_redis)
+        monkeypatch.setattr(oauth, "get_sqlite_connection", _failing_db)
+        monkeypatch.setattr(oauth, "_mem_sessions", {})
+
+        with pytest.raises(oauth.SessionStoreUnavailable):
+            await oauth.get_session("nonexistent")
+
+    @pytest.mark.asyncio
+    async def test_get_session_none_when_stores_healthy(self, monkeypatch):
+        import oauth
+
+        async def _no_redis():
+            return None
+
+        async def _no_db():
+            return None
+
+        monkeypatch.setattr(oauth, "_get_redis", _no_redis)
+        monkeypatch.setattr(oauth, "get_sqlite_connection", _no_db)
+        monkeypatch.setattr(oauth, "_mem_sessions", {})
+
+        assert await oauth.get_session("nonexistent") is None
+
+    def test_me_returns_503_on_store_outage(self, monkeypatch):
+        import main
+        import oauth
+
+        async def _failing(session_id):
+            raise oauth.SessionStoreUnavailable("all stores down")
+
+        monkeypatch.setattr(oauth, "get_session", _failing)
+        session_id = _create_dev_session()
+        with TestClient(main.app) as c:
+            c.cookies.set("voyager_session", session_id)
+            resp = c.get("/auth/me")
+        assert resp.status_code == 503
+        assert resp.headers.get("Retry-After") == "2"
