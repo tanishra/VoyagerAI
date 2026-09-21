@@ -471,6 +471,10 @@ class TestStreamChatAgentRetry:
             async def aget_state(self, config):
                 return _fake_state([_Msg(prose)])
 
+            async def aupdate_state(self, config, update):
+                self.removals = getattr(self, "removals", [])
+                self.removals.append(update)
+
             async def ainvoke(self, *args, **kwargs):
                 raise AssertionError("retry must stream, not ainvoke")
 
@@ -493,9 +497,14 @@ class TestStreamChatAgentRetry:
         )
 
         assert len(fake.inputs) == 2  # main pass + retry
-        retry_content = fake.inputs[1]["messages"][0]["content"]
-        assert "did not include a parseable itinerary JSON" in retry_content
-        assert prose[:80] in retry_content  # failed output snippet fed back
+        retry_msg = fake.inputs[1]["messages"][0]
+        assert "did not include a parseable itinerary JSON" in retry_msg.content
+        assert prose[:80] in retry_msg.content  # failed output snippet fed back
+        # Internal hint removed from checkpoint after the retry
+        from langchain_core.messages import RemoveMessage
+        assert len(fake.removals) == 1
+        assert isinstance(fake.removals[0]["messages"][0], RemoveMessage)
+        assert fake.removals[0]["messages"][0].id == retry_msg.id
         assert captured["user"] == "plan a trip"
         assert captured["draft"] == prose
         assert events[-2] == ("itinerary", {"destination": "Paris", "days": []})
@@ -620,6 +629,10 @@ class TestStreamTextExtraction:
             async def aget_state(self, config):
                 return _fake_state([_Msg("stub: truncated")])
 
+            async def aupdate_state(self, config, update):
+                self.removals = getattr(self, "removals", [])
+                self.removals.append(update)
+
         fake = _FakeAgent()
         async def _fake_factory(**kw):
             return fake
@@ -637,9 +650,12 @@ class TestStreamTextExtraction:
         )
 
         assert len(fake.inputs) == 2
-        retry_content = fake.inputs[1]["messages"][0]["content"]
-        assert "did not include a parseable itinerary JSON" in retry_content
-        assert full_prose[:80] in retry_content  # full stream text fed back, not the stub
+        retry_msg = fake.inputs[1]["messages"][0]
+        assert "did not include a parseable itinerary JSON" in retry_msg.content
+        assert full_prose[:80] in retry_msg.content  # full stream text fed back, not the stub
+        from langchain_core.messages import RemoveMessage
+        assert len(fake.removals) == 1
+        assert isinstance(fake.removals[0]["messages"][0], RemoveMessage)
         assert captured["draft"] == full_prose
 
 
