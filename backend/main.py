@@ -114,6 +114,20 @@ if settings.AUTH_MODE == "production" and not ALLOWED_ORIGINS:
         "CORS_ORIGINS must be set to an explicit allowlist when AUTH_MODE=production"
     )
 
+
+def _frontend_base_url() -> str:
+    """Public-facing frontend URL for links we hand to users (share links,
+    OAuth redirects). Prefers the first https CORS origin; falls back to the
+    first non-wildcard origin, then localhost for dev."""
+    frontend_url = "http://localhost:3000"
+    if ALLOWED_ORIGINS:
+        https_origins = [o for o in ALLOWED_ORIGINS if o.startswith("https://")]
+        if https_origins:
+            frontend_url = https_origins[0]
+        elif ALLOWED_ORIGINS[0] != "*":
+            frontend_url = ALLOWED_ORIGINS[0]
+    return frontend_url.rstrip("/")
+
 # --- Production startup guards ---
 if settings.AUTH_MODE == "production":
     if not settings.SESSION_SECRET_KEY or settings.SESSION_SECRET_KEY == "dev-only-insecure-key-change-in-production":
@@ -2679,15 +2693,7 @@ async def auth_callback(request: Request) -> RedirectResponse:
     session_id = await create_session(session_data)
     logger.info("OAuth callback: session created for %s (id=%s)", email, session_id[:12])
 
-    frontend_url = "http://localhost:3000"
-    if ALLOWED_ORIGINS:
-        https_origins = [orig for orig in ALLOWED_ORIGINS if orig.startswith("https://")]
-        if https_origins:
-            frontend_url = https_origins[0]
-        elif ALLOWED_ORIGINS[0] != "*":
-            frontend_url = ALLOWED_ORIGINS[0]
-
-    redirect_target = f"{frontend_url.rstrip('/')}/auth/callback?success=1&token={session_id}"
+    redirect_target = f"{_frontend_base_url()}/auth/callback?success=1&token={session_id}"
     logger.info("OAuth callback: redirecting to %s", redirect_target[:80])
     resp = RedirectResponse(url=redirect_target)
     resp.set_cookie(
@@ -2877,14 +2883,7 @@ async def create_share_link(
         user_id, thread_id, itinerary_json, destination, image_base64=image_base64,
     )
     locale = extract_locale(request) or "en"
-    frontend_url = "http://localhost:3000"
-    if ALLOWED_ORIGINS:
-        https_origins = [orig for orig in ALLOWED_ORIGINS if orig.startswith("https://")]
-        if https_origins:
-            frontend_url = https_origins[0]
-        elif ALLOWED_ORIGINS[0] != "*":
-            frontend_url = ALLOWED_ORIGINS[0]
-    share_url = f"{frontend_url.rstrip('/')}/{locale}/share/{token}"
+    share_url = f"{_frontend_base_url()}/{locale}/share/{token}"
     logger.info("Created share link for user=%s thread=%s token=%s", user_id, thread_id, token[:8])
     return {"share_url": share_url, "expires_at": expires_at, "destination": destination}
 
@@ -2982,7 +2981,7 @@ async def revoke_share_link(
         200: {
             "description": "List of active share links",
             "content": {"application/json": {"example": [
-                {"token": "abc123def456", "thread_id": "chat:abc123:def456", "destination": "Paris", "created_at": 1735689600, "expires_at": 1736294400, "share_url": "http://localhost:3000/share/abc123def456"},
+                {"token": "abc123def456", "thread_id": "chat:abc123:def456", "destination": "Paris", "created_at": 1735689600, "expires_at": 1736294400, "share_url": "https://app.example.com/en/share/abc123def456"},
             ]}},
         },
         401: {"description": "Missing or invalid API key"},
@@ -2999,6 +2998,8 @@ async def list_shares(
     """
     user_id = user["user_id"]
     shares = await share_store.list_shares(user_id)
+    locale = extract_locale(request) or "en"
+    base = _frontend_base_url()
     return [
         {
             "token": s.token,
@@ -3006,7 +3007,7 @@ async def list_shares(
             "destination": s.destination,
             "created_at": s.created_at,
             "expires_at": s.expires_at,
-            "share_url": f"http://localhost:3000/share/{s.token}",
+            "share_url": f"{base}/{locale}/share/{s.token}",
         }
         for s in shares
     ]
