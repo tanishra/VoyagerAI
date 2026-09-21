@@ -19,16 +19,7 @@ describe('regenerateStream', () => {
   });
 
   it('regenerateStream sends POST with thread_id to /chat/regenerate', async () => {
-    const mockResponse = {
-      ok: true,
-      status: 200,
-      body: {
-        getReader: () => ({
-          read: async () => ({ done: true, value: undefined }),
-        }),
-      },
-    };
-    const mockFetch = vi.fn().mockResolvedValue(mockResponse);
+    const mockFetch = vi.fn().mockResolvedValue(makeDoneStream());
     vi.stubGlobal('fetch', mockFetch);
 
     const { regenerateStream } = await import('@/lib/chat-api');
@@ -46,16 +37,7 @@ describe('regenerateStream', () => {
   });
 
   it('regenerateStream includes credentials for auth cookies', async () => {
-    const mockResponse = {
-      ok: true,
-      status: 200,
-      body: {
-        getReader: () => ({
-          read: async () => ({ done: true, value: undefined }),
-        }),
-      },
-    };
-    const mockFetch = vi.fn().mockResolvedValue(mockResponse);
+    const mockFetch = vi.fn().mockResolvedValue(makeDoneStream());
     vi.stubGlobal('fetch', mockFetch);
 
     const { regenerateStream } = await import('@/lib/chat-api');
