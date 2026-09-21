@@ -2,6 +2,10 @@
 
 Maps thread_id → asyncio.Event so that a POST /chat/cancel request
 can signal an active SSE stream to stop processing immediately.
+
+In-process only: with multiple workers each has a private copy, so a
+cancel request may land on a worker that doesn't hold the stream.
+Deploy single-worker or add sticky routing / a shared cancel backend.
 """
 
 from __future__ import annotations
