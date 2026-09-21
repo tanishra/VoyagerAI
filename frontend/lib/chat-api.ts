@@ -325,6 +325,7 @@ export async function regenerateStream(
 ): Promise<string | undefined> {
   const { onToken, onItinerary, onComparison, onImage, onChart, onStatus, onThreadId, onDone, onError, onAbort, onCancelled, signal, errorMessages, onThinking, onToolStart, onToolEnd, onToolError, onUsage, onSubagentProgress, onReconnecting } = callbacks;
   let resolvedThreadId: string | undefined;
+  let sawDone = false;
 
   const url = withAuthParams(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/chat/regenerate`);
   const headers: Record<string, string> = {
@@ -393,11 +394,20 @@ export async function regenerateStream(
               }
             } else {
               handleChatEvent(currentEvent, data, {
-                onToken, onItinerary, onComparison, onImage, onChart, onStatus, onThreadId, onDone, onError, onCancelled, onThinking, onToolStart, onToolEnd, onToolError, onUsage, onSubagentProgress,
+                onToken, onItinerary, onComparison, onImage, onChart, onStatus, onThreadId, onDone: (d) => { sawDone = true; onDone?.(d); }, onError, onCancelled, onThinking, onToolStart, onToolEnd, onToolError, onUsage, onSubagentProgress,
               });
             }
           }
         }
+      }
+      if (!sawDone) {
+        if (attempt < MAX_RETRIES) {
+          onReconnecting?.(attempt + 1, MAX_RETRIES);
+          await sleep(RETRY_DELAYS[attempt], signal);
+          continue;
+        }
+        onError?.(errorMessages?.streamEnded ?? 'Stream ended before the agent finished');
+        return resolvedThreadId;
       }
       return resolvedThreadId;
     } catch (err) {
@@ -430,6 +440,7 @@ export async function editItinerary(
 ): Promise<string | undefined> {
   const { onToken, onItinerary, onComparison, onImage, onChart, onStatus, onThreadId, onDone, onError, onAbort, onCancelled, signal, errorMessages, onThinking, onToolStart, onToolEnd, onToolError, onUsage, onSubagentProgress, onReconnecting } = callbacks;
   let resolvedThreadId: string | undefined;
+  let sawDone = false;
 
   const url = withAuthParams(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/chat/${body.thread_id}/edit-itinerary`);
   const headers: Record<string, string> = {
@@ -498,11 +509,20 @@ export async function editItinerary(
               }
             } else {
               handleChatEvent(currentEvent, data, {
-                onToken, onItinerary, onComparison, onImage, onChart, onStatus, onThreadId, onDone, onError, onCancelled, onThinking, onToolStart, onToolEnd, onToolError, onUsage, onSubagentProgress,
+                onToken, onItinerary, onComparison, onImage, onChart, onStatus, onThreadId, onDone: (d) => { sawDone = true; onDone?.(d); }, onError, onCancelled, onThinking, onToolStart, onToolEnd, onToolError, onUsage, onSubagentProgress,
               });
             }
           }
         }
+      }
+      if (!sawDone) {
+        if (attempt < MAX_RETRIES) {
+          onReconnecting?.(attempt + 1, MAX_RETRIES);
+          await sleep(RETRY_DELAYS[attempt], signal);
+          continue;
+        }
+        onError?.(errorMessages?.streamEnded ?? 'Stream ended before the agent finished');
+        return resolvedThreadId;
       }
       return resolvedThreadId;
     } catch (err) {
@@ -553,6 +573,7 @@ export async function editStream(
 ): Promise<string | undefined> {
   const { onToken, onItinerary, onComparison, onImage, onChart, onStatus, onThreadId, onDone, onError, onAbort, onCancelled, signal, errorMessages, onThinking, onToolStart, onToolEnd, onToolError, onUsage, onSubagentProgress, onReconnecting } = callbacks;
   let resolvedThreadId: string | undefined;
+  let sawDone = false;
 
   const url = withAuthParams(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/chat/edit`);
   const headers: Record<string, string> = {
@@ -621,11 +642,20 @@ export async function editStream(
               }
             } else {
               handleChatEvent(currentEvent, data, {
-                onToken, onItinerary, onComparison, onImage, onChart, onStatus, onThreadId, onDone, onError, onCancelled, onThinking, onToolStart, onToolEnd, onToolError, onUsage, onSubagentProgress,
+                onToken, onItinerary, onComparison, onImage, onChart, onStatus, onThreadId, onDone: (d) => { sawDone = true; onDone?.(d); }, onError, onCancelled, onThinking, onToolStart, onToolEnd, onToolError, onUsage, onSubagentProgress,
               });
             }
           }
         }
+      }
+      if (!sawDone) {
+        if (attempt < MAX_RETRIES) {
+          onReconnecting?.(attempt + 1, MAX_RETRIES);
+          await sleep(RETRY_DELAYS[attempt], signal);
+          continue;
+        }
+        onError?.(errorMessages?.streamEnded ?? 'Stream ended before the agent finished');
+        return resolvedThreadId;
       }
       return resolvedThreadId;
     } catch (err) {
