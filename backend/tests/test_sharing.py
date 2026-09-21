@@ -280,6 +280,37 @@ class TestShareEndpoints:
         assert "share_url" in shares[0]
         assert "destination" in shares[0]
 
+    def test_list_shares_url_includes_locale_and_token(self, client):
+        thread_id = _make_scoped_thread_id()
+        client.post(f"/share/{thread_id}", headers={"X-CSRF-Token": "test-csrf-token"})
+
+        resp = client.get("/shares")
+        share_url = resp.json()[0]["share_url"]
+        token = resp.json()[0]["token"]
+        # Same shape as POST /share response: {base}/{locale}/share/{token}
+        # (no Accept-Language in TestClient → defaults to "en")
+        assert share_url.endswith(f"/en/share/{token}")
+
+    def test_list_shares_url_uses_requester_locale(self, client):
+        thread_id = _make_scoped_thread_id()
+        client.post(f"/share/{thread_id}", headers={"X-CSRF-Token": "test-csrf-token"})
+
+        resp = client.get("/shares", headers={"Accept-Language": "fr-FR,fr;q=0.9"})
+        share_url = resp.json()[0]["share_url"]
+        assert "/fr/share/" in share_url
+
+    def test_list_shares_url_no_localhost_with_https_origin(self, client, monkeypatch):
+        import main as main_module
+        monkeypatch.setattr(main_module, "ALLOWED_ORIGINS", ["https://voyager.example.com"])
+
+        thread_id = _make_scoped_thread_id()
+        client.post(f"/share/{thread_id}", headers={"X-CSRF-Token": "test-csrf-token"})
+
+        resp = client.get("/shares")
+        share_url = resp.json()[0]["share_url"]
+        assert share_url.startswith("https://voyager.example.com/")
+        assert "localhost" not in share_url
+
 
 class TestExportEndpoints:
     def test_export_json(self, client):
