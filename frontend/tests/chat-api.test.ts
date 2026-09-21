@@ -307,3 +307,93 @@ describe('streamChat — client_message_id dedup (Bug #6)', () => {
     expect(id1).not.toBe(id2);
   });
 });
+
+describe('regenerate/edit streams — sawDone truncation guard (Improvement I3)', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('regenerateStream retries when stream ends without done', async () => {
+    const { regenerateStream } = await import('@/lib/chat-api');
+    const truncated = makeStreamResponse([
+      'event: thread_id\ndata: {"data":{"thread_id":"t1"}}\n\n',
+    ]);
+    const mockFetch = vi.fn()
+      .mockResolvedValueOnce(truncated)
+      .mockResolvedValueOnce(makeDoneStream());
+    vi.stubGlobal('fetch', mockFetch);
+
+    const onDone = vi.fn();
+    const promise = regenerateStream({ thread_id: 't1' }, { onDone });
+    await vi.advanceTimersByTimeAsync(1100);
+    await promise;
+
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+    expect(onDone).toHaveBeenCalledTimes(1);
+  });
+
+  it('regenerateStream calls onError after retries exhausted', async () => {
+    const { regenerateStream } = await import('@/lib/chat-api');
+    const mockFetch = vi.fn().mockImplementation(() =>
+      Promise.resolve(makeStreamResponse([
+        'event: thread_id\ndata: {"data":{"thread_id":"t1"}}\n\n',
+      ])));
+    vi.stubGlobal('fetch', mockFetch);
+
+    const onError = vi.fn();
+    const promise = regenerateStream({ thread_id: 't1' }, { onError });
+    await vi.advanceTimersByTimeAsync(10000);
+    await promise;
+
+    expect(onError).toHaveBeenCalled();
+  });
+
+  it('editStream retries when stream ends without done', async () => {
+    const { editStream } = await import('@/lib/chat-api');
+    const truncated = makeStreamResponse([
+      'event: thread_id\ndata: {"data":{"thread_id":"t1"}}\n\n',
+    ]);
+    const mockFetch = vi.fn()
+      .mockResolvedValueOnce(truncated)
+      .mockResolvedValueOnce(makeDoneStream());
+    vi.stubGlobal('fetch', mockFetch);
+
+    const onDone = vi.fn();
+    const promise = editStream({ thread_id: 't1', message: 'edit' }, { onDone });
+    await vi.advanceTimersByTimeAsync(1100);
+    await promise;
+
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+    // same client_message_id on retry — dedup preserved
+    const b1 = JSON.parse(mockFetch.mock.calls[0][1].body);
+    const b2 = JSON.parse(mockFetch.mock.calls[1][1].body);
+    expect(b1.client_message_id).toBe(b2.client_message_id);
+    expect(onDone).toHaveBeenCalledTimes(1);
+  });
+
+  it('editItinerary retries when stream ends without done', async () => {
+    const { editItinerary } = await import('@/lib/chat-api');
+    const truncated = makeStreamResponse([
+      'event: thread_id\ndata: {"data":{"thread_id":"t1"}}\n\n',
+    ]);
+    const mockFetch = vi.fn()
+      .mockResolvedValueOnce(truncated)
+      .mockResolvedValueOnce(makeDoneStream());
+    vi.stubGlobal('fetch', mockFetch);
+
+    const onDone = vi.fn();
+    const promise = editItinerary(
+      { thread_id: 't1', itinerary: { destination: 'Paris', days: [] } as never },
+      { onDone },
+    );
+    await vi.advanceTimersByTimeAsync(1100);
+    await promise;
+
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+    expect(onDone).toHaveBeenCalledTimes(1);
+  });
+});
