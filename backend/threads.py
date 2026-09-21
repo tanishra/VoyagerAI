@@ -59,6 +59,19 @@ class ThreadStore:
         self._redis: Redis | None = None
         self._mem: dict[str, dict[str, ThreadMeta]] = {}
 
+    def _prune_mem(self) -> list[str]:
+        """Drop in-memory metas inactive past _TTL_SECONDS (sliding expiry like Redis)."""
+        cutoff = time.time() - _TTL_SECONDS
+        expired: list[str] = []
+        for uid in list(self._mem):
+            threads = self._mem[uid]
+            for tid in [tid for tid, m in threads.items() if m.updated_at <= cutoff]:
+                del threads[tid]
+                expired.append(tid)
+            if not threads:
+                del self._mem[uid]
+        return expired
+
     async def _get_redis(self) -> Redis | None:
         if self._redis is None:
             try:
@@ -150,6 +163,7 @@ class ThreadStore:
 
         _merge(await self._redis_threads(tag))
         _merge(await self._sqlite_threads(tag))
+        self._prune_mem()
         _merge(self._mem.get(user_id, {}))
         return merged
 
@@ -218,7 +232,14 @@ class ThreadStore:
                 pinned=bool(row["pinned"]),
                 pinned_at=float(row["pinned_at"] or 0),
             )
-        return self._mem.get(user_id, {}).get(thread_id)
+        user_threads = self._mem.get(user_id, {})
+        meta = user_threads.get(thread_id)
+        if meta is not None and meta.updated_at <= time.time() - _TTL_SECONDS:
+            del user_threads[thread_id]
+            if not user_threads:
+                self._mem.pop(user_id, None)
+            return None
+        return meta
 
     async def list_threads(
         self, user_id: str, limit: int = 20, offset: int = 0
@@ -291,6 +312,7 @@ class ThreadStore:
 
         if not persisted:
             # In-memory last resort
+            self._prune_mem()
             user_threads = self._mem.setdefault(user_id, {})
             user_threads[thread_id] = ThreadMeta(
                 thread_id=thread_id,
@@ -464,7 +486,7 @@ class ThreadStore:
         Returns a list of thread_ids that need checkpoint cleanup.
         Called periodically by the background cleanup task.
         """
-        expired_ids: list[str] = []
+        expired_ids: list[str] = self._prune_mem()
         r = await self._get_redis()
         if r is None:
             return expired_ids
