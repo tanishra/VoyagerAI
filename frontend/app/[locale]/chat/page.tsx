@@ -620,13 +620,13 @@ export default function ChatPage() {
         setHasMoreThreads(res.has_more);
       });
     }
-  }, [input, loading, threadId, isOnline]);
+  }, [input, loading, threadId, isOnline, pendingAttachments, locale, currency, userTimezone, partialResearch]);
 
   const handleRetry = useCallback(() => {
     if (!lastSentMessage || loading) return;
     setError(null);
     handleSend(lastSentMessage.message);
-  }, [loading, handleSend]);
+  }, [loading, handleSend, lastSentMessage]);
 
   const handleEditItinerary = useCallback(async (modifiedItinerary: Itinerary, messageId?: string) => {
     if (!threadId) return;

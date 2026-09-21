@@ -304,6 +304,30 @@ def _sse(event: str, data: object) -> dict:
     return {"event": event, "data": json.dumps({"event": event, "data": data})}
 
 
+def _history_message_text(content) -> str:
+    """Render message content for history — joins text blocks and marks
+    attachments instead of dumping the Python repr of the block list."""
+    if isinstance(content, str):
+        return content
+    if not isinstance(content, list):
+        return str(content)
+    parts: list[str] = []
+    for block in content:
+        if not isinstance(block, dict):
+            continue
+        btype = block.get("type", "")
+        if btype in ("text", "text-delta"):
+            text = block.get("text", "")
+            # PDF bodies are huge extracted text — keep only the marker line
+            if text.startswith("--- Attached PDF:"):
+                parts.append(text.split("\n", 1)[0] + " ---")
+            else:
+                parts.append(text)
+        elif btype == "image_url":
+            parts.append("[Image attached]")
+    return "\n".join(p for p in parts if p.strip())
+
+
 class _ObsQueue:
     """Ordered, referenced observability writes for one SSE stream.
 
@@ -2355,9 +2379,7 @@ async def get_thread_history(
 
     for i, msg in enumerate(messages):
         role = "user" if getattr(msg, "type", "") == "human" else "assistant"
-        content = getattr(msg, "content", "")
-        if not isinstance(content, str):
-            content = str(content)
+        content = _history_message_text(getattr(msg, "content", ""))
         if content.strip():
             entry: dict = {"role": role, "content": _strip_structured_tags(content)}
             if role == "assistant":
