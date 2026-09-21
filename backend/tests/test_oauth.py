@@ -149,3 +149,79 @@ class TestSessionStoreUnavailable:
             resp = c.get("/auth/me")
         assert resp.status_code == 503
         assert resp.headers.get("Retry-After") == "2"
+
+
+class TestRedisPooling:
+    """Improvement: session Redis client is pooled, not per-call."""
+
+    @pytest.mark.asyncio
+    async def test_get_redis_reuses_pooled_client(self, monkeypatch):
+        import oauth
+
+        calls = []
+
+        class _FakeRedis:
+            async def ping(self):
+                calls.append("ping")
+                return True
+
+        monkeypatch.setattr(oauth, "_redis_client", None)
+        monkeypatch.setattr(oauth.Redis, "from_url", lambda *a, **k: _FakeRedis())
+
+        r1 = await oauth._get_redis()
+        r2 = await oauth._get_redis()
+        assert r1 is r2
+        assert calls == ["ping"]  # one handshake, not two
+        monkeypatch.setattr(oauth, "_redis_client", None)
+
+    @pytest.mark.asyncio
+    async def test_drop_redis_forces_reconnect(self, monkeypatch):
+        import oauth
+
+        calls = []
+
+        class _FakeRedis:
+            async def ping(self):
+                calls.append("ping")
+                return True
+
+            async def aclose(self):
+                calls.append("close")
+
+        monkeypatch.setattr(oauth, "_redis_client", None)
+        monkeypatch.setattr(oauth.Redis, "from_url", lambda *a, **k: _FakeRedis())
+
+        r1 = await oauth._get_redis()
+        await oauth._drop_redis()
+        assert oauth._redis_client is None
+        r2 = await oauth._get_redis()
+        assert r2 is not r1
+        assert calls == ["ping", "close", "ping"]
+        monkeypatch.setattr(oauth, "_redis_client", None)
+
+    @pytest.mark.asyncio
+    async def test_failed_op_drops_client(self, monkeypatch):
+        import oauth
+        from redis.exceptions import RedisError
+
+        class _FlakyRedis:
+            async def ping(self):
+                return True
+
+            async def get(self, key):
+                raise RedisError("conn lost")
+
+            async def aclose(self):
+                pass
+
+        monkeypatch.setattr(oauth, "_redis_client", _FlakyRedis())
+        monkeypatch.setattr(oauth, "get_sqlite_connection", lambda: _none())
+        monkeypatch.setattr(oauth, "_mem_sessions", {})
+
+        with pytest.raises(oauth.SessionStoreUnavailable):
+            await oauth.get_session("x")
+        assert oauth._redis_client is None  # dropped for next-call reconnect
+
+
+async def _none():
+    return None
