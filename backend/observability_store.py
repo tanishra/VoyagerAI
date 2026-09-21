@@ -118,6 +118,17 @@ class ObservabilityStore:
         self._mem_sessions: dict[str, dict] = {}
         self._mem_errors: dict[str, list[dict]] = {}
 
+    def _prune_mem(self) -> None:
+        """Drop expired in-memory entries (same TTL as Redis/SQLite)."""
+        cutoff = time.time() - _TTL_SECONDS
+        for tid in [tid for tid, d in self._mem_sessions.items() if float(d.get("start_time", 0)) <= cutoff]:
+            del self._mem_sessions[tid]
+        for bucket in (self._mem_events, self._mem_errors):
+            for tid in list(bucket):
+                bucket[tid] = [e for e in bucket[tid] if float(e.get("timestamp", 0)) > cutoff]
+                if not bucket[tid]:
+                    del bucket[tid]
+
     async def _get_redis(self) -> Redis | None:
         if self._redis is None:
             try:
@@ -193,6 +204,7 @@ class ObservabilityStore:
                 logger.warning("ObservabilityStore start_session SQLite error: %s", exc)
 
         if not persisted:
+            self._prune_mem()
             self._mem_sessions[thread_id] = {**session_data, "start_time": now}
 
     async def record_event(
@@ -279,6 +291,7 @@ class ObservabilityStore:
                 logger.warning("ObservabilityStore record_event SQLite error: %s", exc)
 
         if not persisted:
+            self._prune_mem()
             self._mem_events.setdefault(thread_id, []).append(event_record)
             if event_type == "tool_error" and error:
                 self._mem_errors.setdefault(thread_id, []).append({
@@ -746,6 +759,7 @@ class ObservabilityStore:
     async def cleanup_expired(self) -> int:
         """Clean up expired observability data. Returns count of items removed."""
         cleaned = 0
+        self._prune_mem()
         r = await self._get_redis()
         if r is not None:
             try:
