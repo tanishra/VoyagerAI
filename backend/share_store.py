@@ -47,6 +47,16 @@ class ShareStore:
         self._redis: Redis | None = None
         self._mem: dict[str, dict[str, dict]] = {}  # user_id → {token → data}
 
+    def _prune_mem(self) -> None:
+        """Drop expired in-memory shares (same expiry as Redis/SQLite)."""
+        now = time.time()
+        for uid in list(self._mem):
+            shares = self._mem[uid]
+            for tok in [tok for tok, d in shares.items() if float(d.get("expires_at", 0)) <= now]:
+                del shares[tok]
+            if not shares:
+                del self._mem[uid]
+
     async def _get_redis(self) -> Redis | None:
         if self._redis is None:
             try:
@@ -112,6 +122,7 @@ class ShareStore:
 
         if not persisted:
             # In-memory last resort
+            self._prune_mem()
             user_shares = self._mem.setdefault(user_id, {})
             user_shares[token] = {
                 "token": token,
