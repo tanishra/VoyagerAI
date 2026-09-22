@@ -87,6 +87,15 @@ describe('DayDetailModal', () => {
     expect(screen.getByTestId('itinerary-map')).toBeInTheDocument();
   });
 
+  it('renders as a full-height right-side panel, not a small centered card', () => {
+    const day = makeDay();
+    render(<DayDetailModal day={day} dayNumber={1} destination="Tokyo" onClose={vi.fn()} />);
+    const dialog = screen.getByRole('dialog');
+    const panel = dialog.firstElementChild;
+    expect(panel?.className).toContain('inset-y-0');
+    expect(panel?.className).toContain('right-0');
+  });
+
   it('shows location for each activity', () => {
     const day = makeDay();
     render(<DayDetailModal day={day} dayNumber={1} destination="Tokyo" onClose={vi.fn()} />);

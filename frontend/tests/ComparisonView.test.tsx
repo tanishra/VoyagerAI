@@ -3,6 +3,19 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import ComparisonView from '@/app/[locale]/chat/ComparisonView';
 import type { ComparisonData } from '@/lib/types';
 
+const mockSwrData: Record<string, { data: unknown; isLoading: boolean }> = {};
+
+vi.mock('swr', () => ({
+  default: (key: string | null) => {
+    if (key === null) return { data: undefined, isLoading: false };
+    return mockSwrData[key] ?? { data: undefined, isLoading: false };
+  },
+}));
+
+vi.mock('@/lib/wikimedia', () => ({
+  fetchWikimediaImage: vi.fn().mockResolvedValue('https://example.com/tokyo.jpg'),
+}));
+
 const mockData: ComparisonData = {
   plans: [
     {
@@ -122,6 +135,46 @@ describe('ComparisonView', () => {
     expect(screen.getByText('4-star hotel')).toBeInTheDocument();
   });
 
+  it('never shows NaN when cost_breakdown only has a total (prose-fallback shape)', () => {
+    // Reproduces the deterministic prose parser's output shape: only
+    // cost_breakdown.total is set, no accommodation/food/activities/transport,
+    // and itinerary.days is empty (no per-day content in prose).
+    const proseFallbackData: ComparisonData = {
+      plans: [
+        {
+          tier: 'budget',
+          itinerary: { destination: 'Tokyo', total_days: 5, days: [], estimated_total_cost_usd: 45000 },
+          cost_breakdown: { total: 45000 },
+          tradeoffs: ['Street food and hostels'],
+        },
+        {
+          tier: 'balanced',
+          itinerary: { destination: 'Tokyo', total_days: 5, days: [], estimated_total_cost_usd: 75000 },
+          cost_breakdown: { total: 75000 },
+          tradeoffs: ['Mid-range hotels'],
+        },
+        {
+          tier: 'premium',
+          itinerary: { destination: 'Tokyo', total_days: 5, days: [], estimated_total_cost_usd: 112500 },
+          cost_breakdown: { total: 112500 },
+          tradeoffs: ['Fine dining'],
+        },
+      ],
+      comparison_matrix: {
+        total_cost: { budget: 45000, balanced: 75000, premium: 112500 },
+        accommodation_type: { budget: 'Hostel', balanced: '3-star hotel', premium: '4-star hotel' },
+        food_style: { budget: 'Street food', balanced: 'Local restaurants', premium: 'Fine dining' },
+        activity_count: {},
+        transport_mode: { budget: 'Public transit', balanced: 'Transit + rideshare', premium: 'Private car' },
+      },
+    };
+    render(<ComparisonView data={proseFallbackData} onSelect={() => {}} />);
+    expect(screen.queryByText(/NaN/i)).not.toBeInTheDocument();
+    // Falls back to total_days (5) since days[] is empty — not "0 days"
+    expect(screen.getAllByText('5 days · Tokyo').length).toBe(3);
+    expect(screen.queryByText('0 days · Tokyo')).not.toBeInTheDocument();
+  });
+
   it('renders tradeoffs for each plan', () => {
     render(<ComparisonView data={mockData} onSelect={() => {}} />);
     expect(screen.getByText('Budget: street food only')).toBeInTheDocument();
@@ -153,5 +206,39 @@ describe('ComparisonView', () => {
     fireEvent.click(expandBtn);
     // After expanding, the day theme should be visible
     expect(screen.getAllByText(/Arrival/).length).toBeGreaterThan(0);
+  });
+
+  it('shows a single Recommended badge on the balanced plan', () => {
+    render(<ComparisonView data={mockData} onSelect={() => {}} />);
+    expect(screen.getAllByText('Recommended')).toHaveLength(1);
+  });
+
+  it('shows per-day cost under the total', () => {
+    render(<ComparisonView data={mockData} onSelect={() => {}} />);
+    // 1200 total / 1 day fixture = $1,200 per day
+    expect(screen.getAllByText(/\$1,200 per day/).length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('clicking a card body calls onSelect with that tier', () => {
+    const onSelect = vi.fn();
+    const { container } = render(<ComparisonView data={mockData} onSelect={onSelect} />);
+    // Click the tradeoff text inside the premium card (not the button)
+    fireEvent.click(screen.getByText('Premium: 4-star hotels'));
+    expect(onSelect).toHaveBeenCalledWith('premium');
+  });
+
+  it('expand toggle does not trigger plan selection', () => {
+    const onSelect = vi.fn();
+    render(<ComparisonView data={mockData} onSelect={onSelect} />);
+    fireEvent.click(screen.getAllByText(/1 days · Tokyo/)[0]);
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it('renders the destination banner image when loaded', () => {
+    mockSwrData['wikimedia:Tokyo'] = { data: 'https://example.com/tokyo.jpg', isLoading: false };
+    render(<ComparisonView data={mockData} onSelect={() => {}} />);
+    const img = document.querySelector('img[alt="Tokyo"]');
+    expect(img).toBeInTheDocument();
+    delete mockSwrData['wikimedia:Tokyo'];
   });
 });

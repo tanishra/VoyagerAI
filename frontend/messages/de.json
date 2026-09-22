@@ -234,7 +234,9 @@
     "budget": "Budget",
     "balanced": "Ausgewogen",
     "premium": "Premium",
-    "daysDestination": "{count} Tage · {destination}"
+    "daysDestination": "{count} Tage · {destination}",
+    "recommended": "Empfohlen",
+    "perDay": "{cost} pro Tag"
   },
   "preferences": {
     "title": "Ihre Einstellungen",

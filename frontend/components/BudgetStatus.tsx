@@ -6,13 +6,13 @@ import { formatCurrency } from '@/lib/format';
 import type { Currency } from '@/lib/currency';
 
 interface BudgetStatusProps {
-  status: 'within' | 'over' | 'under';
+  status?: 'within' | 'over' | 'under';
   totalCost: number | null;
   budget?: number | null;
   currency?: Currency;
 }
 
-export default function BudgetStatus({ status, totalCost, budget, currency }: BudgetStatusProps) {
+export default function BudgetStatus({ status = 'within', totalCost, budget, currency }: BudgetStatusProps) {
   const t = useTranslations('itinerary');
   const locale = useLocale();
 

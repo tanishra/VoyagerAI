@@ -14,6 +14,23 @@ Object.defineProperty(window, 'IntersectionObserver', {
   value: MockIntersectionObserver,
 });
 
+// jsdom lacks matchMedia — report reduced-motion so animations (count-up etc.)
+// render final values instantly in tests.
+Object.defineProperty(window, 'matchMedia', {
+  writable: true,
+  configurable: true,
+  value: (query: string) => ({
+    matches: query.includes('prefers-reduced-motion'),
+    media: query,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    addListener: vi.fn(),
+    removeListener: vi.fn(),
+    onchange: null,
+    dispatchEvent: vi.fn(),
+  }),
+});
+
 vi.mock('next/navigation', () => ({
   usePathname: () => '/',
 }));

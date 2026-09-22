@@ -131,8 +131,23 @@ export default function ItineraryMap({ days, destination, activeDay, onMarkerCli
 
   const currentDayRaw = daysWithCoords[selectedDayIndex] ?? daysWithCoords[0];
 
+  // Marker signature: an edit/regenerate can swap in different activities
+  // under the same day numbers — the SWR key and the marker-update effect
+  // must re-fire, not serve the stale cached geocode/camera.
+  const daysSig = useMemo(
+    () =>
+      daysWithCoords
+        .map((d) =>
+          `${d.day}:${extractMarkers(d)
+            .map((m) => `${m.activity}|${m.location}|${m.lat},${m.lng}`)
+            .join(';')}`
+        )
+        .join('|'),
+    [daysWithCoords]
+  );
+
   const { data: geocodedDay } = useSWR(
-    currentDayRaw ? `geocode-day:${currentDayRaw.day}` : null,
+    currentDayRaw ? `geocode-day:${currentDayRaw.day}:${daysSig}` : null,
     () => geocodeDay(currentDayRaw),
     { revalidateOnFocus: false, dedupingInterval: 600000 }
   );
@@ -152,8 +167,23 @@ export default function ItineraryMap({ days, destination, activeDay, onMarkerCli
     });
 
     mapRef.current = map;
+    map.on('error', (e) => {
+      console.error('ItineraryMap tile/style error', e?.error ?? e);
+    });
+
+    // MapLibre never resizes itself: a map constructed before the container
+    // reaches its final layout (collapsible sections, dialog entrance
+    // animations) stays blank until resize() is called.
+    const raf = requestAnimationFrame(() => map.resize());
+    const observer =
+      typeof ResizeObserver !== 'undefined'
+        ? new ResizeObserver(() => map.resize())
+        : null;
+    observer?.observe(mapContainerRef.current);
 
     return () => {
+      cancelAnimationFrame(raf);
+      observer?.disconnect();
       markersRef.current.forEach((m) => m.remove());
       markersRef.current = [];
       map.remove();
@@ -253,7 +283,7 @@ export default function ItineraryMap({ days, destination, activeDay, onMarkerCli
       map.once('load', updateMap);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentDay?.day, geocodedDay]);
+  }, [currentDay?.day, geocodedDay, destination, daysSig]);
 
   if (!hasAnyCoords) {
     return (
@@ -273,6 +303,7 @@ export default function ItineraryMap({ days, destination, activeDay, onMarkerCli
 
   return (
     <div className="space-y-3">
+      {daysWithCoords.length > 1 && (
       <div className="flex flex-wrap gap-1.5">
         {daysWithCoords.map((d, i) => (
           <button
@@ -288,6 +319,7 @@ export default function ItineraryMap({ days, destination, activeDay, onMarkerCli
           </button>
         ))}
       </div>
+      )}
 
       <div
         ref={mapContainerRef}

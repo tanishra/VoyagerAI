@@ -234,7 +234,9 @@
     "budget": "エコノミー",
     "balanced": "バランス",
     "premium": "プレミアム",
-    "daysDestination": "{count}日 · {destination}"
+    "daysDestination": "{count}日 · {destination}",
+    "recommended": "おすすめ",
+    "perDay": "{cost}/日"
   },
   "preferences": {
     "title": "あなたの設定",

@@ -55,7 +55,7 @@ export default function DayDetailModal({ day, dayNumber, destination, onClose }:
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         transition={{ duration: 0.2 }}
-        className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-0 md:p-4"
+        className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm"
         onClick={handleBackdropClick}
         role="dialog"
         aria-modal="true"
@@ -63,11 +63,11 @@ export default function DayDetailModal({ day, dayNumber, destination, onClose }:
       >
         <motion.div
           ref={modalRef}
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          exit={{ opacity: 0, scale: 0.95 }}
-          transition={{ duration: 0.2 }}
-          className="w-full h-full md:w-auto md:max-w-lg md:max-h-[85vh] md:rounded-xl bg-card border border-border shadow-lg flex flex-col overflow-hidden"
+          initial={{ x: '100%' }}
+          animate={{ x: 0 }}
+          exit={{ x: '100%' }}
+          transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
+          className="absolute inset-y-0 right-0 w-full md:max-w-md lg:max-w-lg bg-card border-l border-border shadow-lg flex flex-col overflow-hidden"
         >
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">

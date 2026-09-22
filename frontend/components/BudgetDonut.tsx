@@ -35,7 +35,7 @@ export default function BudgetDonut({ breakdown, currency }: BudgetDonutProps) {
   const segments = SEGMENT_KEYS.map((key, i) => ({
     key,
     label: t(key),
-    value: breakdown[key],
+    value: breakdown[key] ?? 0,
     color: SEGMENT_COLORS[i],
   })).filter((s) => s.value > 0);
 

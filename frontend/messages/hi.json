@@ -234,7 +234,9 @@
     "budget": "किफ़ायती",
     "balanced": "संतुलित",
     "premium": "प्रीमियम",
-    "daysDestination": "{count} दिन · {destination}"
+    "daysDestination": "{count} दिन · {destination}",
+    "recommended": "अनुशंसित",
+    "perDay": "{cost} प्रति दिन"
   },
   "preferences": {
     "title": "आपकी प्राथमिकताएँ",

@@ -33,6 +33,7 @@ const mockMap = {
   getSource: vi.fn(() => null),
   getLayer: vi.fn(() => null),
   fitBounds: vi.fn(),
+  resize: vi.fn(),
   remove: vi.fn(),
 };
 
@@ -49,6 +50,7 @@ vi.mock('maplibre-gl', () => {
       getSource = mockMap.getSource;
       getLayer = mockMap.getLayer;
       fitBounds = mockMap.fitBounds;
+      resize = mockMap.resize;
       remove = mockMap.remove;
     },
     Marker: class MockMarker {
@@ -144,8 +146,8 @@ describe('ItineraryMap', () => {
   it('only shows day tabs for days with coordinates', () => {
     const mixedDays: DayPlan[] = [daysWithCoords[0], daysNoCoords[0]];
     render(<ItineraryMap days={mixedDays} destination="Paris, France" />);
-    // Only Day 1 should appear (Day 2 has no coords)
-    expect(screen.getByText('Day 1')).toBeInTheDocument();
+    // Only Day 1 should appear (Day 2 has no coords) — and with just one
+    // selectable day the tab row is hidden entirely
     expect(screen.queryByText('Day 2')).not.toBeInTheDocument();
   });
 
@@ -160,5 +162,29 @@ describe('ItineraryMap', () => {
     render(<ItineraryMap days={daysWithCoords} destination="Paris, France" activeDay={1} onDaySelect={onDaySelect} />);
     fireEvent.click(screen.getByText('Day 2'));
     expect(onDaySelect).toHaveBeenCalledWith(2);
+  });
+
+  it('calls resize() after mount to settle container size', async () => {
+    render(<ItineraryMap days={daysWithCoords} destination="Paris, France" />);
+    await vi.waitFor(() => expect(mockMap.resize).toHaveBeenCalled());
+  });
+
+  it('re-fits bounds when itinerary markers change (edit/regenerate)', async () => {
+    const { rerender } = render(
+      <ItineraryMap days={daysWithCoords} destination="Paris, France" activeDay={1} />
+    );
+    const callsAfterMount = mockMap.fitBounds.mock.calls.length;
+
+    // Same day numbers, different marker locations — the map must re-fit
+    const editedDays: DayPlan[] = daysWithCoords.map((d) => ({
+      ...d,
+      morning: d.morning
+        ? { ...d.morning, activity: 'Changed activity', location: 'Elsewhere', lat: 40.71, lng: -74.0 }
+        : d.morning,
+    }));
+    rerender(<ItineraryMap days={editedDays} destination="Paris, France" activeDay={1} />);
+    await vi.waitFor(() =>
+      expect(mockMap.fitBounds.mock.calls.length).toBeGreaterThan(callsAfterMount)
+    );
   });
 });

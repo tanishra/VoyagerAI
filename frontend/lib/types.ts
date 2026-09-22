@@ -23,19 +23,23 @@ export interface Itinerary {
   destination: string;
   total_days: number;
   estimated_total_cost_usd: number | null;
-  budget_status: 'within' | 'over' | 'under';
-  visa_note: string;
-  best_season_note: string;
+  // Optional: the deterministic prose-fallback parser (untagged comparison
+  // prose from the model) only fills destination/total_days/cost — these
+  // fields are absent in that shape, not just empty.
+  budget_status?: 'within' | 'over' | 'under';
+  visa_note?: string;
+  best_season_note?: string;
   days: DayPlan[];
-  warnings: string[];
-  packing_essentials: string[];
+  warnings?: string[];
+  packing_essentials?: string[];
 }
 
 export interface CostBreakdown {
-  accommodation: number;
-  food: number;
-  activities: number;
-  transport: number;
+  // Optional: prose-fallback comparisons only populate `total`.
+  accommodation?: number;
+  food?: number;
+  activities?: number;
+  transport?: number;
   total: number;
 }
 
