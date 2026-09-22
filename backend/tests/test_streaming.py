@@ -342,7 +342,7 @@ class TestToolError:
         assert payloads[0]["event"] == "tool_error"
         err_data = json_data(payloads[0])
         assert err_data["name"] == "task"
-        assert err_data["error"] == "boom"
+        assert err_data["error"] == "tool_unavailable"  # raw error text stays server-side
 
 
 def _fake_state(messages):
@@ -989,7 +989,8 @@ class TestChatStreamEndpoint:
         assert events[0][0] == "thread_id"
         assert events[1] == ("status", {"tool": "agent", "status": "thinking"})
         assert events[-1][0] == "error"
-        assert "boom" in events[-1][1]
+        assert "boom" not in events[-1][1]  # raw exception text must not leak
+        assert "went wrong" in events[-1][1]
 
     def test_agent_exception_yields_localized_error_event(self, monkeypatch):
         import json as _json
@@ -1017,8 +1018,8 @@ class TestChatStreamEndpoint:
 
         events = [(p["event"], p["data"]) for p in parsed]
         assert events[-1][0] == "error"
-        assert "Échec du streaming" in events[-1][1]
-        assert "boom" in events[-1][1]
+        assert "Une erreur s'est produite" in events[-1][1]
+        assert "boom" not in events[-1][1]  # raw exception text must not leak
 
 
 class TestConversationModeGate:
