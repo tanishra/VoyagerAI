@@ -6,6 +6,7 @@ import { Send, Square, RotateCcw, Globe, Search, ShieldAlert, ListChecks, Loader
 import { useTranslations } from 'next-intl';
 import { useLocale } from '@/lib/useLocale';
 import { streamChat, cancelStream, regenerateStream, editStream, editItinerary } from '@/lib/chat-api';
+import { sanitizeError } from '@/lib/errors';
 import { listThreads, getThreadHistory, getBranches, deleteThread, updateThread, type ThreadMeta } from '@/lib/threads-api';
 import { getSession, clearSessionCache, type SessionUser } from '@/lib/auth';
 import { useOnlineStatus } from '@/lib/useOnlineStatus';
@@ -312,7 +313,8 @@ export default function ChatPage() {
         const uploaded = await uploadFile(file);
         setPendingAttachments(prev => [...prev, uploaded]);
       } catch (err) {
-        setUploadError(err instanceof Error ? err.message : t('uploadFailed'));
+        console.error('Upload failed:', err);
+        setUploadError(sanitizeError(err instanceof Error ? err.message : '', t('uploadFailed')));
       }
     }
     setUploading(false);
@@ -487,7 +489,7 @@ export default function ChatPage() {
               thinking: prev?.thinking ?? [],
               tool_calls: (prev?.tool_calls ?? []).map((tc) =>
                 tc.run_id === tool.run_id
-                  ? { ...tc, error: tool.error, status: 'error' as const, ended_at: Date.now() }
+                  ? { ...tc, error: sanitizeError(tool.error ?? '', t('toolUnavailable')), status: 'error' as const, ended_at: Date.now() }
                   : tc
               ),
               usage: prev?.usage ?? [],
@@ -546,6 +548,7 @@ export default function ChatPage() {
             responseBody: t('errorResponseBody'),
             parseFailed: t('errorParseFailed'),
             streamEnded: t('errorStreamEnded'),
+            unexpected: t('errorUnexpected'),
           },
         },
       );
@@ -689,7 +692,7 @@ export default function ChatPage() {
         },
       );
     } catch {
-      setError('Failed to validate itinerary');
+      setError(t('validateFailed'));
     } finally {
       setLoading(false);
       abortRef.current = null;
@@ -812,7 +815,7 @@ export default function ChatPage() {
               thinking: streamingActivityRef.current?.thinking ?? [],
               tool_calls: (streamingActivityRef.current?.tool_calls ?? []).map((tc) =>
                 tc.run_id === tool.run_id
-                  ? { ...tc, error: tool.error, status: 'error' as const, ended_at: Date.now() }
+                  ? { ...tc, error: sanitizeError(tool.error ?? '', t('toolUnavailable')), status: 'error' as const, ended_at: Date.now() }
                   : tc
               ),
               usage: streamingActivityRef.current?.usage ?? [],
@@ -1074,7 +1077,7 @@ export default function ChatPage() {
               thinking: prev?.thinking ?? [],
               tool_calls: (prev?.tool_calls ?? []).map((tc) =>
                 tc.run_id === tool.run_id
-                  ? { ...tc, error: tool.error, status: 'error' as const, ended_at: Date.now() }
+                  ? { ...tc, error: sanitizeError(tool.error ?? '', t('toolUnavailable')), status: 'error' as const, ended_at: Date.now() }
                   : tc
               ),
               usage: prev?.usage ?? [],
@@ -1298,7 +1301,7 @@ export default function ChatPage() {
               },
               onToolError: (tool) => {
                 const prev = streamingActivityRef.current;
-                const next = { thinking: prev?.thinking ?? [], tool_calls: (prev?.tool_calls ?? []).map((tc) => tc.run_id === tool.run_id ? { ...tc, error: tool.error, status: 'error' as const, ended_at: Date.now() } : tc), usage: prev?.usage ?? [], total_input_tokens: prev?.total_input_tokens ?? 0, total_output_tokens: prev?.total_output_tokens ?? 0 };
+                const next = { thinking: prev?.thinking ?? [], tool_calls: (prev?.tool_calls ?? []).map((tc) => tc.run_id === tool.run_id ? { ...tc, error: sanitizeError(tool.error ?? '', t('toolUnavailable')), status: 'error' as const, ended_at: Date.now() } : tc), usage: prev?.usage ?? [], total_input_tokens: prev?.total_input_tokens ?? 0, total_output_tokens: prev?.total_output_tokens ?? 0 };
                 streamingActivityRef.current = next;
                 setStreamingActivity(next);
               },
@@ -1338,6 +1341,7 @@ export default function ChatPage() {
                 responseBody: t('errorResponseBody'),
                 parseFailed: t('errorParseFailed'),
                 streamEnded: t('errorStreamEnded'),
+                unexpected: t('errorUnexpected'),
               },
             },
           );
