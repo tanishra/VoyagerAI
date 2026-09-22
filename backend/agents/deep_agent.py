@@ -94,6 +94,8 @@ _checkpointer = None
 _sqlite_checkpointer = None
 _redis_checkpointer_broken = False
 _store = None
+_store_broken = False
+_store_memory_fallback = None
 _file_store = None
 
 
@@ -211,16 +213,20 @@ def create_redis_store() -> RedisStore:
     RediSearch), this will fail and the caller falls back to
     InMemoryStore — semantic cross-thread memory won't persist but
     thread persistence is unaffected.
+
+    IMPORTANT: do not assign _store until setup() succeeds. Caching a
+    half-initialised RedisStore caused every subsequent caller to reuse a
+    broken instance whose gets hit FT.SEARCH on Upstash and silently failed.
     """
     global _store
     if _store is None:
         conn = RedisConnectionFactory.get_redis_connection(settings.REDIS_URL)
-        _store = RedisStore(
+        candidate = RedisStore(
             conn=conn,
             index={"dims": 1536, "embed": "openai:text-embedding-3-small"},
         )
         try:
-            _store.setup()
+            candidate.setup()
         except Exception as exc:  # noqa: BLE001
             logger.warning(
                 "RedisStore setup() failed (likely no RediSearch module): %s. "
@@ -228,7 +234,29 @@ def create_redis_store() -> RedisStore:
                 exc,
             )
             raise
+        _store = candidate
     return _store
+
+
+def get_activity_store() -> InMemoryStore | RedisStore:
+    """Store for activity/thinking persistence.
+
+    Returns the shared Redis store when healthy, else a SHARED in-memory
+    fallback (a fresh store per call would lose data across requests).
+    After the first Redis failure, stop retrying — same pattern as
+    create_checkpointer()'s _redis_checkpointer_broken.
+    """
+    global _store_broken, _store_memory_fallback
+    if settings.STORE_BACKEND != "redis" or _store_broken:
+        if _store_memory_fallback is None:
+            _store_memory_fallback = InMemoryStore()
+        return _store_memory_fallback
+    try:
+        return create_redis_store()
+    except Exception:  # noqa: BLE001 (intentional fallback handler)
+        _store_broken = True
+        _store_memory_fallback = InMemoryStore()
+        return _store_memory_fallback
 
 
 def get_redis_file_store() -> InMemoryStore | RedisStore:
@@ -649,13 +677,7 @@ async def create_chat_agent(checkpointer=None, store=None, user_id=None, locale=
         checkpointer = await create_checkpointer()
 
     if store is None:
-        if settings.STORE_BACKEND == "redis":
-            try:
-                store = create_redis_store()
-            except Exception:  # noqa: BLE001 (intentional fallback handler)
-                store = InMemoryStore()
-        else:
-            store = InMemoryStore()
+        store = get_activity_store()
 
     model = get_orchestrator_model()
 
@@ -671,7 +693,10 @@ async def create_chat_agent(checkpointer=None, store=None, user_id=None, locale=
         routes={
             "/memories/": StoreBackend(
                 store=get_redis_file_store(),
-                namespace=lambda _rt: (uid,),
+                # LangGraph namespace labels cannot contain '.' — user emails
+                # would raise InvalidNamespaceError on every memory write.
+                # fs_tag (sha256 of uid) is stable per user and label-safe.
+                namespace=lambda _rt: (fs_tag,),
             ),
         },
     )
@@ -833,6 +858,113 @@ def _find_largest_comparison_object(text: str) -> dict | None:
     return None
 
 
+_TIER_PLAN_HEADER_RE = re.compile(
+    r"^\s*(?:#{1,4}\s*|\*\*)?\s*(budget|balanced|premium|luxury|economy|standard)\s+plan\b",
+    re.IGNORECASE | re.MULTILINE,
+)
+_TIER_FIELD_RE = re.compile(
+    r"^\s*[-*•]?\s*(?:\*\*)?(total\s+cost|accommodation|stay|food(?:\s+style)?|"
+    r"transport(?:ation)?(?:\s+mode)?|highlights?|activities)(?:\*\*)?\s*[:\-–]\s*(.+?)\s*$",
+    re.IGNORECASE | re.MULTILINE,
+)
+_TRIP_META_RE = re.compile(
+    r"(\d+)\s*[-\u2013]?\s*day(?:s)?\s+(?:trip|itinerary)\s+(?:to|in|for)\s+([A-Z][\w\s,'.\-]+?)(?:[,.!;:\n]|$)",
+    re.IGNORECASE,
+)
+_NUM_RE = re.compile(r"[\d,]+(?:\.\d+)?")
+
+
+def _parse_cost_number(text: str) -> float | None:
+    """Parse a cost figure like '₹1,12,500' or '$1,200' into a number."""
+    m = _NUM_RE.search(text.replace("\u20b9", "").replace("$", "").replace("\u20ac", ""))
+    if not m:
+        return None
+    try:
+        return float(m.group(0).replace(",", ""))
+    except ValueError:
+        return None
+
+
+def _parse_comparison_prose(text: str) -> dict | None:
+    """Deterministic fallback: parse untagged multi-tier plan prose.
+
+    Models sometimes emit "Budget Plan / Balanced Plan / Premium Plan" blocks
+    as markdown bullets instead of <comparison> JSON. Parse tier headers +
+    bullet fields into the comparison dict shape — no LLM call needed.
+    Returns None unless at least 2 distinct tiers are found.
+    """
+    headers = list(_TIER_PLAN_HEADER_RE.finditer(text))
+    if len({m.group(1).lower() for m in headers}) < 2:
+        return None
+
+    dest_m = _TRIP_META_RE.search(text)
+    destination = dest_m.group(2).strip() if dest_m else ""
+    total_days = int(dest_m.group(1)) if dest_m else None
+
+    plans: list[dict] = []
+    for i, m in enumerate(headers):
+        tier = m.group(1).lower()
+        end = headers[i + 1].start() if i + 1 < len(headers) else len(text)
+        block = text[m.end():end]
+
+        fields: dict[str, str] = {}
+        for fm in _TIER_FIELD_RE.finditer(block):
+            key = fm.group(1).lower()
+            fields[key] = fm.group(2).strip()
+
+        def _f(*names: str) -> str | None:
+            for n in names:
+                if n in fields:
+                    return fields[n]
+            return None
+
+        total = _parse_cost_number(_f("total cost") or "")
+        accommodation = _f("accommodation", "stay")
+        food = _f("food", "food style")
+        transport = _f("transport", "transportation", "transport mode", "transportation mode")
+        highlights = _f("highlights", "highlight", "activities")
+
+        itinerary: dict = {"destination": destination, "days": []}
+        if total_days is not None:
+            itinerary["total_days"] = total_days
+        if total is not None:
+            itinerary["estimated_total_cost_usd"] = total
+
+        cost_breakdown: dict = {}
+        if total is not None:
+            cost_breakdown["total"] = total
+
+        tradeoffs = [highlights] if highlights else []
+        plans.append({
+            "tier": tier,
+            "itinerary": itinerary,
+            "cost_breakdown": cost_breakdown,
+            "tradeoffs": tradeoffs,
+        })
+
+    matrix: dict = {"total_cost": {}, "accommodation_type": {}, "food_style": {}, "transport_mode": {}}
+    for plan in plans:
+        tier = plan["tier"]
+        if plan["cost_breakdown"].get("total") is not None:
+            matrix["total_cost"][tier] = plan["cost_breakdown"]["total"]
+    # Pull the text fields back per tier for the matrix strip
+    for i, m in enumerate(headers):
+        tier = m.group(1).lower()
+        end = headers[i + 1].start() if i + 1 < len(headers) else len(text)
+        fields = {
+            fm.group(1).lower(): fm.group(2).strip()
+            for fm in _TIER_FIELD_RE.finditer(text[m.end():end])
+        }
+        if v := (fields.get("accommodation") or fields.get("stay")):
+            matrix["accommodation_type"][tier] = v
+        if v := (fields.get("food") or fields.get("food style")):
+            matrix["food_style"][tier] = v
+        if v := (fields.get("transport") or fields.get("transportation") or fields.get("transport mode") or fields.get("transportation mode")):
+            matrix["transport_mode"][tier] = v
+
+    return {"plans": plans, "comparison_matrix": matrix}
+
+
 def _extract_comparison_from_text(text: str) -> dict | None:
     if not text:
         return None
@@ -842,7 +974,7 @@ def _extract_comparison_from_text(text: str) -> dict | None:
             return json.loads(match.group(1))
         except (json.JSONDecodeError, ValueError):
             logger.warning("Found <comparison> tags but content is not valid JSON")
-    return _find_largest_comparison_object(text)
+    return _find_largest_comparison_object(text) or _parse_comparison_prose(text)
 
 
 def _extract_chat_itinerary(state: dict) -> dict | None:
@@ -901,6 +1033,67 @@ async def _enrich_itinerary_with_coordinates(itinerary: dict) -> dict:
     except Exception:
         logger.warning("Itinerary coordinate enrichment failed", exc_info=True)
         return itinerary
+
+
+def _reconcile_itinerary_budget(itinerary: dict) -> dict:
+    """Correct a declared total that disagrees with the day-level costs.
+
+    Models occasionally confuse a per-day allowance with the trip total, so
+    estimated_total_cost_usd can contradict sum(daily_cost_usd). The day-level
+    numbers are more granular and harder to hallucinate, so when they disagree
+    by >5% the header total is overwritten with the day sum. Mutates a copy —
+    never the original dict. Never raises.
+    """
+    try:
+        days = itinerary.get("days")
+        if not isinstance(days, list) or not days:
+            return itinerary
+        day_sum = sum(
+            float(d.get("daily_cost_usd") or 0)
+            for d in days
+            if isinstance(d, dict)
+        )
+        if day_sum <= 0:
+            return itinerary
+        declared = itinerary.get("estimated_total_cost_usd")
+        try:
+            declared = float(declared) if declared is not None else None
+        except (TypeError, ValueError):
+            declared = None
+        if declared is None or declared <= 0 or abs(declared - day_sum) / day_sum > 0.05:
+            import copy
+
+            enriched = copy.deepcopy(itinerary)
+            enriched["estimated_total_cost_usd"] = round(day_sum, 2)
+            if declared is not None and declared > 0:
+                logger.warning(
+                    "Reconciled itinerary total %s -> %s (sum of daily costs)",
+                    declared, day_sum,
+                )
+            return enriched
+        return itinerary
+    except Exception:
+        logger.warning("Itinerary budget reconciliation failed", exc_info=True)
+        return itinerary
+
+
+def _reconcile_comparison_budgets(comparison: dict | None) -> dict | None:
+    """Apply _reconcile_itinerary_budget to each plan's itinerary. Never raises."""
+    if not isinstance(comparison, dict):
+        return comparison
+    try:
+        import copy
+
+        enriched = copy.deepcopy(comparison)
+        plans = enriched.get("plans")
+        if isinstance(plans, list):
+            for plan in plans:
+                if isinstance(plan, dict) and isinstance(plan.get("itinerary"), dict):
+                    plan["itinerary"] = _reconcile_itinerary_budget(plan["itinerary"])
+        return enriched
+    except Exception:
+        logger.warning("Comparison budget reconciliation failed", exc_info=True)
+        return comparison
 
 
 def _last_assistant_text(state: dict) -> str:
@@ -1246,9 +1439,10 @@ async def stream_chat_agent(
             comparison = _extract_comparison_from_text(replay_text) if plan_kind == "comparison" else None
             itinerary = _extract_itinerary_from_text(replay_text) if plan_kind == "itinerary" else None
             if comparison is not None:
-                yield {"event": "comparison", "data": comparison}
+                yield {"event": "comparison", "data": _reconcile_comparison_budgets(comparison)}
             elif itinerary is not None:
                 itinerary = await _enrich_itinerary_with_coordinates(itinerary)
+                itinerary = _reconcile_itinerary_budget(itinerary)
                 yield {"event": "itinerary", "data": itinerary}
             yield {"event": "done", "data": {"budget_reached": False}}
         except (ValueError, json.JSONDecodeError) as exc:
@@ -1275,10 +1469,7 @@ async def stream_chat_agent(
 
     # Persist activity metadata for this thread (per-message)
     if stream.activity["thinking"] or stream.activity["tool_calls"] or stream.activity["usage"] or stream.activity["images"] or stream.activity["charts"]:
-        try:
-            store = create_redis_store() if settings.STORE_BACKEND == "redis" else InMemoryStore()
-        except Exception:
-            store = InMemoryStore()
+        store = get_activity_store()
         await save_activity(store, thread_id, stream.activity, message_index=message_index)
 
     # Persist cost data
@@ -1344,9 +1535,10 @@ async def stream_chat_agent(
 
     try:
         if comparison is not None:
-            yield {"event": "comparison", "data": comparison}
+            yield {"event": "comparison", "data": _reconcile_comparison_budgets(comparison)}
         elif itinerary is not None:
             itinerary = await _enrich_itinerary_with_coordinates(itinerary)
+            itinerary = _reconcile_itinerary_budget(itinerary)
             yield {"event": "itinerary", "data": itinerary}
         yield {"event": "done", "data": {"budget_reached": stream._budget_reached}}
     except (ValueError, json.JSONDecodeError) as exc:
@@ -1354,10 +1546,7 @@ async def stream_chat_agent(
 
     # Re-save activity if retry added more data
     if stream.activity["thinking"] or stream.activity["tool_calls"] or stream.activity["usage"] or stream.activity["images"] or stream.activity["charts"]:
-        try:
-            store = create_redis_store() if settings.STORE_BACKEND == "redis" else InMemoryStore()
-        except Exception:
-            store = InMemoryStore()
+        store = get_activity_store()
         await save_activity(store, thread_id, stream.activity, message_index=message_index)
 
     # Re-persist cost data if retry added more
@@ -1433,10 +1622,7 @@ async def regenerate_chat_agent(
 
     # Persist activity metadata for this thread
     if stream.activity["thinking"] or stream.activity["tool_calls"] or stream.activity["usage"] or stream.activity["images"] or stream.activity["charts"]:
-        try:
-            store = create_redis_store() if settings.STORE_BACKEND == "redis" else InMemoryStore()
-        except Exception:
-            store = InMemoryStore()
+        store = get_activity_store()
         # Determine message_index from forked state
         try:
             state = await agent.aget_state(forked_config)
@@ -1508,9 +1694,10 @@ async def regenerate_chat_agent(
 
     try:
         if comparison is not None:
-            yield {"event": "comparison", "data": comparison}
+            yield {"event": "comparison", "data": _reconcile_comparison_budgets(comparison)}
         elif itinerary is not None:
             itinerary = await _enrich_itinerary_with_coordinates(itinerary)
+            itinerary = _reconcile_itinerary_budget(itinerary)
             yield {"event": "itinerary", "data": itinerary}
         yield {"event": "done", "data": {"budget_reached": stream._budget_reached}}
     except (ValueError, json.JSONDecodeError) as exc:
@@ -1518,10 +1705,7 @@ async def regenerate_chat_agent(
 
     # Re-save activity if retry added more data
     if stream.activity["thinking"] or stream.activity["tool_calls"] or stream.activity["usage"] or stream.activity["images"] or stream.activity["charts"]:
-        try:
-            store = create_redis_store() if settings.STORE_BACKEND == "redis" else InMemoryStore()
-        except Exception:
-            store = InMemoryStore()
+        store = get_activity_store()
         await save_activity(store, thread_id, stream.activity, message_index=message_index)
 
     # Re-persist cost data if retry added more
@@ -1600,9 +1784,10 @@ async def edit_chat_agent(
                         comparison = _extract_comparison_from_text(replay_text) if plan_kind == "comparison" else None
                         itinerary = _extract_itinerary_from_text(replay_text) if plan_kind == "itinerary" else None
                         if comparison is not None:
-                            yield {"event": "comparison", "data": comparison}
+                            yield {"event": "comparison", "data": _reconcile_comparison_budgets(comparison)}
                         elif itinerary is not None:
                             itinerary = await _enrich_itinerary_with_coordinates(itinerary)
+                            itinerary = _reconcile_itinerary_budget(itinerary)
                             yield {"event": "itinerary", "data": itinerary}
                         yield {"event": "done", "data": {"budget_reached": False}}
                     except (ValueError, json.JSONDecodeError) as exc:
@@ -1633,10 +1818,7 @@ async def edit_chat_agent(
         return
 
     if stream.activity["thinking"] or stream.activity["tool_calls"] or stream.activity["usage"] or stream.activity["images"] or stream.activity["charts"]:
-        try:
-            store = create_redis_store() if settings.STORE_BACKEND == "redis" else InMemoryStore()
-        except Exception:
-            store = InMemoryStore()
+        store = get_activity_store()
         try:
             state = await agent.aget_state(run_config)
             msg_count = len(state.values.get("messages", []))
@@ -1706,19 +1888,17 @@ async def edit_chat_agent(
 
     try:
         if comparison is not None:
-            yield {"event": "comparison", "data": comparison}
+            yield {"event": "comparison", "data": _reconcile_comparison_budgets(comparison)}
         elif itinerary is not None:
             itinerary = await _enrich_itinerary_with_coordinates(itinerary)
+            itinerary = _reconcile_itinerary_budget(itinerary)
             yield {"event": "itinerary", "data": itinerary}
         yield {"event": "done", "data": {"budget_reached": stream._budget_reached}}
     except (ValueError, json.JSONDecodeError) as exc:
         yield {"event": "error", "data": str(exc)}
 
     if stream.activity["thinking"] or stream.activity["tool_calls"] or stream.activity["usage"] or stream.activity["images"] or stream.activity["charts"]:
-        try:
-            store = create_redis_store() if settings.STORE_BACKEND == "redis" else InMemoryStore()
-        except Exception:
-            store = InMemoryStore()
+        store = get_activity_store()
         await save_activity(store, thread_id, stream.activity, message_index=message_index)
 
     # Re-persist cost data if retry added more
@@ -1777,10 +1957,7 @@ async def edit_itinerary_agent(
 
     # Save activity data
     if stream.activity["thinking"] or stream.activity["tool_calls"] or stream.activity["usage"] or stream.activity["images"] or stream.activity["charts"]:
-        try:
-            store = create_redis_store() if settings.STORE_BACKEND == "redis" else InMemoryStore()
-        except Exception:
-            store = InMemoryStore()
+        store = get_activity_store()
         try:
             state = await agent.aget_state(config)
             msg_count = len(state.values.get("messages", []))
@@ -1843,6 +2020,7 @@ async def edit_itinerary_agent(
     try:
         if itinerary is not None:
             itinerary = await _enrich_itinerary_with_coordinates(itinerary)
+            itinerary = _reconcile_itinerary_budget(itinerary)
             yield {"event": "itinerary", "data": itinerary}
         yield {"event": "done", "data": {"budget_reached": stream._budget_reached}}
     except (ValueError, json.JSONDecodeError) as exc:

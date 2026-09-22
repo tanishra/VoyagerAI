@@ -14,6 +14,10 @@ def _run_create(user_id):
         def __init__(self, root_dir):
             captured["root_dir"] = root_dir
 
+    class _FakeStoreBackend:
+        def __init__(self, store=None, namespace=None, **kwargs):
+            captured["namespace_fn"] = namespace
+
     class _FakeAgent:
         pass
 
@@ -21,11 +25,13 @@ def _run_create(user_id):
         import agents.deep_agent as m
 
         orig_fs = m.FilesystemBackend
+        orig_store_be = m.StoreBackend
         orig_create = m.create_deep_agent
         orig_model = m.get_orchestrator_model
         orig_file_store = m.get_redis_file_store
         try:
             m.FilesystemBackend = _FakeFSBackend
+            m.StoreBackend = _FakeStoreBackend
             m.create_deep_agent = lambda **kw: _FakeAgent()
             m.get_orchestrator_model = lambda: object()
             m.get_redis_file_store = lambda: object()
@@ -38,6 +44,7 @@ def _run_create(user_id):
             ), captured
         finally:
             m.FilesystemBackend = orig_fs
+            m.StoreBackend = orig_store_be
             m.create_deep_agent = orig_create
             m.get_orchestrator_model = orig_model
             m.get_redis_file_store = orig_file_store
@@ -73,3 +80,14 @@ class TestPerUserFilesystem:
         _, cap = _run_create(None)
         expected = hashlib.sha256("anonymous".encode()).hexdigest()[:12]
         assert cap["root_dir"] == f"/tmp/agent_fs/{expected}"
+
+    def test_memory_namespace_is_label_safe_for_email_user_ids(self):
+        """LangGraph namespace labels cannot contain '.' — email user_ids
+        (tanish.rajput@x.com) raised InvalidNamespaceError on every
+        /memories/ write, killing the stream."""
+        _, cap = _run_create("tanish.rajput@qualtechedge.com")
+        labels = cap["namespace_fn"](None)
+        for label in labels:
+            assert "." not in label
+        expected = hashlib.sha256(b"tanish.rajput@qualtechedge.com").hexdigest()[:12]
+        assert labels == (expected,)

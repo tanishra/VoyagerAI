@@ -2364,9 +2364,8 @@ async def get_thread_history(
     all_activity: dict[str, dict] | None = None
     try:
         from agents.activity_store import load_all_activity as _load_all_activity
-        from agents.deep_agent import create_redis_store as _create_store
-        from langgraph.store.memory import InMemoryStore as _InMemStore
-        _store = _create_store() if settings.STORE_BACKEND == "redis" else _InMemStore()
+        from agents.deep_agent import get_activity_store
+        _store = get_activity_store()
         all_activity = await _load_all_activity(_store, thread_id)
     except Exception:
         pass
@@ -2376,9 +2375,8 @@ async def get_thread_history(
     if all_activity is None:
         try:
             from agents.activity_store import load_activity as _load_activity
-            from agents.deep_agent import create_redis_store as _create_store
-            from langgraph.store.memory import InMemoryStore as _InMemStore
-            _store = _create_store() if settings.STORE_BACKEND == "redis" else _InMemStore()
+            from agents.deep_agent import get_activity_store
+            _store = get_activity_store()
             legacy_activity = await _load_activity(_store, thread_id)
         except Exception:
             pass

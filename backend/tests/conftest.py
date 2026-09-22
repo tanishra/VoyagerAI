@@ -26,6 +26,10 @@ def _fast_redis_fail(monkeypatch):
     monkeypatch.setattr(deep_agent_module.settings, "CHECKPOINTER_BACKEND", "memory")
     monkeypatch.setattr(deep_agent_module, "_checkpointer", None)
     monkeypatch.setattr(deep_agent_module, "_redis_checkpointer_broken", False)
+    monkeypatch.setattr(deep_agent_module, "_store", None)
+    monkeypatch.setattr(deep_agent_module, "_store_broken", False)
+    monkeypatch.setattr(deep_agent_module, "_store_memory_fallback", None)
+    monkeypatch.setattr(deep_agent_module, "_file_store", None)
 
     # Reset rate limiter singleton state to prevent 429s between tests
     import rate_limiter as rl_module

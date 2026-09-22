@@ -117,6 +117,68 @@ class TestFormatComparison:
         assert result is None
 
 
+class TestComparisonProseParsing:
+    """Models sometimes emit tier plans as markdown prose instead of
+    <comparison> JSON. The deterministic prose parser must recover them."""
+
+    _PROSE = (
+        "Here are three different itinerary options for your 5-day trip to Tokyo, "
+        "each catering to different budget levels:\n"
+        "Budget Plan\n"
+        "- Total Cost: ₹45,000\n"
+        "- Accommodation: Hostel\n"
+        "- Food Style: Street food\n"
+        "- Transport: Public transit\n"
+        "- Highlights: Explore cultural sites like Senso-ji Temple.\n"
+        "Balanced Plan\n"
+        "- Total Cost: ₹75,000\n"
+        "- Accommodation: 3-star hotel\n"
+        "- Food Style: Local restaurants\n"
+        "- Transport: Transit + occasional rideshare\n"
+        "- Highlights: Visit Akihabara and shop in Harajuku.\n"
+        "Premium Plan\n"
+        "- Total Cost: ₹1,12,500\n"
+        "- Accommodation: 4-star hotel\n"
+        "- Food Style: Fine dining\n"
+        "- Transport: Private car\n"
+        "- Highlights: High-end dining and private tours.\n"
+        "Which tier do you prefer?"
+    )
+
+    def test_parses_untagged_tier_prose(self):
+        result = _extract_comparison_from_text(self._PROSE)
+        assert result is not None
+        tiers = [p["tier"] for p in result["plans"]]
+        assert tiers == ["budget", "balanced", "premium"]
+
+    def test_parses_costs_including_indian_grouping(self):
+        result = _extract_comparison_from_text(self._PROSE)
+        costs = [p["itinerary"]["estimated_total_cost_usd"] for p in result["plans"]]
+        assert costs == [45000.0, 75000.0, 112500.0]
+
+    def test_extracts_destination_and_days(self):
+        result = _extract_comparison_from_text(self._PROSE)
+        assert result["plans"][0]["itinerary"]["destination"] == "Tokyo"
+        assert result["plans"][0]["itinerary"]["total_days"] == 5
+
+    def test_builds_comparison_matrix(self):
+        result = _extract_comparison_from_text(self._PROSE)
+        m = result["comparison_matrix"]
+        assert m["total_cost"]["premium"] == 112500.0
+        assert m["accommodation_type"]["budget"] == "Hostel"
+        assert m["food_style"]["balanced"] == "Local restaurants"
+        assert m["transport_mode"]["premium"] == "Private car"
+
+    def test_single_tier_prose_returns_none(self):
+        text = "Budget Plan\n- Total Cost: ₹45,000\nJust one plan here."
+        assert _extract_comparison_from_text(text) is None
+
+    def test_prefers_tagged_json_over_prose(self):
+        text = f"Budget Plan\n- Total Cost: 1\nBalanced Plan\n- Total Cost: 2\n<comparison>{json.dumps(_SAMPLE_COMPARISON)}</comparison>"
+        result = _extract_comparison_from_text(text)
+        assert result == _SAMPLE_COMPARISON
+
+
 class TestDetectPlanKind:
     """Tests for the _detect_plan_kind shared dispatcher."""
 
