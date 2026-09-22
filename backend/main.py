@@ -89,7 +89,7 @@ from oauth import (
     oauth,
     verify_admin,
 )
-from locale_utils import extract_locale, get_error_message
+from locale_utils import classify_exception, extract_locale, get_error_message
 from sanitize import sanitize_prompt_input, sanitize_prompt_input_detailed
 from share_store import share_store
 from agents.tools.visuals import generate_destination_image
@@ -584,13 +584,13 @@ def _parse_chat_event(
             payloads.append(_sse("status", {"tool": subagent_type, "status": "error"}))
             payloads.append(_sse("tool_error", {
                 "name": subagent_type,
-                "error": str(error_msg)[:500],
+                "error": "tool_unavailable",
                 "run_id": run_id,
             }))
         else:
             te_payload = {
                 "name": name,
-                "error": str(error_msg)[:500],
+                "error": "tool_unavailable",
                 "run_id": run_id,
             }
             if parent_run_id:
@@ -960,7 +960,7 @@ async def submit_feedback(
     try:
         body = FeedbackRequest(**json.loads(await request.body()))
     except (json.JSONDecodeError, ValidationError) as exc:
-        raise HTTPException(status_code=422, detail=f"Invalid request body: {exc}")
+        raise HTTPException(status_code=422, detail="Invalid request body.")
 
     user_id = user["user_id"]
     result = await feedback_store.submit_feedback(
@@ -1622,7 +1622,7 @@ async def chat_stream(
         raw_body = await request.body()
         chat_req = ChatRequest(**json.loads(raw_body))
     except (json.JSONDecodeError, ValidationError) as exc:
-        raise HTTPException(status_code=422, detail=f"Invalid request body: {exc}")
+        raise HTTPException(status_code=422, detail="Invalid request body.")
 
     _msg_safe = sanitize_prompt_input(chat_req.message, "message")
 
@@ -1761,7 +1761,7 @@ async def chat_stream(
                 exc_info=True,
             )
             stream_failed = True
-            yield _sse("error", get_error_message("streaming_failed", locale, error=str(exc)))
+            yield _sse("error", get_error_message(classify_exception(exc), locale))
             obs.send(observability_store.record_event,
                      thread_id=thread_id, event_type="error", error=str(exc)[:500])
         finally:
@@ -1937,7 +1937,7 @@ async def chat_regenerate(
                 exc_info=True,
             )
             stream_failed = True
-            yield _sse("error", get_error_message("streaming_failed", locale, error=str(exc)))
+            yield _sse("error", get_error_message(classify_exception(exc), locale))
             obs.send(observability_store.record_event,
                      thread_id=thread_id, event_type="error", error=str(exc)[:500])
         finally:
@@ -2070,7 +2070,7 @@ async def chat_edit(
                 exc_info=True,
             )
             stream_failed = True
-            yield _sse("error", get_error_message("streaming_failed", locale, error=str(exc)))
+            yield _sse("error", get_error_message(classify_exception(exc), locale))
             obs.send(observability_store.record_event,
                      thread_id=thread_id, event_type="error", error=str(exc)[:500])
         finally:
@@ -2193,7 +2193,7 @@ async def chat_edit_itinerary(
                 exc_info=True,
             )
             stream_failed = True
-            yield _sse("error", get_error_message("streaming_failed", locale, error=str(exc)))
+            yield _sse("error", get_error_message(classify_exception(exc), locale))
         finally:
             unregister_cancel(scoped_thread_id)
             try:
@@ -2610,7 +2610,7 @@ async def update_thread(
     try:
         body = ThreadUpdateRequest(**json.loads(await request.body()))
     except (json.JSONDecodeError, ValidationError) as exc:
-        raise HTTPException(status_code=422, detail=f"Invalid request body: {exc}")
+        raise HTTPException(status_code=422, detail="Invalid request body.")
 
     user_id = user["user_id"]
 
