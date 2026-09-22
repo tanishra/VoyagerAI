@@ -92,6 +92,7 @@ def render_pdf_pages_as_images(data_url: str, max_pages: int = 10) -> list[str]:
 
 _checkpointer = None
 _sqlite_checkpointer = None
+_redis_checkpointer_broken = False
 _store = None
 _file_store = None
 
@@ -137,6 +138,30 @@ async def create_redis_checkpointer() -> AsyncRedisSaver:
                 await saver._detect_cluster_mode()
             except Exception:  # noqa: BLE001
                 pass
+        # Read probe: setup() succeeding does NOT mean JSON.GET works —
+        # Upstash's RedisJSON rejects the legacy "." path that langgraph's
+        # aget_tuple sends ("JSONPath must start with $"), which crashes
+        # every stream on first read. The server only validates the path
+        # when the key EXISTS, so the probe must write a real key first.
+        probe_key = "__voyager_probe_jsonpath__"
+        try:
+            await saver._redis.json().set(probe_key, "$", {"ok": True})
+            await saver._redis.json().get(probe_key, ".")
+        except Exception as exc:  # noqa: BLE001 (intentional fallback handler)
+            logger.warning(
+                "Redis checkpointer read probe failed (%s) — saver is unusable, "
+                "falling back to SQLite.", exc,
+            )
+            try:
+                await saver._redis.aclose()
+            except Exception:  # noqa: BLE001
+                pass
+            raise
+        finally:
+            try:
+                await saver._redis.delete(probe_key)
+            except Exception:  # noqa: BLE001
+                pass
         _checkpointer = saver
     return _checkpointer
 
@@ -166,14 +191,17 @@ async def create_checkpointer():
         return await create_sqlite_checkpointer()
     if backend == "memory":
         return MemorySaver()
-    try:
-        return await create_redis_checkpointer()
-    except Exception:  # noqa: BLE001 (intentional fallback handler)
-        logger.warning("Redis checkpointer unavailable, falling back to SQLite")
+    global _redis_checkpointer_broken
+    if not _redis_checkpointer_broken:
         try:
-            return await create_sqlite_checkpointer()
+            return await create_redis_checkpointer()
         except Exception:  # noqa: BLE001 (intentional fallback handler)
-            return MemorySaver()
+            _redis_checkpointer_broken = True
+            logger.warning("Redis checkpointer unavailable, falling back to SQLite")
+    try:
+        return await create_sqlite_checkpointer()
+    except Exception:  # noqa: BLE001 (intentional fallback handler)
+        return MemorySaver()
 
 
 def create_redis_store() -> RedisStore:
