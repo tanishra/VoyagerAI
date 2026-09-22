@@ -157,5 +157,6 @@ export interface ChatStreamCallbacks {
     responseBody?: string;
     parseFailed?: string;
     streamEnded?: string;
+    unexpected?: string;
   };
 }
