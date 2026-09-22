@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Wrench, ChevronDown, Check, AlertCircle, Loader2 } from 'lucide-react';
 import { clsx } from 'clsx';
+import { sanitizeError } from '@/lib/errors';
 import type { ToolCallEntry } from '@/lib/types';
 
 interface ToolCallCardProps {
@@ -92,7 +93,7 @@ export default function ToolCallCard({ tool }: ToolCallCardProps) {
                 <div>
                   <p className="text-destructive/70 mb-0.5 font-medium">Error</p>
                   <pre className="text-xs text-destructive/80 bg-destructive/5 rounded p-2 overflow-x-auto whitespace-pre-wrap break-words">
-                    {tool.error}
+                    {sanitizeError(tool.error, 'Tool temporarily unavailable')}
                   </pre>
                 </div>
               )}
