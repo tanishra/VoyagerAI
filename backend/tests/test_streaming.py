@@ -685,9 +685,27 @@ class TestRedisCheckpointer:
 
         import agents.deep_agent as deep_agent_module
 
+        class _FakeJson:
+            async def set(self, key, path, value):
+                return True
+
+            async def get(self, key, *args):
+                return {"ok": True}
+
+        class _FakeRedis:
+            def json(self):
+                return _FakeJson()
+
+            async def delete(self, key):
+                return 1
+
+            async def aclose(self):
+                pass
+
         class _FakeAsyncSaver:
             def __init__(self, redis_url=None):
                 self.setup_called = False
+                self._redis = _FakeRedis()
 
             async def setup(self):
                 self.setup_called = True
@@ -702,6 +720,65 @@ class TestRedisCheckpointer:
             asyncio.run(saver.aget_tuple({"configurable": {"thread_id": "x"}}))
             is None
         )
+
+    def test_broken_read_probe_falls_back_to_sqlite(self, tmp_path, monkeypatch):
+        """Upstash-style failure: setup() works but aget_tuple uses legacy
+        JSONPath that the server rejects → fall back to SQLite, and don't
+        retry Redis on subsequent calls."""
+        import asyncio
+
+        import agents.deep_agent as deep_agent_module
+
+        class _BrokenJson:
+            async def set(self, key, path, value):
+                return True
+
+            async def get(self, key, *args):
+                raise RuntimeError(
+                    "the legacy path syntax is not supported. JSONPath must start with $"
+                )
+
+        class _BrokenRedis:
+            def json(self):
+                return _BrokenJson()
+
+            async def delete(self, key):
+                return 1
+
+            async def aclose(self):
+                pass
+
+        class _BrokenSaver:
+            def __init__(self, redis_url=None):
+                self._redis = _BrokenRedis()
+
+            async def setup(self):
+                pass
+
+            async def aget_tuple(self, config):
+                raise RuntimeError(
+                    "the legacy path syntax is not supported. JSONPath must start with $"
+                )
+
+        db = tmp_path / "checkpoints.sqlite"
+        monkeypatch.setattr(deep_agent_module, "AsyncRedisSaver", _BrokenSaver)
+        monkeypatch.setattr(deep_agent_module.settings, "CHECKPOINTER_BACKEND", "redis")
+        monkeypatch.setattr(deep_agent_module, "_sqlite_checkpointer", None)
+        monkeypatch.setattr(deep_agent_module.settings, "CHECKPOINTER_DB_PATH", str(db))
+
+        from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+
+        saver = asyncio.run(deep_agent_module.create_checkpointer())
+        assert isinstance(saver, AsyncSqliteSaver)
+        assert deep_agent_module._redis_checkpointer_broken
+
+        # Second call must not touch Redis again — go straight to SQLite
+        def _explode(*a, **k):
+            raise AssertionError("Redis saver constructed after broken flag")
+
+        monkeypatch.setattr(deep_agent_module, "AsyncRedisSaver", _explode)
+        saver2 = asyncio.run(deep_agent_module.create_checkpointer())
+        assert isinstance(saver2, AsyncSqliteSaver)
 
 
 class TestSqliteCheckpointer:
@@ -757,10 +834,10 @@ class TestSqliteCheckpointer:
         assert isinstance(saver, MemorySaver)
 
     def test_redis_checkpointer_survives_setup_failure_upstash(self, monkeypatch):
-        """When Redis is available but RediSearch is not (e.g. Upstash),
-        create_redis_checkpointer should catch the setup() failure and
-        still return the AsyncRedisSaver — aput/aget_tuple only need
-        RedisJSON, not RediSearch."""
+        """When Redis is available but RediSearch is not, create_redis_checkpointer
+        catches the setup() failure and still returns the AsyncRedisSaver — as long
+        as the read probe (aget_tuple) succeeds, i.e. real RedisJSON with legacy
+        JSONPath support."""
         import asyncio
         from unittest.mock import AsyncMock, MagicMock
 
@@ -774,6 +851,13 @@ class TestSqliteCheckpointer:
         # Mock the Redis connection so AsyncRedisSaver.__init__ doesn't fail
         mock_redis = AsyncMock()
         mock_redis.ping = AsyncMock(return_value=True)
+        # Probe path: json().set/get/delete must succeed (legacy "." path works
+        # on real Redis — only Upstash-style servers reject it)
+        _json_mock = MagicMock()
+        _json_mock.set = AsyncMock(return_value=True)
+        _json_mock.get = AsyncMock(return_value={"ok": True})
+        mock_redis.json = MagicMock(return_value=_json_mock)
+        mock_redis.delete = AsyncMock(return_value=1)
 
         from redisvl.redis.connection import RedisConnectionFactory
 
@@ -782,7 +866,8 @@ class TestSqliteCheckpointer:
 
         monkeypatch.setattr(RedisConnectionFactory, "get_async_redis_connection", _mock_get_conn)
 
-        # Mock AsyncRedisSaver.setup() to simulate Upstash (no RediSearch)
+        # Mock AsyncRedisSaver.setup() to simulate missing RediSearch, but with a
+        # working JSON.GET path (real Redis) so the read probe passes.
         original_init = AsyncRedisSaver.__init__
 
         class _MockSaver(AsyncRedisSaver):
@@ -791,6 +876,9 @@ class TestSqliteCheckpointer:
 
             async def setup(self):
                 raise RuntimeError("FT.CREATE not supported (no RediSearch module)")
+
+            async def aget_tuple(self, config):
+                return None
 
         monkeypatch.setattr(deep_agent_module, "AsyncRedisSaver", _MockSaver)
 
