@@ -5,6 +5,7 @@ import { motion } from 'framer-motion';
 import { Save, CheckCircle, AlertCircle, Loader2, FileText, Sparkles, ArrowLeft } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { getSession } from '@/lib/auth';
+import { friendlyHttpError } from '@/lib/errors';
 import { withAuthParams } from '@/lib/api-headers';
 import { useLocale } from '@/lib/useLocale';
 import Link from 'next/link';
@@ -79,7 +80,10 @@ export default function PreferencesPage() {
         setMessage({ type: 'success', text: t('saved') });
       } else {
         const errText = await res.text().catch(() => '');
-        setMessage({ type: 'error', text: errText || t('saveFailed') });
+        setMessage({
+          type: 'error',
+          text: friendlyHttpError(res.status, errText, { server: t('saveError'), request: t('saveFailed') }),
+        });
       }
     } catch {
       setMessage({ type: 'error', text: t('saveError') });
