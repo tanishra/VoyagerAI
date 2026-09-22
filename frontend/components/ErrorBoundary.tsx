@@ -24,6 +24,7 @@ export default class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBo
   }
 
   static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+    console.error('ErrorBoundary caught:', error);
     return { hasError: true, error };
   }
 
@@ -46,7 +47,7 @@ export default class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBo
           <div>
             <h2 className="text-lg font-semibold text-red-300 mb-1">{this.props.errorTitle ?? 'Something went wrong'}</h2>
             <p className="text-sm text-red-300/70 max-w-md">
-              {this.state.error?.message || this.props.errorDescription || 'An unexpected error occurred in this section.'}
+              {this.props.errorDescription ?? 'An unexpected error occurred in this section.'}
             </p>
           </div>
           <Button
