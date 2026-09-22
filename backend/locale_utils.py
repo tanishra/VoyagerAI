@@ -8,12 +8,44 @@ SUPPORTED_LOCALES = ("en", "es", "fr", "de", "hi", "ja")
 
 ERROR_MESSAGES: dict[str, dict[str, str]] = {
     "streaming_failed": {
-        "en": "Streaming failed: {error}",
-        "es": "Error de transmisión: {error}",
-        "fr": "Échec du streaming: {error}",
-        "de": "Streaming fehlgeschlagen: {error}",
-        "hi": "स्ट्रीमिंग विफल: {error}",
-        "ja": "ストリーミングに失敗しました: {error}",
+        "en": "Something went wrong while generating your answer. Please try again.",
+        "es": "Algo salió mal al generar tu respuesta. Inténtalo de nuevo.",
+        "fr": "Une erreur s'est produite lors de la génération de la réponse. Veuillez réessayer.",
+        "de": "Beim Generieren der Antwort ist ein Fehler aufgetreten. Bitte versuche es erneut.",
+        "hi": "उत्तर जनरेट करते समय कुछ गड़बड़ हुई। कृपया पुनः प्रयास करें।",
+        "ja": "回答の生成中に問題が発生しました。もう一度お試しください。",
+    },
+    "provider_busy": {
+        "en": "The AI service is at capacity right now. Please try again in a moment.",
+        "es": "El servicio de IA está saturado ahora mismo. Inténtalo de nuevo en un momento.",
+        "fr": "Le service IA est saturé pour le moment. Veuillez réessayer dans un instant.",
+        "de": "Der KI-Dienst ist derzeit ausgelastet. Bitte versuche es gleich erneut.",
+        "hi": "AI सेवा अभी अत्यधिक व्यस्त है। कृपया कुछ देर बाद पुनः प्रयास करें।",
+        "ja": "AIサービスが現在混雑しています。しばらくしてからもう一度お試しください。",
+    },
+    "connection_failed": {
+        "en": "Connection problem. Please check your network and try again.",
+        "es": "Problema de conexión. Comprueba tu red e inténtalo de nuevo.",
+        "fr": "Problème de connexion. Veuillez vérifier votre réseau et réessayer.",
+        "de": "Verbindungsproblem. Bitte prüfe dein Netzwerk und versuche es erneut.",
+        "hi": "कनेक्शन समस्या। कृपया अपना नेटवर्क जांचें और पुनः प्रयास करें।",
+        "ja": "接続に問題があります。ネットワークを確認してもう一度お試しください。",
+    },
+    "generic_error": {
+        "en": "Something went wrong. Please try again.",
+        "es": "Algo salió mal. Inténtalo de nuevo.",
+        "fr": "Une erreur s'est produite. Veuillez réessayer.",
+        "de": "Etwas ist schiefgelaufen. Bitte versuche es erneut.",
+        "hi": "कुछ गड़बड़ हुई। कृपया पुनः प्रयास करें।",
+        "ja": "問題が発生しました。もう一度お試しください。",
+    },
+    "tool_unavailable": {
+        "en": "A tool became temporarily unavailable.",
+        "es": "Una herramienta no está disponible temporalmente.",
+        "fr": "Un outil est temporairement indisponible.",
+        "de": "Ein Tool ist vorübergehend nicht verfügbar.",
+        "hi": "एक टूल अस्थायी रूप से अनुपलब्ध है।",
+        "ja": "ツールが一時的に利用できません。",
     },
     "stream_ended_prematurely": {
         "en": "Stream ended before the agent finished",
@@ -59,6 +91,30 @@ def extract_locale(request: Request, body_locale: str | None = None) -> str | No
             if locale:
                 break
     return locale
+
+
+_PROVIDER_PATTERNS = (
+    "ratelimit", "rate_limit", "rate limit", "insufficient", "credit",
+    "quota", "billing", "authentication", "api key", "capacity", "overloaded",
+)
+_CONNECTION_PATTERNS = (
+    "timeout", "timed out", "connection", "connect", "dns", "network",
+    "econnrefused", "econnreset",
+)
+
+
+def classify_exception(exc: BaseException) -> str:
+    """Map an exception to a user-facing ERROR_MESSAGES key.
+
+    Never exposes exception text — only a bucket: provider limits/billing,
+    connectivity, or a generic fallback.
+    """
+    text = f"{type(exc).__name__} {exc}".lower()
+    if any(p in text for p in _PROVIDER_PATTERNS):
+        return "provider_busy"
+    if any(p in text for p in _CONNECTION_PATTERNS):
+        return "connection_failed"
+    return "generic_error"
 
 
 def get_error_message(key: str, locale: str | None = None, **kwargs: object) -> str:
