@@ -1,5 +1,6 @@
 import type { BranchInfo, ChatStreamCallbacks, ComparisonData, GeneratedChart, GeneratedImage, Itinerary, UsageEntry } from './types';
 import { withAuthParams } from './api-headers';
+import { friendlyHttpError, sanitizeError } from './errors';
 
 const MAX_RETRIES = 3;
 const RETRY_DELAYS = [1000, 2000, 4000];
@@ -78,7 +79,9 @@ export async function streamChat(
           continue;
         }
         const text = await response.text().catch(() => '');
-        onError?.(errorMessages?.serverResponse?.(response.status, text) ?? `Server responded with ${response.status}: ${text}`);
+        const unexpected = errorMessages?.unexpected ?? 'Something went wrong. Please try again.';
+        const detail = friendlyHttpError(response.status, text, { server: unexpected, request: unexpected });
+        onError?.(errorMessages?.serverResponse?.(response.status, detail) ?? detail);
         return resolvedThreadId;
       }
 
@@ -191,7 +194,10 @@ export async function streamChat(
         }
         continue;
       }
-      onError?.(err instanceof Error ? err.message : String(err));
+      onError?.(sanitizeError(
+        err instanceof Error ? err.message : String(err),
+        errorMessages?.unexpected ?? 'Something went wrong. Please try again.',
+      ));
       return resolvedThreadId;
     }
   }
@@ -355,7 +361,7 @@ export async function regenerateStream(
           await sleep(RETRY_DELAYS[attempt], signal);
           continue;
         }
-        onError?.(`HTTP ${response.status}`);
+        onError?.(errorMessages?.unexpected ?? `HTTP ${response.status}`);
         return undefined;
       }
 
@@ -427,7 +433,10 @@ export async function regenerateStream(
         }
         continue;
       }
-      onError?.(err instanceof Error ? err.message : String(err));
+      onError?.(sanitizeError(
+        err instanceof Error ? err.message : String(err),
+        errorMessages?.unexpected ?? 'Something went wrong. Please try again.',
+      ));
       return resolvedThreadId;
     }
   }
@@ -470,7 +479,7 @@ export async function editItinerary(
           await sleep(RETRY_DELAYS[attempt], signal);
           continue;
         }
-        onError?.(`HTTP ${response.status}`);
+        onError?.(errorMessages?.unexpected ?? `HTTP ${response.status}`);
         return undefined;
       }
 
@@ -542,7 +551,10 @@ export async function editItinerary(
         }
         continue;
       }
-      onError?.(err instanceof Error ? err.message : String(err));
+      onError?.(sanitizeError(
+        err instanceof Error ? err.message : String(err),
+        errorMessages?.unexpected ?? 'Something went wrong. Please try again.',
+      ));
       return resolvedThreadId;
     }
   }
@@ -603,7 +615,7 @@ export async function editStream(
           await sleep(RETRY_DELAYS[attempt], signal);
           continue;
         }
-        onError?.(`HTTP ${response.status}`);
+        onError?.(errorMessages?.unexpected ?? `HTTP ${response.status}`);
         return undefined;
       }
 
@@ -675,7 +687,10 @@ export async function editStream(
         }
         continue;
       }
-      onError?.(err instanceof Error ? err.message : String(err));
+      onError?.(sanitizeError(
+        err instanceof Error ? err.message : String(err),
+        errorMessages?.unexpected ?? 'Something went wrong. Please try again.',
+      ));
       return resolvedThreadId;
     }
   }
