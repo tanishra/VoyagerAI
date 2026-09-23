@@ -70,6 +70,75 @@ class TestReconcileItineraryBudget:
         out = reconcile(bad)
         assert isinstance(out, dict)
 
+    def test_missing_currency_defaults_to_usd(self):
+        it = _itinerary(375000, [75000] * 5)
+        assert reconcile(it)["currency"] == "USD"
+
+    def test_existing_currency_preserved(self):
+        it = _itinerary(375000, [75000] * 5)
+        it["currency"] = "INR"
+        assert reconcile(it)["currency"] == "INR"
+
+    def test_stated_budget_over_flags_status(self):
+        """Internally consistent (header == day sum) but 3x the user's stated
+        budget — self-consistency alone can't catch this."""
+        it = _itinerary(150000, [30000] * 5)
+        it["currency"] = "INR"
+        it["budget_status"] = "within"
+        out = reconcile(it, stated_budget=(50000, "INR"))
+        assert out["budget_status"] == "over"
+        assert any("above your stated budget" in w for w in out["warnings"])
+
+    def test_stated_budget_within_confirmed(self):
+        it = _itinerary(48000, [9600] * 5)
+        it["currency"] = "INR"
+        it["budget_status"] = "over"  # model wrongly self-assessed
+        out = reconcile(it, stated_budget=(50000, "INR"))
+        assert out["budget_status"] == "within"
+
+    def test_stated_budget_currency_mismatch_skipped(self):
+        """Can't compare a JPY cap against a USD plan — don't touch status."""
+        it = _itinerary(375000, [75000] * 5)
+        it["budget_status"] = "within"
+        out = reconcile(it, stated_budget=(50000, "JPY"))
+        assert out["budget_status"] == "within"
+
+    def test_stated_budget_none_is_noop(self):
+        it = _itinerary(375000, [75000] * 5)
+        it["budget_status"] = "within"
+        out = reconcile(it, stated_budget=None)
+        assert out["budget_status"] == "within"
+
+
+class TestExtractStatedCurrencyAndBudget:
+    def setup_method(self):
+        from agents.prompts import extract_stated_budget, extract_stated_currency
+        self.extract_stated_currency = extract_stated_currency
+        self.extract_stated_budget = extract_stated_budget
+
+    def test_extract_currency_symbol(self):
+        assert self.extract_stated_currency("my budget is ₹3,75,000") == "INR"
+        assert self.extract_stated_currency("I have $2000 to spend") == "USD"
+        assert self.extract_stated_currency("around €1500") == "EUR"
+
+    def test_extract_currency_code(self):
+        assert self.extract_stated_currency("budget is 1500 EUR total") == "EUR"
+
+    def test_extract_currency_none(self):
+        assert self.extract_stated_currency("plan a trip to Tokyo") is None
+        assert self.extract_stated_currency("") is None
+        assert self.extract_stated_currency(None) is None
+
+    def test_extract_budget_symbol(self):
+        assert self.extract_stated_budget("₹3,75,000 total budget") == (375000.0, "INR")
+        assert self.extract_stated_budget("$2000") == (2000.0, "USD")
+
+    def test_extract_budget_code_suffix(self):
+        assert self.extract_stated_budget("1500 EUR for the trip") == (1500.0, "EUR")
+
+    def test_extract_budget_none(self):
+        assert self.extract_stated_budget("no numbers here") is None
+
 
 class TestReconcileComparisonBudgets:
     def test_each_plan_reconciled(self):

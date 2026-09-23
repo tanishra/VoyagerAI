@@ -140,6 +140,70 @@ logger = logging.getLogger("travel_agent.prompts")
 _USER_INSTRUCTIONS_MAX = 2000
 _LEARNED_PREFS_MAX = 3000
 
+# Order matters: "A$" must be checked before "$" or an AUD amount would be
+# misread as USD.
+_CURRENCY_SYMBOL_TO_CODE: list[tuple[str, str]] = [
+    ("A$", "AUD"),
+    ("$", "USD"),
+    ("₹", "INR"),
+    ("€", "EUR"),
+    ("¥", "JPY"),
+    ("£", "GBP"),
+]
+_CURRENCY_CODE_RE = re.compile(r"\b(USD|INR|EUR|JPY|GBP|AUD)\b", re.IGNORECASE)
+_AMOUNT_RE = re.compile(r"[\d][\d,]*(?:\.\d+)?")
+
+
+def extract_stated_currency(text: str | None) -> str | None:
+    """Detect a currency the user explicitly typed (symbol or ISO code).
+
+    A message like "₹50,000 for the whole trip" is a stronger signal than a
+    stale app-wide currency preference (e.g. a locale-derived default the
+    user never touched) — it should win. Returns None if nothing is
+    confidently detected. Never raises.
+    """
+    if not text:
+        return None
+    try:
+        for symbol, code in _CURRENCY_SYMBOL_TO_CODE:
+            idx = text.find(symbol)
+            if idx != -1 and re.search(r"\d", text[idx: idx + 20]):
+                return code
+        match = _CURRENCY_CODE_RE.search(text)
+        if match:
+            return match.group(1).upper()
+    except Exception:
+        return None
+    return None
+
+
+def extract_stated_budget(text: str | None) -> tuple[float, str] | None:
+    """Best-effort extraction of a user-stated total budget (amount, ISO code).
+
+    Matches forms like "₹3,75,000", "$2000", "1500 EUR". Used to
+    deterministically flag a plan that blows past what the user actually
+    asked for — internal day/total self-consistency alone can't catch that.
+    Returns None if nothing is confidently detected. Never raises.
+    """
+    if not text:
+        return None
+    try:
+        for symbol, code in _CURRENCY_SYMBOL_TO_CODE:
+            for m in re.finditer(re.escape(symbol), text):
+                tail = text[m.end():m.end() + 15].strip()
+                amt_match = _AMOUNT_RE.match(tail)
+                if amt_match:
+                    amount = float(amt_match.group(0).replace(",", ""))
+                    if amount > 0:
+                        return amount, code
+        for m in re.finditer(r"([\d][\d,]*(?:\.\d+)?)\s*(USD|INR|EUR|JPY|GBP|AUD)\b", text, re.IGNORECASE):
+            amount = float(m.group(1).replace(",", ""))
+            if amount > 0:
+                return amount, m.group(2).upper()
+    except Exception:
+        return None
+    return None
+
 
 def _parse_preferences(content: str) -> tuple[str, str]:
     """Split preferences file into (user_instructions, learned_preferences).
@@ -429,6 +493,8 @@ Rules:
 - On REFINEMENT turns (user selected a plan or asked for changes), emit a single itinerary inside <itinerary></itinerary> tags
 - The <comparison> and <itinerary> tags should contain ONLY valid JSON, no extra text
 - In every itinerary, estimated_total_cost_usd must equal the sum of all daily_cost_usd values, and budget_status must reflect the user's TOTAL trip budget — never a per-day figure
+- The balanced plan MUST fit within the user's stated total budget (±5%) — do not exceed it. If realistic pricing makes this impossible, generate the closest feasible plan, set budget_status to "over", and add a warning explaining why it's over instead of silently overshooting
+- Include a "currency" field (ISO code, e.g. "USD", "INR", "EUR", "JPY") in every itinerary matching the currency the user's budget was stated in. If the user typed an explicit amount with a symbol or code (e.g. "₹50,000", "$2000", "1500 EUR"), use that currency for ALL cost fields — never silently switch to a different one
 - Before the <comparison> block, provide a brief conversational summary comparing the 3 tiers
 - After the <comparison> block, ask the user which tier they prefer
 - Before the <itinerary> block, provide a brief conversational summary of the refined plan
@@ -454,6 +520,7 @@ Rules:
       "itinerary": {
         "destination": "City, Country",
         "total_days": 3,
+        "currency": "USD",
         "estimated_total_cost_usd": 720,
         "budget_status": "within",
         "visa_note": "...",
@@ -513,6 +580,7 @@ Rules:
 {
   "destination": "City, Country",
   "total_days": 3,
+  "currency": "USD",
   "estimated_total_cost_usd": 1200,
   "budget_status": "within",
   "visa_note": "Visa information here",
@@ -555,6 +623,7 @@ All tier targets below are percentages of the user's stated TOTAL trip budget �
       "itinerary": {
         "destination": "City, Country",
         "total_days": 3,
+        "currency": "USD",
         "estimated_total_cost_usd": 720,
         "budget_status": "within",
         "visa_note": "...",
@@ -625,6 +694,8 @@ All tier targets below are percentages of the user's stated TOTAL trip budget �
 - Each itinerary follows the same JSON schema as a single itinerary
 - Cost breakdowns must sum to the itinerary's estimated_total_cost_usd
 - estimated_total_cost_usd must equal the sum of all daily_cost_usd values across days — do not set a header total that contradicts your own day-by-day costs
+- The balanced plan must land within the user's stated TOTAL trip budget (±5%) — this is the one most users pick, do not let it drift
+- Every plan's "currency" field must match the currency the user's budget was stated in — never mix currencies across tiers
 - Tradeoffs should highlight what the user gains or sacrifices at each tier
 - The comparison_matrix provides a quick at-a-glance summary of key differences
 - Use the research briefs to inform realistic pricing and activity choices

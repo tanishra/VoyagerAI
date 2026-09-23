@@ -43,6 +43,7 @@ from agents.prompts import (
     _parse_learned_preferences_to_dict,
     _parse_preferences,
     _sanitize_instructions,
+    extract_stated_currency,
 )
 from auth import verify_api_key
 from cache import cache_client
@@ -1702,6 +1703,10 @@ async def chat_stream(
             thread_id=thread_id,
         )
 
+    # A currency the user just typed (e.g. "₹50,000") is a stronger signal
+    # than a stale app-wide currency preference — it wins.
+    effective_currency = extract_stated_currency(_msg_safe) or chat_req.currency
+
     logger.info(
         "POST /chat/stream — thread_id=%s, message_len=%d, user=%s, client_msg_id=%s",
         thread_id,
@@ -1738,7 +1743,7 @@ async def chat_stream(
                 user_id=user_id,
                 locale=locale,
                 timezone=chat_req.timezone,
-                currency=chat_req.currency,
+                currency=effective_currency,
                 cancel_event=cancel_event,
                 attachments=[a.model_dump() for a in chat_req.attachments] if chat_req.attachments else None,
                 client_message_id=chat_req.client_message_id,
@@ -2004,7 +2009,7 @@ async def chat_edit(
     thread_id = _scoped_chat_thread_id(raw_thread_id, user_id)
     locale = extract_locale(request, body.get("locale"))
     timezone = body.get("timezone")
-    currency = body.get("currency")
+    currency = extract_stated_currency(new_message) or body.get("currency")
 
     # --- Phase 7.2: Daily cost cap + circuit breaker ---
     within_budget, _spent, _cap = await cost_store.check_daily_budget(user_id)

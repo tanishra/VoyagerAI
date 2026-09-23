@@ -24,7 +24,7 @@ from pydantic import BaseModel
 from agents.activity_store import load_activity, load_all_activity, save_activity
 from agents.tools import is_visual_tool, set_current_thread_id
 from agents.llm import get_formatter_model, get_orchestrator_model, get_subagent_model
-from agents.prompts import build_chat_agent_prompt
+from agents.prompts import build_chat_agent_prompt, extract_stated_budget
 from agents.subagents import get_subagents
 from agents.tools import get_orchestrator_tools, reset_orchestrator_search_count
 from config import settings as _cfg_settings
@@ -1035,14 +1035,36 @@ async def _enrich_itinerary_with_coordinates(itinerary: dict) -> dict:
         return itinerary
 
 
-def _reconcile_itinerary_budget(itinerary: dict) -> dict:
-    """Correct a declared total that disagrees with the day-level costs.
+def _format_over_budget_warning(total: float, stated_budget: tuple[float, str], currency: str) -> str:
+    from agents.prompts import CURRENCY_SYMBOLS
+
+    symbol = CURRENCY_SYMBOLS.get(currency, currency)
+    cap_amount, _cap_currency = stated_budget
+    return (
+        f"This plan totals {symbol}{total:,.0f}, which is above your stated budget of "
+        f"{symbol}{cap_amount:,.0f}."
+    )
+
+
+def _reconcile_itinerary_budget(
+    itinerary: dict,
+    stated_budget: tuple[float, str] | None = None,
+) -> dict:
+    """Correct a declared total that disagrees with the day-level costs, and
+    flag a plan that blows past what the user actually asked for.
 
     Models occasionally confuse a per-day allowance with the trip total, so
     estimated_total_cost_usd can contradict sum(daily_cost_usd). The day-level
     numbers are more granular and harder to hallucinate, so when they disagree
-    by >5% the header total is overwritten with the day sum. Mutates a copy —
-    never the original dict. Never raises.
+    by >5% the header total is overwritten with the day sum.
+
+    Self-consistency isn't the same as respecting the user's stated budget —
+    a plan can be perfectly self-consistent and still be 2-3x over what the
+    user asked for. When stated_budget (amount, ISO code) is given and its
+    currency matches the itinerary's, budget_status is corrected deterministically
+    instead of trusting the model's own self-assessment.
+
+    Mutates a copy — never the original dict. Never raises.
     """
     try:
         days = itinerary.get("days")
@@ -1055,29 +1077,71 @@ def _reconcile_itinerary_budget(itinerary: dict) -> dict:
         )
         if day_sum <= 0:
             return itinerary
+
         declared = itinerary.get("estimated_total_cost_usd")
         try:
             declared = float(declared) if declared is not None else None
         except (TypeError, ValueError):
             declared = None
-        if declared is None or declared <= 0 or abs(declared - day_sum) / day_sum > 0.05:
-            import copy
 
-            enriched = copy.deepcopy(itinerary)
+        needs_total_fix = declared is None or declared <= 0 or abs(declared - day_sum) / day_sum > 0.05
+        final_total = day_sum if needs_total_fix else declared
+
+        currency = str(itinerary.get("currency") or "USD").upper()
+        needs_currency_default = not itinerary.get("currency")
+
+        new_status = None
+        if stated_budget is not None:
+            cap_amount, cap_currency = stated_budget
+            if cap_currency == currency and cap_amount > 0:
+                if final_total > cap_amount * 1.05:
+                    new_status = "over"
+                elif final_total < cap_amount * 0.85:
+                    new_status = "under"
+                else:
+                    new_status = "within"
+        current_status = itinerary.get("budget_status")
+        needs_status_fix = new_status is not None and new_status != current_status
+
+        if not (needs_total_fix or needs_currency_default or needs_status_fix):
+            return itinerary
+
+        import copy
+
+        enriched = copy.deepcopy(itinerary)
+        if needs_total_fix:
             enriched["estimated_total_cost_usd"] = round(day_sum, 2)
             if declared is not None and declared > 0:
                 logger.warning(
                     "Reconciled itinerary total %s -> %s (sum of daily costs)",
                     declared, day_sum,
                 )
-            return enriched
-        return itinerary
+        if needs_currency_default:
+            enriched["currency"] = currency
+        if needs_status_fix:
+            logger.warning(
+                "Reconciled budget_status %s -> %s (stated budget %s %s, plan total %s %s)",
+                current_status, new_status, stated_budget[0], stated_budget[1], final_total, currency,
+            )
+            enriched["budget_status"] = new_status
+            if new_status == "over":
+                over_msg = _format_over_budget_warning(final_total, stated_budget, currency)
+                warnings = enriched.get("warnings")
+                if isinstance(warnings, list):
+                    if over_msg not in warnings:
+                        warnings.append(over_msg)
+                else:
+                    enriched["warnings"] = [over_msg]
+        return enriched
     except Exception:
         logger.warning("Itinerary budget reconciliation failed", exc_info=True)
         return itinerary
 
 
-def _reconcile_comparison_budgets(comparison: dict | None) -> dict | None:
+def _reconcile_comparison_budgets(
+    comparison: dict | None,
+    stated_budget: tuple[float, str] | None = None,
+) -> dict | None:
     """Apply _reconcile_itinerary_budget to each plan's itinerary. Never raises."""
     if not isinstance(comparison, dict):
         return comparison
@@ -1089,11 +1153,39 @@ def _reconcile_comparison_budgets(comparison: dict | None) -> dict | None:
         if isinstance(plans, list):
             for plan in plans:
                 if isinstance(plan, dict) and isinstance(plan.get("itinerary"), dict):
-                    plan["itinerary"] = _reconcile_itinerary_budget(plan["itinerary"])
+                    plan["itinerary"] = _reconcile_itinerary_budget(plan["itinerary"], stated_budget)
         return enriched
     except Exception:
         logger.warning("Comparison budget reconciliation failed", exc_info=True)
         return comparison
+
+
+async def _get_conversation_stated_budget(agent, config) -> tuple[float, str] | None:
+    """Scan the conversation for a currency amount the user stated (most recent wins).
+
+    Catches a real budget violation that internal total/day-sum consistency
+    can't see on its own — the header can agree with the days and both still
+    ignore what the user actually asked for. Never raises.
+    """
+    try:
+        state = await agent.aget_state(config)
+        messages = state.values.get("messages", [])
+        for msg in reversed(messages):
+            if getattr(msg, "type", "") != "human":
+                continue
+            content = msg.content
+            if isinstance(content, list):
+                content = " ".join(
+                    b.get("text", "") for b in content if isinstance(b, dict) and b.get("type") == "text"
+                )
+            if not isinstance(content, str):
+                continue
+            found = extract_stated_budget(content)
+            if found:
+                return found
+    except Exception:
+        return None
+    return None
 
 
 def _last_assistant_text(state: dict) -> str:
@@ -1438,11 +1530,12 @@ async def stream_chat_agent(
             plan_kind = await _detect_plan_kind(replay_text)
             comparison = _extract_comparison_from_text(replay_text) if plan_kind == "comparison" else None
             itinerary = _extract_itinerary_from_text(replay_text) if plan_kind == "itinerary" else None
+            stated_budget = await _get_conversation_stated_budget(agent, config)
             if comparison is not None:
-                yield {"event": "comparison", "data": _reconcile_comparison_budgets(comparison)}
+                yield {"event": "comparison", "data": _reconcile_comparison_budgets(comparison, stated_budget)}
             elif itinerary is not None:
                 itinerary = await _enrich_itinerary_with_coordinates(itinerary)
-                itinerary = _reconcile_itinerary_budget(itinerary)
+                itinerary = _reconcile_itinerary_budget(itinerary, stated_budget)
                 yield {"event": "itinerary", "data": itinerary}
             yield {"event": "done", "data": {"budget_reached": False}}
         except (ValueError, json.JSONDecodeError) as exc:
@@ -1534,11 +1627,12 @@ async def stream_chat_agent(
             itinerary = await _format_itinerary(draft, message)
 
     try:
+        stated_budget = await _get_conversation_stated_budget(agent, config)
         if comparison is not None:
-            yield {"event": "comparison", "data": _reconcile_comparison_budgets(comparison)}
+            yield {"event": "comparison", "data": _reconcile_comparison_budgets(comparison, stated_budget)}
         elif itinerary is not None:
             itinerary = await _enrich_itinerary_with_coordinates(itinerary)
-            itinerary = _reconcile_itinerary_budget(itinerary)
+            itinerary = _reconcile_itinerary_budget(itinerary, stated_budget)
             yield {"event": "itinerary", "data": itinerary}
         yield {"event": "done", "data": {"budget_reached": stream._budget_reached}}
     except (ValueError, json.JSONDecodeError) as exc:
@@ -1693,11 +1787,12 @@ async def regenerate_chat_agent(
             itinerary = await _format_itinerary(draft, "")
 
     try:
+        stated_budget = await _get_conversation_stated_budget(agent, forked_config)
         if comparison is not None:
-            yield {"event": "comparison", "data": _reconcile_comparison_budgets(comparison)}
+            yield {"event": "comparison", "data": _reconcile_comparison_budgets(comparison, stated_budget)}
         elif itinerary is not None:
             itinerary = await _enrich_itinerary_with_coordinates(itinerary)
-            itinerary = _reconcile_itinerary_budget(itinerary)
+            itinerary = _reconcile_itinerary_budget(itinerary, stated_budget)
             yield {"event": "itinerary", "data": itinerary}
         yield {"event": "done", "data": {"budget_reached": stream._budget_reached}}
     except (ValueError, json.JSONDecodeError) as exc:
@@ -1783,11 +1878,12 @@ async def edit_chat_agent(
                         plan_kind = await _detect_plan_kind(replay_text)
                         comparison = _extract_comparison_from_text(replay_text) if plan_kind == "comparison" else None
                         itinerary = _extract_itinerary_from_text(replay_text) if plan_kind == "itinerary" else None
+                        stated_budget = await _get_conversation_stated_budget(agent, config)
                         if comparison is not None:
-                            yield {"event": "comparison", "data": _reconcile_comparison_budgets(comparison)}
+                            yield {"event": "comparison", "data": _reconcile_comparison_budgets(comparison, stated_budget)}
                         elif itinerary is not None:
                             itinerary = await _enrich_itinerary_with_coordinates(itinerary)
-                            itinerary = _reconcile_itinerary_budget(itinerary)
+                            itinerary = _reconcile_itinerary_budget(itinerary, stated_budget)
                             yield {"event": "itinerary", "data": itinerary}
                         yield {"event": "done", "data": {"budget_reached": False}}
                     except (ValueError, json.JSONDecodeError) as exc:
@@ -1887,11 +1983,12 @@ async def edit_chat_agent(
             itinerary = await _format_itinerary(draft, new_message)
 
     try:
+        stated_budget = await _get_conversation_stated_budget(agent, run_config)
         if comparison is not None:
-            yield {"event": "comparison", "data": _reconcile_comparison_budgets(comparison)}
+            yield {"event": "comparison", "data": _reconcile_comparison_budgets(comparison, stated_budget)}
         elif itinerary is not None:
             itinerary = await _enrich_itinerary_with_coordinates(itinerary)
-            itinerary = _reconcile_itinerary_budget(itinerary)
+            itinerary = _reconcile_itinerary_budget(itinerary, stated_budget)
             yield {"event": "itinerary", "data": itinerary}
         yield {"event": "done", "data": {"budget_reached": stream._budget_reached}}
     except (ValueError, json.JSONDecodeError) as exc:
@@ -2019,8 +2116,9 @@ async def edit_itinerary_agent(
 
     try:
         if itinerary is not None:
+            stated_budget = await _get_conversation_stated_budget(agent, config)
             itinerary = await _enrich_itinerary_with_coordinates(itinerary)
-            itinerary = _reconcile_itinerary_budget(itinerary)
+            itinerary = _reconcile_itinerary_budget(itinerary, stated_budget)
             yield {"event": "itinerary", "data": itinerary}
         yield {"event": "done", "data": {"budget_reached": stream._budget_reached}}
     except (ValueError, json.JSONDecodeError) as exc:
