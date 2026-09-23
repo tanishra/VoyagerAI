@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 
 vi.mock('swr', () => ({
   default: (key: string | null) => {
@@ -39,6 +39,7 @@ const mockMap = {
 
 vi.mock('maplibre-gl', () => {
   return {
+    supported: vi.fn(() => true),
     Map: class MockMap {
       on = mockMap.on;
       once = mockMap.once;
@@ -72,6 +73,13 @@ vi.mock('maplibre-gl/dist/maplibre-gl.css', () => ({}));
 
 import ItineraryMap from '@/components/ItineraryMap';
 import type { DayPlan } from '@/lib/types';
+
+// jsdom has no real canvas/WebGL — stub getContext so the component's WebGL
+// probe behaves like a real browser by default; individual tests can
+// override to simulate an unsupported browser.
+const getContextMock = vi.fn((): object | null => ({}));
+// @ts-expect-error jsdom's HTMLCanvasElement.getContext isn't fully typed for a stub
+HTMLCanvasElement.prototype.getContext = getContextMock;
 
 const daysWithCoords: DayPlan[] = [
   {
@@ -167,6 +175,26 @@ describe('ItineraryMap', () => {
   it('calls resize() after mount to settle container size', async () => {
     render(<ItineraryMap days={daysWithCoords} destination="Paris, France" />);
     await vi.waitFor(() => expect(mockMap.resize).toHaveBeenCalled());
+  });
+
+  it('shows a link-list fallback when WebGL is unsupported', () => {
+    getContextMock.mockReturnValueOnce(null).mockReturnValueOnce(null);
+    render(<ItineraryMap days={daysWithCoords} destination="Paris, France" />);
+    expect(screen.getByText(/Map unavailable/)).toBeInTheDocument();
+    expect(screen.getAllByText(/Check-in/).length).toBeGreaterThan(0);
+  });
+
+  it('falls back to a link list if the map never fires load', async () => {
+    vi.useFakeTimers();
+    // First `.once` call is the fail-timer's own 'load' registration —
+    // swallow it so the timeout fires instead of clearing.
+    mockMap.once.mockImplementationOnce(() => {});
+    render(<ItineraryMap days={daysWithCoords} destination="Paris, France" />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10000);
+    });
+    expect(screen.getByText(/Map unavailable/)).toBeInTheDocument();
+    vi.useRealTimers();
   });
 
   it('re-fits bounds when itinerary markers change (edit/regenerate)', async () => {

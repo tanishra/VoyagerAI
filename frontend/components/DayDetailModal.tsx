@@ -4,19 +4,18 @@ import { useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Bus, Home, DollarSign, Lightbulb } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import dynamic from 'next/dynamic';
 import type { DayPlan } from '@/lib/types';
 import { useLocale } from '@/lib/useLocale';
 import { formatCurrency } from '@/lib/format';
+import { asCurrency } from '@/lib/currency';
 import { useCurrency } from '@/lib/useCurrency';
 import ActivityCard from './ActivityCard';
-
-const ItineraryMap = dynamic(() => import('./ItineraryMap'), { ssr: false });
 
 interface DayDetailModalProps {
   day: DayPlan;
   dayNumber: number;
   destination: string;
+  currency?: string;
   onClose: () => void;
 }
 
@@ -26,10 +25,11 @@ const SLOTS = [
   { key: 'evening' as const, labelKey: 'evening' as const },
 ];
 
-export default function DayDetailModal({ day, dayNumber, destination, onClose }: DayDetailModalProps) {
+export default function DayDetailModal({ day, dayNumber, destination, currency: itineraryCurrency, onClose }: DayDetailModalProps) {
   const t = useTranslations('itinerary');
   const locale = useLocale();
-  const [currency] = useCurrency();
+  const [preferredCurrency] = useCurrency();
+  const currency = asCurrency(itineraryCurrency) ?? preferredCurrency;
   const modalRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -86,11 +86,6 @@ export default function DayDetailModal({ day, dayNumber, destination, onClose }:
 
           {/* Scrollable content */}
           <div className="flex-1 overflow-y-auto">
-            {/* Mini-map */}
-            <div className="border-b border-border">
-              <ItineraryMap days={[day]} destination={destination} />
-            </div>
-
             {/* Activity Cards */}
             <div className="p-4 space-y-3">
               {SLOTS.map(({ key }) => {

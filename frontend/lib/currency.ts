@@ -67,3 +67,12 @@ export function setStoredCurrency(currency: Currency): void {
 export function getEffectiveCurrency(locale: Locale): Currency {
   return getStoredCurrency() ?? getDefaultCurrencyForLocale(locale);
 }
+
+/** Narrow a backend-supplied currency code (e.g. `itinerary.currency`) to a
+ * known `Currency`, or `undefined` if missing/unrecognized. Callers should
+ * fall back to the app-wide preference in that case. */
+export function asCurrency(code?: string | null): Currency | undefined {
+  return code && (SUPPORTED_CURRENCIES as readonly string[]).includes(code)
+    ? (code as Currency)
+    : undefined;
+}

@@ -1,6 +1,6 @@
 'use client';
 
-import { MoreHorizontal, Printer, FileJson, FileText, Share2, Check, Map as MapIcon, ChevronDown, Calendar, Wallet, Pencil, ExternalLink } from 'lucide-react';
+import { MoreHorizontal, Printer, FileJson, FileText, Share2, Check, Map as MapIcon, ChevronDown, Calendar, Pencil, ExternalLink } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import { useTranslations } from 'next-intl';
 import dynamic from 'next/dynamic';
@@ -9,13 +9,11 @@ import type { Itinerary, DayPlan } from '@/lib/types';
 import { createShare, exportItinerary } from '@/lib/share-api';
 import { useLocale } from '@/lib/useLocale';
 import { formatCurrency } from '@/lib/format';
+import { asCurrency } from '@/lib/currency';
 import { fetchWikimediaImage } from '@/lib/wikimedia';
 import DayDetailModal from './DayDetailModal';
 import TimelineView from './TimelineView';
-import BudgetDonut from './BudgetDonut';
-import DailyCostChart from './DailyCostChart';
 import BudgetStatus from './BudgetStatus';
-import { computeCostBreakdown } from '@/lib/budget-utils';
 import { useCurrency } from '@/lib/useCurrency';
 import ItineraryEditor from './ItineraryEditor';
 
@@ -41,9 +39,12 @@ export default function ItineraryCard({ itinerary, threadId, printMode = false, 
   const [mapExpanded, setMapExpanded] = useState(false);
   const [selectedDay, setSelectedDay] = useState<DayPlan | null>(null);
   const [activeDay, setActiveDay] = useState<number | null>(null);
-  const [budgetExpanded, setBudgetExpanded] = useState(false);
   const [editing, setEditing] = useState(false);
-  const [currency] = useCurrency();
+  const [preferredCurrency] = useCurrency();
+  // The itinerary's own currency (what the numbers are actually expressed
+  // in) always wins over the app-wide preference — otherwise the symbol
+  // shown can silently disagree with the values behind it.
+  const currency = asCurrency(itinerary.currency) ?? preferredCurrency;
   const menuRef = useRef<HTMLDivElement>(null);
 
   const { data: destImage, isLoading: destImageLoading } = useSWR(
@@ -279,27 +280,6 @@ export default function ItineraryCard({ itinerary, threadId, printMode = false, 
             ))}
           </div>
         )}
-        {/* Budget breakdown section — hidden in print mode */}
-        {!printMode && (
-          <div className="print-hidden">
-            <button
-              onClick={() => setBudgetExpanded(!budgetExpanded)}
-              className="w-full flex items-center justify-between px-3 py-2 rounded-lg bg-muted border border-border text-sm text-foreground hover:bg-muted/80 transition-colors cursor-pointer"
-            >
-              <span className="flex items-center gap-2">
-                <Wallet className="w-4 h-4 text-primary" />
-                {t('budgetBreakdown')}
-              </span>
-              <ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform ${budgetExpanded ? 'rotate-180' : ''}`} />
-            </button>
-            {budgetExpanded && (
-              <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-4 p-3 rounded-lg bg-muted/50 border border-border">
-                <BudgetDonut breakdown={computeCostBreakdown(itinerary)} currency={currency} />
-                <DailyCostChart days={days} currency={currency} onBarClick={(day) => setSelectedDay(day)} />
-              </div>
-            )}
-          </div>
-        )}
         {/* Map section — hidden in print mode */}
         {!printMode && (
           <div className="print-hidden">
@@ -349,6 +329,7 @@ export default function ItineraryCard({ itinerary, threadId, printMode = false, 
           day={selectedDay}
           dayNumber={selectedDay.day}
           destination={itinerary.destination}
+          currency={currency}
           onClose={() => setSelectedDay(null)}
         />
       )}

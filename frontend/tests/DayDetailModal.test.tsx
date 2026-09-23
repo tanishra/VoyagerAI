@@ -3,10 +3,6 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import DayDetailModal from '@/components/DayDetailModal';
 import type { DayPlan } from '@/lib/types';
 
-vi.mock('@/components/ItineraryMap', () => ({
-  default: () => <div data-testid="itinerary-map">Map</div>,
-}));
-
 vi.mock('swr', () => {
   return {
     default: (key: string | null) => {
@@ -81,10 +77,10 @@ describe('DayDetailModal', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it('renders mini-map', () => {
+  it('does not render a map (day panel is map-free)', () => {
     const day = makeDay();
     render(<DayDetailModal day={day} dayNumber={1} destination="Tokyo" onClose={vi.fn()} />);
-    expect(screen.getByTestId('itinerary-map')).toBeInTheDocument();
+    expect(screen.queryByTestId('itinerary-map')).not.toBeInTheDocument();
   });
 
   it('renders as a full-height right-side panel, not a small centered card', () => {

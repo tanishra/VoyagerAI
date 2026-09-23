@@ -170,19 +170,9 @@ describe('ItineraryCard', () => {
     expect(map.getAttribute('data-active-day')).toBe('1');
   });
 
-  it('shows budget breakdown toggle button', () => {
+  it('does not show a budget breakdown section (removed — was showing wrong data)', () => {
     render(<ItineraryCard itinerary={makeItinerary()} threadId="t1" />);
-    expect(screen.getByText('Budget Breakdown')).toBeInTheDocument();
-  });
-
-  it('expands budget breakdown section when toggled', () => {
-    render(<ItineraryCard itinerary={makeItinerary()} threadId="t1" />);
-    fireEvent.click(screen.getByText('Budget Breakdown'));
-    expect(screen.getByText('Total')).toBeInTheDocument();
-    expect(screen.getByText('Accommodation')).toBeInTheDocument();
-    expect(screen.getByText('Food')).toBeInTheDocument();
-    expect(screen.getByText('Activities')).toBeInTheDocument();
-    expect(screen.getByText('Transport')).toBeInTheDocument();
+    expect(screen.queryByText('Budget Breakdown')).not.toBeInTheDocument();
   });
 
   it('shows budget status badge next to cost', () => {
@@ -190,9 +180,9 @@ describe('ItineraryCard', () => {
     expect(screen.getByText('Within budget')).toBeInTheDocument();
   });
 
-  it('does not show budget breakdown toggle in print mode', () => {
-    render(<ItineraryCard itinerary={makeItinerary()} threadId="t1" printMode />);
-    expect(screen.queryByText('Budget Breakdown')).not.toBeInTheDocument();
+  it('uses the itinerary currency over the app preference when formatting cost', () => {
+    render(<ItineraryCard itinerary={makeItinerary({ currency: 'INR' })} threadId="t1" />);
+    expect(screen.getByText(/₹/)).toBeInTheDocument();
   });
 
   it('shows destination banner image when loaded', () => {

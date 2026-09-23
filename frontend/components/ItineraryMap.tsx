@@ -123,6 +123,21 @@ export default function ItineraryMap({ days, destination, activeDay, onMarkerCli
   );
   const hasAnyCoords = daysWithCoords.length > 0;
 
+  // MapLibre requires WebGL — some corporate/locked-down browsers disable
+  // it entirely, in which case the map silently never paints (canvas stays
+  // blank, no error event fires). Probe for it directly rather than
+  // constructing a Map and hoping.
+  const webglSupported = useMemo(() => {
+    if (typeof document === 'undefined') return true;
+    try {
+      const canvas = document.createElement('canvas');
+      return !!(canvas.getContext('webgl2') || canvas.getContext('webgl'));
+    } catch {
+      return false;
+    }
+  }, []);
+  const [mapFailed, setMapFailed] = useState(false);
+
   const [internalSelectedDay, setInternalSelectedDay] = useState(0);
   const isControlled = activeDay !== undefined;
   const selectedDayIndex = isControlled
@@ -157,19 +172,48 @@ export default function ItineraryMap({ days, destination, activeDay, onMarkerCli
 
   // Create map once on mount
   useEffect(() => {
-    if (!hasAnyCoords || !mapContainerRef.current) return;
+    if (!hasAnyCoords || !webglSupported || !mapContainerRef.current) return;
 
+    // A vector style (glyphs + sprite + vector tiles = 3 separate origins)
+    // has three independent ways to fail silently into a grey box. A raster
+    // tile source is a single PNG fetch per tile — far more resilient to
+    // ad-blockers, flaky networks, and browsers without WebGL2.
     const map = new maplibregl.Map({
       container: mapContainerRef.current,
-      style: 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json',
+      style: {
+        version: 8,
+        sources: {
+          'raster-tiles': {
+            type: 'raster',
+            tiles: [
+              'https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
+              'https://b.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
+              'https://c.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
+              'https://d.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
+            ],
+            tileSize: 256,
+            attribution: '\u00A9 OpenStreetMap contributors \u00A9 CARTO',
+          },
+        },
+        layers: [
+          { id: 'background', type: 'background', paint: { 'background-color': '#f5f5f3' } },
+          { id: 'raster-tiles', type: 'raster', source: 'raster-tiles', minzoom: 0, maxzoom: 20 },
+        ],
+      },
       center: currentMarkers.length > 0 ? [currentMarkers[0].lng, currentMarkers[0].lat] : [0, 0],
       zoom: 12,
     });
 
     mapRef.current = map;
+    setMapFailed(false);
     map.on('error', (e) => {
       console.error('ItineraryMap tile/style error', e?.error ?? e);
     });
+
+    // Give the tiles a fair chance to load before treating the map as
+    // failed — a real load() clears this before it ever fires.
+    const failTimer = setTimeout(() => setMapFailed(true), 10000);
+    map.once('load', () => clearTimeout(failTimer));
 
     // MapLibre never resizes itself: a map constructed before the container
     // reaches its final layout (collapsible sections, dialog entrance
@@ -182,6 +226,7 @@ export default function ItineraryMap({ days, destination, activeDay, onMarkerCli
     observer?.observe(mapContainerRef.current);
 
     return () => {
+      clearTimeout(failTimer);
       cancelAnimationFrame(raf);
       observer?.disconnect();
       markersRef.current.forEach((m) => m.remove());
@@ -321,11 +366,32 @@ export default function ItineraryMap({ days, destination, activeDay, onMarkerCli
       </div>
       )}
 
-      <div
-        ref={mapContainerRef}
-        className="w-full h-[360px] rounded-lg border border-border overflow-hidden"
-        aria-label={t('mapForDay', { day: currentDay?.day ?? 1, destination })}
-      />
+      <div className="relative">
+        <div
+          ref={mapContainerRef}
+          className="w-full h-[360px] rounded-lg border border-border overflow-hidden"
+          aria-label={t('mapForDay', { day: currentDay?.day ?? 1, destination })}
+        />
+        {(!webglSupported || mapFailed) && (
+          <div className="absolute inset-0 rounded-lg border border-border bg-muted/95 p-4 space-y-2 overflow-y-auto">
+            <p className="text-sm text-muted-foreground">{t('mapUnavailable')}</p>
+            <ul className="space-y-1">
+              {currentMarkers.map((m) => (
+                <li key={m.slot} className="text-xs">
+                  <a
+                    href={`https://www.google.com/maps/search/?api=1&query=${m.lat},${m.lng}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-primary hover:text-primary/80"
+                  >
+                    {t(m.slot)}: {m.activity} &rarr;
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
 
       <div className="flex items-center gap-4 text-xs text-muted-foreground">
         {currentMarkers.map((m) => (

@@ -23,6 +23,10 @@ export interface Itinerary {
   destination: string;
   total_days: number;
   estimated_total_cost_usd: number | null;
+  // The 3-letter ISO code the cost fields are actually expressed in — may
+  // differ from the app's currency preference (e.g. the user typed "₹" in
+  // chat). Absent on older/legacy itineraries — treat as unknown, not USD.
+  currency?: string;
   // Optional: the deterministic prose-fallback parser (untagged comparison
   // prose from the model) only fills destination/total_days/cost — these
   // fields are absent in that shape, not just empty.
