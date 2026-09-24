@@ -251,7 +251,8 @@
     "recommended": "Recommended",
     "perDay": "{cost} per day",
     "regenerateTier": "Try a different plan",
-    "limitedResearch": "Limited live data — prices and availability may be less accurate"
+    "limitedResearch": "Limited live data — prices and availability may be less accurate",
+    "whyTier": "Why this tier?"
   },
   "preferences": {
     "title": "Your Preferences",

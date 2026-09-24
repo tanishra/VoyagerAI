@@ -251,7 +251,8 @@
     "recommended": "Empfohlen",
     "perDay": "{cost} pro Tag",
     "regenerateTier": "Anderen Plan versuchen",
-    "limitedResearch": "Begrenzte Live-Daten — Preise und Verfügbarkeit können ungenau sein"
+    "limitedResearch": "Begrenzte Live-Daten — Preise und Verfügbarkeit können ungenau sein",
+    "whyTier": "Warum diese Stufe?"
   },
   "preferences": {
     "title": "Ihre Einstellungen",

@@ -251,7 +251,8 @@
     "recommended": "Recomendado",
     "perDay": "{cost} por día",
     "regenerateTier": "Probar otro plan",
-    "limitedResearch": "Datos en vivo limitados — los precios y la disponibilidad pueden ser menos precisos"
+    "limitedResearch": "Datos en vivo limitados — los precios y la disponibilidad pueden ser menos precisos",
+    "whyTier": "¿Por qué este nivel?"
   },
   "preferences": {
     "title": "Tus Preferencias",

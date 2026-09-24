@@ -251,7 +251,8 @@
     "recommended": "おすすめ",
     "perDay": "{cost}/日",
     "regenerateTier": "別のプランを試す",
-    "limitedResearch": "ライブデータが限定的 — 価格や空き状況の精度が低い可能性があります"
+    "limitedResearch": "ライブデータが限定的 — 価格や空き状況の精度が低い可能性があります",
+    "whyTier": "このティアを選ぶ理由"
   },
   "preferences": {
     "title": "あなたの設定",

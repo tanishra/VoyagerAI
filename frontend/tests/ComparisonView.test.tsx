@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import ComparisonView from '@/app/[locale]/chat/ComparisonView';
 import type { ComparisonData } from '@/lib/types';
 
@@ -305,5 +305,38 @@ describe('currency source (U4)', () => {
     render(<ComparisonView data={inrData} onSelect={() => {}} />);
     expect(screen.getAllByText(/₹/).length).toBeGreaterThan(0);
     expect(screen.queryByText(/\$/)).not.toBeInTheDocument();
+  });
+});
+
+describe('why-tier explainer (U3)', () => {
+  const withHighlights = {
+    ...mockData,
+    plans: mockData.plans.map((p) => ({
+      ...p,
+      highlights: [`Best for ${p.tier} travelers`],
+    })),
+  };
+
+  it('shows the chip when highlights or tradeoffs exist', () => {
+    render(<ComparisonView data={withHighlights} onSelect={() => {}} />);
+    expect(screen.getAllByText(/Why this tier/i).length).toBe(3);
+  });
+
+  it('opens the popover with highlights and closes on second click', () => {
+    render(<ComparisonView data={withHighlights} onSelect={() => {}} />);
+    const chip = screen.getAllByText(/Why this tier/i)[0];
+    act(() => fireEvent.click(chip));
+    expect(screen.getByText('Best for budget travelers')).toBeInTheDocument();
+    act(() => fireEvent.click(screen.getAllByText(/Why this tier/i)[0]));
+    expect(screen.queryByText('Best for budget travelers')).not.toBeInTheDocument();
+  });
+
+  it('hides the chip when a plan has neither highlights nor tradeoffs', () => {
+    const bare = {
+      ...mockData,
+      plans: mockData.plans.map((p) => ({ ...p, tradeoffs: [], highlights: undefined })),
+    };
+    render(<ComparisonView data={bare} onSelect={() => {}} />);
+    expect(screen.queryByText(/Why this tier/i)).not.toBeInTheDocument();
   });
 });
