@@ -343,6 +343,19 @@ def _history_message_text(content) -> str:
     return "\n".join(p for p in parts if p.strip())
 
 
+def _payload_id_from_content(content) -> str | None:
+    """Extract `_pipeline_payload_id` from a pipeline tool message's JSON
+    content. Returns None for anything else (text, block lists, other tools)."""
+    if not isinstance(content, str) or not content.lstrip().startswith("{"):
+        return None
+    try:
+        data = json.loads(content)
+    except (json.JSONDecodeError, ValueError):
+        return None
+    pid = data.get("_pipeline_payload_id") if isinstance(data, dict) else None
+    return pid if isinstance(pid, str) and pid else None
+
+
 class _ObsQueue:
     """Ordered, referenced observability writes for one SSE stream.
 
@@ -2055,6 +2068,12 @@ async def chat_regenerate_tier(
         raise HTTPException(status_code=502, detail="Tier regeneration failed — existing plan unchanged")
 
     await payload_store.set_thread_state(thread_id, "latest_comparison", updated)
+    # Keep the replayable record fresh — reload must show the regenerated card.
+    latest_id = await payload_store.get_thread_state(thread_id, "latest_comparison_id")
+    if latest_id:
+        await payload_store.set_thread_state(
+            thread_id, f"payload:{latest_id}", {"kind": "comparison", "data": updated}
+        )
     return {"comparison": updated}
 
 
@@ -2261,6 +2280,7 @@ async def chat_edit_itinerary(
         subagent_run_ids: set[str] = set()
         stream_failed = False
         stream_text = ""
+        edited_itinerary: dict | None = None
 
         try:
             await thread_store.update_status(user_id, scoped_thread_id, "busy")
@@ -2284,6 +2304,11 @@ async def chat_edit_itinerary(
                     if payload.get("event") == "token":
                         raw = json.loads(payload["data"])
                         stream_text += raw.get("data", "")
+                    elif payload.get("event") == "itinerary":
+                        try:
+                            edited_itinerary = json.loads(payload["data"])["data"]
+                        except (json.JSONDecodeError, TypeError, KeyError):
+                            pass
                     yield payload
         except Exception as exc:  # noqa: BLE001
             logger.error(
@@ -2296,6 +2321,19 @@ async def chat_edit_itinerary(
             yield _sse("error", get_error_message(classify_exception(exc), locale))
         finally:
             unregister_cancel(scoped_thread_id)
+            # Keep the replayable record fresh — reload shows the edited card.
+            if edited_itinerary is not None and not stream_failed:
+                try:
+                    from payload_store import payload_store as _ps
+                    await _ps.set_thread_state(scoped_thread_id, "latest_itinerary", edited_itinerary)
+                    latest_id = await _ps.get_thread_state(scoped_thread_id, "latest_itinerary_id")
+                    if latest_id:
+                        await _ps.set_thread_state(
+                            scoped_thread_id, f"payload:{latest_id}",
+                            {"kind": "itinerary", "data": edited_itinerary},
+                        )
+                except Exception:  # noqa: BLE001
+                    logger.warning("Failed to persist edited itinerary state", exc_info=True)
             try:
                 final_status = "error" if stream_failed else "idle"
                 summary = await generate_summary("Edit itinerary", stream_text, locale=locale)
@@ -2481,10 +2519,46 @@ async def get_thread_history(
         except Exception:
             pass
 
+    # --- Payload replay (R4) --------------------------------------------------
+    # Pipeline tool messages carry {"_pipeline_payload_id": ...} — their cards
+    # were delivered once via a one-shot key and are long gone. A durable
+    # per-id record lives in thread state; re-attach it to the assistant turn
+    # that followed the tool call, and hide the raw tool JSON from the output.
+    from payload_store import payload_store as _payload_store
+
+    payload_msgs: list[tuple[int, str]] = []  # (msg_index, payload_id)
+    hidden_idx: set[int] = set()
     for i, msg in enumerate(messages):
+        if getattr(msg, "type", "") != "tool":
+            continue
+        pid = _payload_id_from_content(getattr(msg, "content", ""))
+        if pid:
+            payload_msgs.append((i, pid))
+            hidden_idx.add(i)
+
+    payload_attach: dict[int, dict] = {}  # target msg index -> {"kind","data"}
+    if payload_msgs:
+        for i, pid in payload_msgs:
+            try:
+                record = await _payload_store.get_thread_state(thread_id, f"payload:{pid}")
+            except Exception:  # noqa: BLE001, S110
+                record = None
+            if not isinstance(record, dict) or not isinstance(record.get("data"), dict):
+                continue  # expired/missing — card just doesn't render, as before
+            target = i
+            for j in range(i + 1, len(messages)):
+                if getattr(messages[j], "type", "") == "ai":
+                    target = j
+                    break
+            payload_attach.setdefault(target, record)
+
+    for i, msg in enumerate(messages):
+        if i in hidden_idx and i not in payload_attach:
+            continue  # raw payload tool JSON — never render
         role = "user" if getattr(msg, "type", "") == "human" else "assistant"
-        content = _history_message_text(getattr(msg, "content", ""))
-        if content.strip():
+        content = "" if i in hidden_idx else _history_message_text(getattr(msg, "content", ""))
+        replay = payload_attach.get(i)
+        if content.strip() or replay:
             entry: dict = {"role": role, "content": _strip_structured_tags(content)}
             if role == "assistant":
                 itinerary = _extract_itinerary_from_text(content)
@@ -2494,6 +2568,12 @@ async def get_thread_history(
                     entry["itinerary"] = itinerary
                 if comparison:
                     entry["comparison"] = comparison
+                if replay:
+                    kind = replay.get("kind")
+                    if kind == "itinerary" and "itinerary" not in entry:
+                        entry["itinerary"] = await _enrich_itinerary_with_coordinates(replay["data"])
+                    elif kind == "comparison" and "comparison" not in entry:
+                        entry["comparison"] = replay["data"]
 
                 # Attach per-message activity
                 msg_activity = None

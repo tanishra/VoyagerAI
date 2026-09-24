@@ -224,7 +224,11 @@ def _wire_stores(monkeypatch, *, constraints=None, comparison=None):
     import agents.pipeline as pipeline_module
 
     async def fake_get_state(tid, key):
-        return {"constraints": constraints, "latest_comparison": comparison}.get(key)
+        return {
+            "constraints": constraints,
+            "latest_comparison": comparison,
+            "latest_comparison_id": "pc1",
+        }.get(key)
 
     captured = {}
 
@@ -299,6 +303,8 @@ class TestRegenerateTierEndpoint:
         body = resp.json()["comparison"]
         assert body["plans"][1]["itinerary"]["estimated_total_cost_usd"] == 46000
         assert captured["latest_comparison"] == updated
+        # Replayable record updated so reload shows the regenerated card
+        assert captured["payload:pc1"] == {"kind": "comparison", "data": updated}
 
         # Scoped thread id + tier reached the pipeline call
         args, kwargs = fake_regen.call_args

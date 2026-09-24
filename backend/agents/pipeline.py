@@ -66,8 +66,14 @@ def is_pipeline_tool(name: str) -> bool:
 async def store_payload(thread_id: str, kind: str, data: dict) -> str:
     payload_id = uuid.uuid4().hex
     await payload_store.store(payload_id, kind, data)
-    if kind == "comparison" and thread_id:
-        await payload_store.set_thread_state(thread_id, "latest_comparison", data)
+    if thread_id:
+        # Durable per-id record so history can re-attach the card on reload —
+        # the one-shot key above is consumed on delivery and is gone by then.
+        await payload_store.set_thread_state(
+            thread_id, f"payload:{payload_id}", {"kind": kind, "data": data}
+        )
+        await payload_store.set_thread_state(thread_id, f"latest_{kind}", data)
+        await payload_store.set_thread_state(thread_id, f"latest_{kind}_id", payload_id)
     return payload_id
 
 
