@@ -29,6 +29,36 @@ _MIN_INTERVAL = 1.1  # seconds between outbound Nominatim calls
 _throttle_lock = asyncio.Lock()
 _last_nominatim_call: float = 0.0
 
+# Negative-result cache: normalized query -> monotonic timestamp of failure.
+# Repeated un-geocodable locations across itineraries shouldn't burn
+# throttled Nominatim calls. Short TTL so a transient outage recovers.
+_MISS_TTL = 3600.0          # "no results" / non-200 — the location likely doesn't resolve
+_MISS_ERR_TTL = 300.0       # transient errors (timeout, DNS) — retry sooner
+_MISS_MAX = 512
+_miss_cache: dict[str, tuple[float, float]] = {}
+
+
+def _miss_key(query: str) -> str:
+    return query.lower().strip()
+
+
+def _missed(query: str) -> bool:
+    entry = _miss_cache.get(_miss_key(query))
+    if entry is None:
+        return False
+    ts, ttl = entry
+    if time.monotonic() - ts > ttl:
+        del _miss_cache[_miss_key(query)]
+        return False
+    return True
+
+
+def _record_miss(query: str, ttl: float = _MISS_TTL) -> None:
+    if len(_miss_cache) >= _MISS_MAX:
+        oldest = min(_miss_cache, key=lambda k: _miss_cache[k][0])
+        del _miss_cache[oldest]
+    _miss_cache[_miss_key(query)] = (time.monotonic(), ttl)
+
 
 async def _throttle() -> None:
     """Ensure at least _MIN_INTERVAL seconds between outbound Nominatim calls."""
@@ -50,6 +80,11 @@ async def geocode(query: str) -> dict | None:
     Never raises — returns None on any failure.
     """
     if not query or not query.strip():
+        return None
+
+    # Known recent failure — skip the network call entirely
+    if _missed(query):
+        logger.debug("Geocode miss-cache hit: %s", query[:60])
         return None
 
     # Check cache first
@@ -75,11 +110,13 @@ async def geocode(query: str) -> dict | None:
             )
             if resp.status_code != 200:
                 logger.warning("Nominatim returned %d for query: %s", resp.status_code, query[:80])
+                _record_miss(query)
                 return None
 
             results = resp.json()
             if not results:
                 logger.debug("Nominatim: no results for query: %s", query[:80])
+                _record_miss(query)
                 return None
 
             lat = float(results[0]["lat"])
@@ -91,4 +128,5 @@ async def geocode(query: str) -> dict | None:
 
     except Exception as exc:  # noqa: BLE001
         logger.warning("Geocode failed for query '%s': %s", query[:80], exc)
+        _record_miss(query, ttl=_MISS_ERR_TTL)
         return None

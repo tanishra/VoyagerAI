@@ -174,16 +174,16 @@ After "plan a trip", model asks for fields in prose. Chips for travel_style / gr
 ### M2. Blank-map fallback — FIXED (commit `c33c067`)
 Day-panel map previously stayed blank on missing coords; now falls back instead.
 
-### M3. Geocode coverage gaps — OPEN (verify live)
-Pipeline enriches coordinates, but activities the geocoder misses get no pin — silently. Check a real generated itinerary: count activities vs pins.
+### M3. Geocode coverage gaps — FIXED
+Backend fallback chain per slot: `"{location}, {dest}"` → `"{activity}, {dest}"` → destination centroid flagged `geo_approx: true`. Frontend renders approx pins dashed/hollow + "Approximate location" label in popup. Coverage logged per itinerary (`geo coverage: N exact, M approx`). Transient geocode errors cached briefly (60s) — not the full 180-day TTL. Rate-limit throttle preserved.
 
-**Options if gaps:** per-day centroid fallback pin; log geocode misses per itinerary for observability; async re-enrich after card delivery.
-**Files:** `backend/geocode_cache.py`, enrichment stage in `pipeline.py`, `ItineraryMap.tsx`.
+**Verify:** generate itinerary → every slot has a pin; vague locations show dashed approx pins.
+**Files:** `backend/geocode_service.py`, `backend/agents/deep_agent.py`, `frontend/components/ItineraryMap.tsx`, `frontend/lib/types.ts`.
 
 ## Suggested order
 
 1. ~~**R1** — decide Redis path~~ FIXED — Postgres durable tier (needs `DATABASE_URL` set to go live)
 2. ~~**U1 + U2**~~ FIXED — stage status line + comparison/itinerary skeletons
-3. **M3** — verify pins on a real itinerary
+3. ~~**M3**~~ FIXED — backend fallback chain + approx pins (verify visually on a real itinerary)
 4. **U6** — single-tier regenerate (cost saver)
 5. **R2–R5, U3–U5, U7** — batch when touching those files

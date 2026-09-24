@@ -222,7 +222,8 @@
     "moveDown": "Move down",
     "dropHere": "Drop activity here",
     "locationPlaceholder": "Location (optional)",
-    "durationPlaceholder": "Duration (e.g., 2h)"
+    "durationPlaceholder": "Duration (e.g., 2h)",
+    "approxLocation": "Approximate location"
   },
   "comparison": {
     "title": "Compare Plans",

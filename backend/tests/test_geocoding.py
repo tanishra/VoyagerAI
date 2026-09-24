@@ -210,6 +210,47 @@ class TestGeocodeService:
             assert result is None
 
     @pytest.mark.asyncio
+    async def test_miss_cache_skips_http(self, fresh_cache):
+        """A failed query is remembered — the second call makes no HTTP request."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = []
+
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value=mock_response)
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+
+        import geocode_service
+        geocode_service._miss_cache.clear()
+
+        with (
+            patch("geocode_service.geocode_cache", fresh_cache),
+            patch("geocode_service.httpx.AsyncClient", return_value=mock_client) as mock_cls,
+            patch("geocode_service._throttle", new_callable=AsyncMock),
+        ):
+            from geocode_service import geocode
+
+            assert await geocode("Unresolvable Spot XQZ") is None
+            assert await geocode("Unresolvable Spot XQZ") is None
+            # HTTP client built once — the second call short-circuited
+            assert mock_cls.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_miss_cache_error_uses_short_ttl(self, fresh_cache):
+        """Transient errors get the short TTL, definitive misses the long one."""
+        import geocode_service
+
+        geocode_service._miss_cache.clear()
+        geocode_service._record_miss("err query", ttl=geocode_service._MISS_ERR_TTL)
+        geocode_service._record_miss("empty query")
+
+        _, err_ttl = geocode_service._miss_cache["err query"]
+        _, empty_ttl = geocode_service._miss_cache["empty query"]
+        assert err_ttl == geocode_service._MISS_ERR_TTL
+        assert empty_ttl == geocode_service._MISS_TTL
+
+    @pytest.mark.asyncio
     async def test_throttle_enforces_interval(self):
         """Two rapid calls to _throttle should wait at least 1.1s total."""
         from geocode_service import _MIN_INTERVAL, _throttle
@@ -261,20 +302,17 @@ class TestEnrichItinerary:
                 assert slot["lng"] == pytest.approx(2.35)
 
     @pytest.mark.asyncio
-    async def test_enrich_partial_failure(self):
-        """Some geocode calls return None → those slots lack lat/lng, others have them."""
+    async def test_enrich_partial_failure_gets_approx_pins(self):
+        """Slots whose own queries miss get the destination centroid, flagged geo_approx."""
         from agents.deep_agent import _enrich_itinerary_with_coordinates
 
         itinerary = _make_itinerary()
 
-        call_count = 0
-
         async def mock_geocode(query):
-            nonlocal call_count
-            call_count += 1
-            if call_count % 2 == 0:
-                return None
-            return {"lat": 48.85, "lng": 2.35}
+            # Only the destination itself resolves — every slot query misses.
+            if query == "Paris, France":
+                return {"lat": 48.85, "lng": 2.35}
+            return None
 
         with patch("agents.deep_agent.geocode", new=mock_geocode):
             enriched = await _enrich_itinerary_with_coordinates(itinerary)
@@ -282,22 +320,87 @@ class TestEnrichItinerary:
         # Original itinerary should not be mutated
         assert "lat" not in itinerary["days"][0]["morning"]
 
-        # Enriched should have some slots with coords and some without
-        slots_with_coords = 0
-        slots_without = 0
         for day in enriched["days"]:
             for slot_key in ("morning", "afternoon", "evening"):
-                if "lat" in day[slot_key]:
-                    slots_with_coords += 1
-                else:
-                    slots_without += 1
+                slot = day[slot_key]
+                assert slot["lat"] == pytest.approx(48.85)
+                assert slot["lng"] == pytest.approx(2.35)
+                assert slot["geo_approx"] is True
 
-        assert slots_with_coords > 0
-        assert slots_without > 0
+    @pytest.mark.asyncio
+    async def test_enrich_activity_fallback_resolves_exact(self):
+        """Primary location query misses but activity fallback hits → exact coords, no flag."""
+        from agents.deep_agent import _enrich_itinerary_with_coordinates
+
+        itinerary = _make_itinerary(destination="Paris, France")
+
+        async def mock_geocode(query):
+            if query == "Paris, France":
+                return {"lat": 48.85, "lng": 2.35}
+            # Location queries miss, activity fallback queries hit
+            if query.startswith("Check-in,"):
+                return {"lat": 48.86, "lng": 2.36}
+            return None
+
+        with patch("agents.deep_agent.geocode", new=mock_geocode):
+            enriched = await _enrich_itinerary_with_coordinates(itinerary)
+
+        morning = enriched["days"][0]["morning"]
+        assert morning["lat"] == pytest.approx(48.86)
+        assert morning["lng"] == pytest.approx(2.36)
+        assert "geo_approx" not in morning
+        # Other slots fell back to the centroid
+        assert enriched["days"][0]["afternoon"]["geo_approx"] is True
+
+    @pytest.mark.asyncio
+    async def test_enrich_dedupes_queries(self):
+        """Identical location strings across slots hit geocode only once."""
+        from agents.deep_agent import _enrich_itinerary_with_coordinates
+
+        itinerary = _make_itinerary()
+        itinerary["days"][1]["morning"]["location"] = "Hotel Marais"  # same as day 1
+
+        calls: list[str] = []
+
+        async def mock_geocode(query):
+            calls.append(query)
+            return {"lat": 48.85, "lng": 2.35}
+
+        with patch("agents.deep_agent.geocode", new=mock_geocode):
+            await _enrich_itinerary_with_coordinates(itinerary)
+
+        loc_queries = [c for c in calls if c.startswith("Hotel Marais")]
+        assert len(loc_queries) == 1
+
+    @pytest.mark.asyncio
+    async def test_enrich_fallback_budget_caps_calls(self):
+        """After the fallback budget is spent, remaining slots go straight to centroid."""
+        from agents.deep_agent import _enrich_itinerary_with_coordinates
+
+        # 6 unique slots, all unresolvable — dest hit + 5 budgeted calls max
+        itinerary = _make_itinerary()
+
+        calls: list[str] = []
+
+        async def mock_geocode(query):
+            calls.append(query)
+            if query == "Paris, France":
+                return {"lat": 48.85, "lng": 2.35}
+            return None
+
+        with patch("agents.deep_agent.geocode", new=mock_geocode):
+            enriched = await _enrich_itinerary_with_coordinates(itinerary)
+
+        # 1 destination call + at most 5 slot queries (budget)
+        assert len(calls) <= 6
+        # Every slot still got the approx centroid pin
+        for day in enriched["days"]:
+            for slot_key in ("morning", "afternoon", "evening"):
+                assert day[slot_key].get("geo_approx") is True
 
     @pytest.mark.asyncio
     async def test_enrich_all_fail(self):
-        """All geocode calls return None → itinerary unchanged (no lat/lng anywhere)."""
+        """All geocode calls return None (incl. destination) → no lat/lng anywhere."""
         from agents.deep_agent import _enrich_itinerary_with_coordinates
 
         itinerary = _make_itinerary()

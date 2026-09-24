@@ -222,7 +222,8 @@
     "moveDown": "नीचे ले जाएं",
     "dropHere": "गतिविधि यहां छोड़ें",
     "locationPlaceholder": "स्थान (वैकल्पिक)",
-    "durationPlaceholder": "अवधि (जैसे 2h)"
+    "durationPlaceholder": "अवधि (जैसे 2h)",
+    "approxLocation": "अनुमानित स्थान"
   },
   "comparison": {
     "title": "योजनाएँ तुलना करें",

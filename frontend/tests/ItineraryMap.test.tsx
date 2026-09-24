@@ -71,7 +71,7 @@ vi.mock('maplibre-gl', () => {
 
 vi.mock('maplibre-gl/dist/maplibre-gl.css', () => ({}));
 
-import ItineraryMap from '@/components/ItineraryMap';
+import ItineraryMap, { extractMarkers, createMarkerElement } from '@/components/ItineraryMap';
 import type { DayPlan } from '@/lib/types';
 
 // jsdom has no real canvas/WebGL — stub getContext so the component's WebGL
@@ -214,5 +214,24 @@ describe('ItineraryMap', () => {
     await vi.waitFor(() =>
       expect(mockMap.fitBounds.mock.calls.length).toBeGreaterThan(callsAfterMount)
     );
+  });
+});
+
+describe('approximate pins (geo_approx)', () => {
+  it('extractMarkers flags geo_approx slots as approximate', () => {
+    const day: DayPlan = {
+      ...daysWithCoords[0],
+      morning: { ...daysWithCoords[0].morning, geo_approx: true },
+    };
+    const markers = extractMarkers(day);
+    expect(markers[0].approximate).toBe(true);
+    expect(markers[1].approximate).toBe(false);
+  });
+
+  it('createMarkerElement renders dashed hollow pin when approximate', () => {
+    const approx = createMarkerElement(1, true);
+    expect(approx.style.border).toContain('dashed');
+    const exact = createMarkerElement(1, false);
+    expect(exact.style.border).toContain('solid');
   });
 });

@@ -5,6 +5,10 @@ export interface TimeSlot {
   duration: string;
   lat?: number;
   lng?: number;
+  // Set by the backend enricher when the slot's own location failed to
+  // geocode and lat/lng are the destination centroid instead — the map
+  // renders these pins dashed + labeled, never as exact positions.
+  geo_approx?: boolean;
 }
 
 export interface DayPlan {

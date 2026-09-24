@@ -40,9 +40,10 @@ interface MapMarker {
   slot: string;
   slotIndex: number;
   day: number;
+  approximate?: boolean;
 }
 
-function extractMarkers(day: DayPlan): MapMarker[] {
+export function extractMarkers(day: DayPlan): MapMarker[] {
   const markers: MapMarker[] = [];
   SLOTS.forEach(({ key }, index) => {
     const slot = day[key];
@@ -57,6 +58,7 @@ function extractMarkers(day: DayPlan): MapMarker[] {
         slot: key,
         slotIndex: index + 1,
         day: day.day,
+        approximate: slot.geo_approx === true,
       });
     }
   });
@@ -83,21 +85,25 @@ async function geocodeDay(day: DayPlan): Promise<DayPlan> {
         ...correctedDay[result.key],
         lat: result.lat,
         lng: result.lng,
+        // Correction upgraded this slot to an exact pin — drop the flag.
+        geo_approx: false,
       } as TimeSlot;
     }
   }
   return correctedDay;
 }
 
-function createMarkerElement(slotIndex: number): HTMLElement {
+export function createMarkerElement(slotIndex: number, approximate = false): HTMLElement {
+  const color = CHART_HEX[slotIndex] ?? CHART_HEX[1];
   const el = document.createElement('div');
   el.className = 'flex items-center justify-center cursor-pointer';
   el.style.width = '28px';
   el.style.height = '28px';
   el.style.borderRadius = '50% 50% 50% 0';
   el.style.transform = 'rotate(-45deg)';
-  el.style.background = CHART_HEX[slotIndex] ?? CHART_HEX[1];
-  el.style.border = '2px solid white';
+  // Approximate pins render hollow/dashed — visibly less certain than exact.
+  el.style.background = approximate ? `${color}59` : color;
+  el.style.border = approximate ? `2px dashed ${color}` : '2px solid white';
   el.style.boxShadow = '0 2px 6px rgba(0,0,0,0.2)';
   const span = document.createElement('span');
   span.style.transform = 'rotate(45deg)';
@@ -250,12 +256,13 @@ export default function ItineraryMap({ days, destination, activeDay, onMarkerCli
       if (map.getSource('route')) map.removeSource('route');
 
       for (const m of currentMarkers) {
-        const el = createMarkerElement(m.slotIndex);
+        const el = createMarkerElement(m.slotIndex, m.approximate);
 
         const popup = new MapLibrePopup({ offset: 25 }).setHTML(`
           <div class="font-sans min-w-[180px] p-1">
             <p class="font-semibold text-sm text-foreground">${m.activity}</p>
             <p class="text-xs text-muted-foreground mt-0.5">${t(m.slot)} &middot; ${m.location}</p>
+            ${m.approximate ? `<p class="text-[10px] text-muted-foreground/70 italic mt-0.5">${t('approxLocation')}</p>` : ''}
             <div class="flex items-center gap-3 text-xs text-muted-foreground mt-1">
               ${m.duration ? `<span>\u23F1 ${m.duration}</span>` : ''}
               ${m.cost_usd > 0 ? `<span>\u{1F4B0} ${formatCurrency(m.cost_usd, locale)}</span>` : ''}

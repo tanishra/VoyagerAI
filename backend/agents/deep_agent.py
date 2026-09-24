@@ -1173,6 +1173,13 @@ async def _enrich_itinerary_with_coordinates(itinerary: dict) -> dict:
         destination = enriched.get("destination", "")
         days = enriched.get("days", [])
 
+        # Destination centroid doubles as the approximate-pin fallback.
+        dest_coords = await geocode(destination) if destination else None
+        resolved: dict[str, dict | None] = {}  # query dedupe within this itinerary
+        fallback_budget = 5  # cap extra Nominatim calls per itinerary
+        exact = approx = unmapped = 0
+        missed_locations: list[str] = []
+
         for day in days:
             for slot_key in ("morning", "afternoon", "evening"):
                 slot = day.get(slot_key)
@@ -1181,11 +1188,43 @@ async def _enrich_itinerary_with_coordinates(itinerary: dict) -> dict:
                 location = slot.get("location", "")
                 if not location:
                     continue
-                query = f"{location}, {destination}" if destination else location
-                coords = await geocode(query)
-                if coords is not None:
+                queries = [f"{location}, {destination}" if destination else location]
+                activity = slot.get("activity", "")
+                if activity:
+                    queries.append(f"{activity}, {destination}" if destination else activity)
+
+                coords = None
+                for query in queries:
+                    if query in resolved:
+                        coords = resolved[query]
+                    elif fallback_budget > 0:
+                        fallback_budget -= 1
+                        coords = resolved[query] = await geocode(query)
+                    else:
+                        break
+                    if coords:
+                        break
+
+                if coords:
                     slot["lat"] = coords["lat"]
                     slot["lng"] = coords["lng"]
+                    slot.pop("geo_approx", None)
+                    exact += 1
+                elif dest_coords:
+                    slot["lat"] = dest_coords["lat"]
+                    slot["lng"] = dest_coords["lng"]
+                    slot["geo_approx"] = True
+                    approx += 1
+                else:
+                    unmapped += 1
+                    missed_locations.append(location)
+
+        logger.info(
+            "Geocode coverage %s: %d exact, %d approx, %d unmapped",
+            destination or "(unknown)", exact, approx, unmapped,
+        )
+        for loc in missed_locations:
+            logger.debug("geocode miss: %s", loc)
 
         return enriched
     except Exception:

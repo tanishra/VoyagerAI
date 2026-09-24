@@ -222,7 +222,8 @@
     "moveDown": "Nach unten",
     "dropHere": "Aktivität hier ablegen",
     "locationPlaceholder": "Ort (optional)",
-    "durationPlaceholder": "Dauer (z.B. 2h)"
+    "durationPlaceholder": "Dauer (z.B. 2h)",
+    "approxLocation": "Ungefährer Standort"
   },
   "comparison": {
     "title": "Pläne vergleichen",
