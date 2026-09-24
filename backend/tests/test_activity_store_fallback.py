@@ -10,10 +10,10 @@ InMemoryStore without retrying Redis.
 import asyncio
 
 import pytest
+from langgraph.store.memory import InMemoryStore
 
 import agents.deep_agent as deep_agent_module
 from agents.activity_store import load_all_activity, save_activity
-from langgraph.store.memory import InMemoryStore
 
 
 class _FailingRedisStore:

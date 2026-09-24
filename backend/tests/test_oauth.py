@@ -201,8 +201,9 @@ class TestRedisPooling:
 
     @pytest.mark.asyncio
     async def test_failed_op_drops_client(self, monkeypatch):
-        import oauth
         from redis.exceptions import RedisError
+
+        import oauth
 
         class _FlakyRedis:
             async def ping(self):
@@ -232,8 +233,9 @@ class TestMemSessionTTL:
 
     @pytest.mark.asyncio
     async def test_expired_mem_session_returns_none(self, monkeypatch):
-        import oauth
         import time
+
+        import oauth
 
         monkeypatch.setattr(oauth, "_redis_client", None)
         monkeypatch.setattr(oauth.Redis, "from_url", lambda *a, **k: _no_redis_obj())
@@ -247,8 +249,9 @@ class TestMemSessionTTL:
 
     @pytest.mark.asyncio
     async def test_fresh_mem_session_returned(self, monkeypatch):
-        import oauth
         import time
+
+        import oauth
 
         payload = {"user_id": "u", "exp": time.time() + 60}
         monkeypatch.setattr(oauth, "_redis_client", None)
@@ -259,8 +262,9 @@ class TestMemSessionTTL:
         assert await oauth.get_session("sid-ok") == payload
 
     def test_prune_mem_sessions(self, monkeypatch):
-        import oauth
         import time
+
+        import oauth
 
         monkeypatch.setattr(oauth, "_mem_sessions", {
             "dead": {"exp": time.time() - 1},

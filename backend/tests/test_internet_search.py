@@ -12,12 +12,10 @@ import pytest
 from agents.tools.internet import (
     _format_search_results,
     _make_cache_key,
-    _search_with_retry,
     get_internet_tools,
     internet_search,
 )
 from research_cache import research_cache
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -34,7 +32,6 @@ def _make_result(title: str, url: str, content: str, score: float = 0.9) -> dict
 @pytest.fixture(autouse=True)
 def _clear_research_cache():
     """Clear research cache before each test (sync wrapper)."""
-    import asyncio
     loop = asyncio.new_event_loop()
     loop.run_until_complete(research_cache.invalidate_all())
     yield
@@ -261,7 +258,10 @@ class TestInternetSearchCaching:
 
     @pytest.mark.asyncio
     async def test_quick_web_lookup_caches_result(self):
-        from agents.tools.internet import quick_web_lookup, reset_orchestrator_search_count
+        from agents.tools.internet import (
+            quick_web_lookup,
+            reset_orchestrator_search_count,
+        )
         reset_orchestrator_search_count()
         mock_tavily = MagicMock()
         mock_tavily.search.return_value = _make_tavily_response([
@@ -280,7 +280,10 @@ class TestInternetSearchCaching:
 
     @pytest.mark.asyncio
     async def test_quick_web_lookup_returns_cached_on_hit(self):
-        from agents.tools.internet import quick_web_lookup, reset_orchestrator_search_count
+        from agents.tools.internet import (
+            quick_web_lookup,
+            reset_orchestrator_search_count,
+        )
         reset_orchestrator_search_count()
         cache_key = _make_cache_key("currency JPY", "general", 3)
         await research_cache.set(cache_key, "Title: Cached\nURL: https://cached.com\nSummary: 1 USD = 150 JPY")

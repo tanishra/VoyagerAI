@@ -123,7 +123,7 @@ class Settings(BaseSettings):
     ALERT_DAILY_THRESHOLD_PCT: float = 0.8  # alert at 80% of daily cap
 
     @model_validator(mode="after")
-    def _resolve_data_dir(self) -> "Settings":
+    def _resolve_data_dir(self) -> Settings:
         """Point default ./data paths at DATA_DIR when set, or at a writable
         /data mount (HF Spaces persistent storage) when not. Explicit
         CHECKPOINTER_DB_PATH/SQLITE_FALLBACK_DB_PATH env values win."""
@@ -146,6 +146,6 @@ class Settings(BaseSettings):
 settings = Settings()
 
 # Configure structured logging based on settings
-from logging_config import configure_logging  # noqa: E402
+from logging_config import configure_logging
 
 configure_logging(fmt=settings.LOG_FORMAT, level=settings.LOG_LEVEL)

@@ -134,7 +134,7 @@ def generate_ics(itinerary: dict, thread_id: str = "voyagerai") -> str:
     destination = itinerary.get("destination", "Untitled Trip")
     tzid = _guess_timezone(destination)
     days = itinerary.get("days", [])
-    today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
     now_utc = datetime.now(timezone.utc)
 
     lines: list[str] = []
@@ -145,13 +145,13 @@ def generate_ics(itinerary: dict, thread_id: str = "voyagerai") -> str:
     lines.append("METHOD:PUBLISH")
 
     # VTIMEZONE block
-    lines.append(f"BEGIN:VTIMEZONE")
+    lines.append("BEGIN:VTIMEZONE")
     lines.append(f"TZID:{tzid}")
-    lines.append(f"BEGIN:STANDARD")
-    lines.append(f"DTSTART:19700101T000000")
+    lines.append("BEGIN:STANDARD")
+    lines.append("DTSTART:19700101T000000")
     lines.append(f"TZNAME:{tzid.split('/')[-1].replace('_', ' ')}")
-    lines.append(f"END:STANDARD")
-    lines.append(f"END:VTIMEZONE")
+    lines.append("END:STANDARD")
+    lines.append("END:VTIMEZONE")
 
     for day in days:
         day_num = day.get("day", 1)

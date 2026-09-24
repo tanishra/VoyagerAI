@@ -19,6 +19,7 @@ from share_store import ShareStore
 def _create_dev_session():
     """Create a real dev session and return the session ID."""
     import asyncio
+
     from oauth import DEV_USER, create_session
     loop = asyncio.new_event_loop()
     try:

@@ -10,8 +10,7 @@ Covers:
 
 from __future__ import annotations
 
-import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -22,8 +21,6 @@ from agents.tools.internet import (
     quick_web_lookup,
     reset_orchestrator_search_count,
 )
-from research_cache import research_cache
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -78,7 +75,7 @@ class TestConciseFormatting:
         long_content = "A" * 1000
         results = _make_tavily_response([_make_result("Test", "https://example.com", long_content)])
         out = _format_concise_results(results)
-        summary_line = [line for line in out.split("\n") if line.startswith("Summary:")][0]
+        summary_line = next(line for line in out.split("\n") if line.startswith("Summary:"))
         assert len(summary_line) <= len("Summary: ") + 200
 
     def test_format_concise_results_empty(self):

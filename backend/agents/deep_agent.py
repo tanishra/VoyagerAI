@@ -9,12 +9,13 @@ import os
 import re
 import threading
 import uuid
-
-from langchain_core.messages import HumanMessage, RemoveMessage
+from typing import ClassVar
 
 import aiosqlite
 from deepagents import FilesystemPermission, create_deep_agent
 from deepagents.backends import CompositeBackend, FilesystemBackend, StoreBackend
+from langchain.agents.middleware import ModelCallLimitMiddleware
+from langchain_core.messages import HumanMessage, RemoveMessage
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.checkpoint.redis.aio import AsyncRedisSaver
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
@@ -22,27 +23,33 @@ from langgraph.store.memory import InMemoryStore
 from langgraph.store.redis import RedisConnectionFactory, RedisStore
 from pydantic import BaseModel
 
-from agents.activity_store import load_activity, load_all_activity, save_activity
-from agents.tools import is_visual_tool, set_current_thread_id
-from agents.tools.pipeline_tools import is_pipeline_tool, pop_payload, set_pipeline_context
+from agents.activity_store import save_activity
 from agents.llm import get_formatter_model, get_orchestrator_model, get_subagent_model
 from agents.prompts import build_chat_agent_prompt, extract_stated_budget
 from agents.subagents import get_subagents
-from agents.tools import get_orchestrator_tools, reset_orchestrator_search_count
+from agents.tools import (
+    get_orchestrator_tools,
+    is_visual_tool,
+    reset_orchestrator_search_count,
+    set_current_thread_id,
+)
+from agents.tools.pipeline_tools import (
+    is_pipeline_tool,
+    pop_payload,
+    set_pipeline_context,
+)
 from config import settings as _cfg_settings
 from config.settings import settings
 from cost_store import cost_store
-from pricing import IMAGE_GENERATION_COST_USD, calculate_cost
+from geocode_service import geocode
 from metrics import (
-    LLM_CALLS_TOTAL,
-    LLM_TOKENS_TOTAL,
-    LLM_COST_TOTAL,
     DAILY_PLATFORM_SPEND,
     HOURLY_PLATFORM_SPEND,
-    CIRCUIT_BREAKER_STATUS,
+    LLM_CALLS_TOTAL,
+    LLM_COST_TOTAL,
+    LLM_TOKENS_TOTAL,
 )
-from geocode_service import geocode
-from langchain.agents.middleware import ModelCallLimitMiddleware
+from pricing import IMAGE_GENERATION_COST_USD, calculate_cost
 from sanitize import scan_text_for_injection
 
 logger = logging.getLogger("travel_agent.deep_agent")
@@ -142,7 +149,7 @@ async def create_redis_checkpointer() -> AsyncRedisSaver:
                     saver._key_registry = None
             try:
                 await saver._detect_cluster_mode()
-            except Exception:  # noqa: BLE001
+            except Exception:  # noqa: BLE001, S110
                 pass
         # Read probe: setup() succeeding does NOT mean JSON.GET works —
         # Upstash's RedisJSON rejects the legacy "." path that langgraph's
@@ -153,20 +160,20 @@ async def create_redis_checkpointer() -> AsyncRedisSaver:
         try:
             await saver._redis.json().set(probe_key, "$", {"ok": True})
             await saver._redis.json().get(probe_key, ".")
-        except Exception as exc:  # noqa: BLE001 (intentional fallback handler)
+        except Exception as exc:
             logger.warning(
                 "Redis checkpointer read probe failed (%s) — saver is unusable, "
                 "falling back to SQLite.", exc,
             )
             try:
                 await saver._redis.aclose()
-            except Exception:  # noqa: BLE001
+            except Exception:  # noqa: BLE001, S110
                 pass
             raise
         finally:
             try:
                 await saver._redis.delete(probe_key)
-            except Exception:  # noqa: BLE001
+            except Exception:  # noqa: BLE001, S110
                 pass
         _checkpointer = saver
     return _checkpointer
@@ -373,6 +380,7 @@ def _pg_store_connection():
     already treats store setup as a blocking call.
     """
     import psycopg
+
     from pg_store import _conninfo
 
     conninfo = _conninfo()
@@ -429,7 +437,7 @@ def create_redis_store() -> RedisStore:
         )
         try:
             candidate.setup()
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.warning(
                 "RedisStore setup() failed (likely no RediSearch module): %s. "
                 "Semantic memory will use in-memory fallback.",
@@ -551,7 +559,7 @@ class _ModelStream:
     # Output leak detection — distinctive phrases from the system prompt
     # -----------------------------------------------------------------
 
-    _LEAK_PHRASES: list[str] = [
+    _LEAK_PHRASES: ClassVar[list[str]] = [
         "You do NOT need to call read_file to load preferences",
         "NEVER modify the <user_instructions> section",
         "Before generating any itinerary or switching to structured mode, you MUST have ALL of these fields",
@@ -939,7 +947,7 @@ class _ModelStream:
                 logger.warning("Platform cost alert: %s", alerts["message"])
             elif alerts["level"] == "critical":
                 logger.error("Platform cost alert: %s", alerts["message"])
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001, S110
             pass
 
     def last_text(self) -> str:
@@ -1197,16 +1205,13 @@ def _parse_comparison_prose(text: str) -> dict | None:
             key = fm.group(1).lower()
             fields[key] = fm.group(2).strip()
 
-        def _f(*names: str) -> str | None:
+        def _f(*names: str, _fields: dict = fields) -> str | None:
             for n in names:
-                if n in fields:
-                    return fields[n]
+                if n in _fields:
+                    return _fields[n]
             return None
 
         total = _parse_cost_number(_f("total cost") or "")
-        accommodation = _f("accommodation", "stay")
-        food = _f("food", "food style")
-        transport = _f("transport", "transportation", "transport mode", "transportation mode")
         highlights = _f("highlights", "highlight", "activities")
 
         itinerary: dict = {"destination": destination, "days": []}
@@ -1619,7 +1624,7 @@ async def _get_stated_constraints(agent, config, extra_text: str | None = None) 
             _fill_stated(found, msg.content)
             if all(k in found for k in ("days", "budget_amount")):
                 break
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
     return found
 
@@ -1647,7 +1652,7 @@ async def _get_conversation_stated_budget(agent, config) -> tuple[float, str] | 
             found = extract_stated_budget(content)
             if found:
                 return found
-    except Exception:
+    except Exception:  # noqa: BLE001
         return None
     return None
 
@@ -1688,7 +1693,7 @@ async def _remove_internal_message(agent, config: dict, message_id: str) -> None
     reaches history or the model's future context. Best-effort."""
     try:
         await agent.aupdate_state(config, {"messages": [RemoveMessage(id=message_id)]})
-    except Exception:  # noqa: BLE001
+    except Exception:
         logger.warning("Failed to remove internal message %s", message_id, exc_info=True)
 
 
@@ -1966,7 +1971,6 @@ async def stream_chat_agent(
     # holds this message, never append it again — replay the finished reply or
     # resume the interrupted run instead.
     inputs: dict | None = {"messages": [user_msg]}
-    resume = False
     prepend_text = ""
     replay_text: str | None = None
     if client_message_id:
@@ -1977,7 +1981,6 @@ async def stream_chat_agent(
                 pending = bool(getattr(state, "next", None))
                 last_is_ai = bool(prior) and getattr(prior[-1], "type", "") == "ai"
                 if pending:
-                    resume = True
                     inputs = None
                     # An AI reply with no pending tool calls won't re-emit its
                     # tokens on resume — send them first so the client isn't blank.
@@ -1987,7 +1990,7 @@ async def stream_chat_agent(
                     replay_text = _last_assistant_text(state.values)
                 # Completed state with no AI reply → fall through; the id-stamped
                 # input merges into existing state without duplicating.
-        except Exception:  # noqa: BLE001 (dedup must never break a stream)
+        except Exception:
             logger.warning("Checkpoint dedup check failed for %s", thread_id, exc_info=True)
 
     if replay_text is not None:
@@ -2034,7 +2037,7 @@ async def stream_chat_agent(
         state = await agent.aget_state(config)
         msg_count = len(state.values.get("messages", []))
         message_index = msg_count - 1  # last message is the assistant reply we just generated
-    except Exception:
+    except Exception:  # noqa: BLE001
         message_index = None
 
     # Persist activity metadata for this thread (per-message)
@@ -2205,7 +2208,7 @@ async def regenerate_chat_agent(
             state = await agent.aget_state(forked_config)
             msg_count = len(state.values.get("messages", []))
             message_index = msg_count - 1
-        except Exception:
+        except Exception:  # noqa: BLE001
             message_index = None
         await save_activity(store, thread_id, stream.activity, message_index=message_index)
 
@@ -2372,7 +2375,7 @@ async def edit_chat_agent(
                     except (ValueError, json.JSONDecodeError) as exc:
                         yield {"event": "error", "data": str(exc)}
                     return
-        except Exception:  # noqa: BLE001
+        except Exception:
             logger.warning("Edit dedup check failed for %s", thread_id, exc_info=True)
 
     if run_config is None:
@@ -2408,7 +2411,7 @@ async def edit_chat_agent(
             state = await agent.aget_state(run_config)
             msg_count = len(state.values.get("messages", []))
             message_index = msg_count - 1
-        except Exception:
+        except Exception:  # noqa: BLE001
             message_index = None
         await save_activity(store, thread_id, stream.activity, message_index=message_index)
 

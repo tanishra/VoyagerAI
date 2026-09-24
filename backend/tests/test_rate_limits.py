@@ -6,10 +6,8 @@ extraction for the middleware tests.
 
 from __future__ import annotations
 
-import asyncio
 import os
 import tempfile
-import time
 from unittest.mock import patch
 
 import pytest
@@ -20,13 +18,13 @@ _tmpdir = tempfile.mkdtemp(prefix="voyager_test_")
 _test_db_path = os.path.join(_tmpdir, "test_rate_limits.sqlite")
 os.environ["SQLITE_FALLBACK_DB_PATH"] = _test_db_path
 
-from config import settings  # noqa: E402
+from config import settings
+
 settings.SQLITE_FALLBACK_DB_PATH = _test_db_path
 
-import sqlite_fallback  # noqa: E402
-from rate_limiter import RateLimiter, rate_limiter  # noqa: E402
-from cost_store import CostStore  # noqa: E402
-
+import sqlite_fallback
+from cost_store import CostStore
+from rate_limiter import RateLimiter
 
 # ---------------------------------------------------------------------------
 # Fixtures

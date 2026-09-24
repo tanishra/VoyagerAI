@@ -8,6 +8,7 @@ via side channel so the model never re-emits plan JSON.
 
 import asyncio
 import json
+from typing import ClassVar
 
 import agents.deep_agent as deep_agent_module
 import agents.pipeline as pipeline_module
@@ -517,8 +518,8 @@ class TestModelStreamPipelineWiring:
         """_stage_usage on the tool result → per-stage rows in _subagent_costs,
         and bubbled inner model usage does NOT double-count under the tool name."""
         class _Out:
-            usage_metadata = {"input_tokens": 100, "output_tokens": 50}
-            response_metadata = {"model_name": "gpt-4o-mini"}
+            usage_metadata: ClassVar = {"input_tokens": 100, "output_tokens": 50}
+            response_metadata: ClassVar = {"model_name": "gpt-4o-mini"}
 
         class _FakeAgent:
             async def astream_events(self, *args, **kwargs):

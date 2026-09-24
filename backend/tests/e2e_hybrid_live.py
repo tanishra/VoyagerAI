@@ -11,18 +11,16 @@ Prints PASS/FAIL per scenario and exits non-zero on any failure.
 from __future__ import annotations
 
 import asyncio
-import json
 import sys
 import uuid
 
 sys.path.insert(0, ".")
 
-from dotenv import load_dotenv  # noqa: E402
+from dotenv import load_dotenv
 
 load_dotenv()  # litellm reads keys from os.environ, not the settings object
 
-from agents.deep_agent import stream_chat_agent  # noqa: E402
-from config.settings import settings  # noqa: E402
+from agents.deep_agent import stream_chat_agent
 
 PASS = "\033[32mPASS\033[0m"
 FAIL = "\033[31mFAIL\033[0m"
@@ -151,6 +149,7 @@ async def scenario_persistence(tid):
     print("\n== Scenario 4: Redis persistence ==")
     try:
         from redis.asyncio import Redis
+
         from config import REDIS_URL
         r = Redis.from_url(REDIS_URL, decode_responses=True,
                            socket_connect_timeout=3, socket_timeout=3)
@@ -162,7 +161,7 @@ async def scenario_persistence(tid):
         raw = await r.get(f"pipeline:thread:{tid}:constraints")
         check("constraints stored", raw is not None and "Delhi" in raw, raw)
         await r.aclose()
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         check("redis reachable", False, str(exc))
 
 

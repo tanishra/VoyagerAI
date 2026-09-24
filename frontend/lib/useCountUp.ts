@@ -18,8 +18,10 @@ export function useCountUp(target: number, durationMs = 700): number {
 
   useEffect(() => {
     if (prefersReducedMotion() || target === 0) {
-      setValue(target);
-      return;
+      // Defer to rAF — synchronous setState inside an effect triggers
+      // cascading renders (react-hooks/set-state-in-effect).
+      rafRef.current = requestAnimationFrame(() => setValue(target));
+      return () => cancelAnimationFrame(rafRef.current);
     }
     const start = performance.now();
     const tick = (now: number) => {

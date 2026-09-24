@@ -8,7 +8,6 @@ with a per-message-index map so every assistant message's activity
 
 from __future__ import annotations
 
-import json
 import logging
 from typing import Any
 

@@ -7,7 +7,6 @@ server restarts). Uses a temporary SQLite database file for isolation.
 
 from __future__ import annotations
 
-import asyncio
 import os
 import tempfile
 import time
@@ -22,20 +21,20 @@ _test_db_path = os.path.join(_tmpdir, "test_stores.sqlite")
 os.environ["SQLITE_FALLBACK_DB_PATH"] = _test_db_path
 
 # Force the settings to pick up the env var
-from config import settings  # noqa: E402
+from config import settings
+
 settings.SQLITE_FALLBACK_DB_PATH = _test_db_path
 
-import sqlite_fallback  # noqa: E402
-from threads import ThreadStore  # noqa: E402
-from share_store import ShareStore  # noqa: E402
-from oauth import create_session, get_session, delete_session  # noqa: E402
-from cost_store import CostStore  # noqa: E402
-from feedback_store import FeedbackStore  # noqa: E402
-from security_store import SecurityStore  # noqa: E402
-from research_cache import ResearchCache  # noqa: E402
-from geocode_cache import GeocodeCache  # noqa: E402
-from file_store import FileStore  # noqa: E402
-
+import sqlite_fallback
+from cost_store import CostStore
+from feedback_store import FeedbackStore
+from file_store import FileStore
+from geocode_cache import GeocodeCache
+from oauth import create_session, delete_session, get_session
+from research_cache import ResearchCache
+from security_store import SecurityStore
+from share_store import ShareStore
+from threads import ThreadStore
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -198,7 +197,7 @@ class TestShareStoreSQLite:
 class TestOAuthSQLite:
     @pytest.mark.asyncio
     async def test_create_and_get_session_via_sqlite(self):
-        with patch("oauth._get_redis", new=None):
+        with patch("oauth._get_redis", new=None):  # noqa: SIM117
             # _get_redis is a module-level function, not a method
             with patch("oauth._get_redis", side_effect=_redis_none_func):
                 sid = await create_session({"user_id": "alice", "email": "a@b.com"})
@@ -309,7 +308,6 @@ class TestSecurityStoreSQLite:
             assert await store.is_in_cooldown("alice") is False
             await store.apply_cooldown("alice", minutes=5)
             assert await store.is_in_cooldown("alice") is True
-            user_hash = store._mem_cooldowns  # Won't be in mem, it's in SQLite
             # Remove cooldown
             from security_store import _hash_user_id
             uh = _hash_user_id("alice")

@@ -41,7 +41,7 @@ def _itinerary() -> dict:
 
 class TestStorePayload:
     def test_writes_per_id_record_and_latest_keys(self, monkeypatch):
-        import agents.pipeline as pipeline
+        from agents import pipeline
 
         writes = {}
 
@@ -62,7 +62,7 @@ class TestStorePayload:
         assert writes["latest_comparison_id"] == pid
 
     def test_itinerary_kind_gets_latest_itinerary(self, monkeypatch):
-        import agents.pipeline as pipeline
+        from agents import pipeline
 
         writes = {}
 

@@ -54,7 +54,7 @@ def _fast_redis_fail(monkeypatch):
         import main as main_module
         if hasattr(main_module.app.state, "limiter"):
             main_module.app.state.limiter._storage.reset()
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
 
     # Reset shared SQLite connection to prevent stale event-loop hangs

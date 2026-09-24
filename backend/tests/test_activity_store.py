@@ -7,10 +7,7 @@ from __future__ import annotations
 
 import asyncio
 
-import pytest
-from langgraph.store.memory import InMemoryStore
-
-from agents.activity_store import save_activity, load_activity, load_all_activity
+from agents.activity_store import load_activity, load_all_activity, save_activity
 
 
 class _StoreItem:

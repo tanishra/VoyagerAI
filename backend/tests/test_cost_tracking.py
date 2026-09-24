@@ -2,16 +2,13 @@
 
 from __future__ import annotations
 
-import asyncio
-import json
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
-from pricing import calculate_cost, get_pricing, PRICING_TABLE, DEFAULT_PRICING
-from cost_store import CostStore
 from config.settings import settings
-
+from cost_store import CostStore
+from pricing import DEFAULT_PRICING, calculate_cost, get_pricing
 
 # --- Pricing tests ---
 
@@ -236,8 +233,9 @@ class TestAdminEndpoints:
     @pytest.mark.asyncio
     async def test_admin_rejects_non_admin(self):
         """Admin endpoint returns 403 for non-admin users."""
-        from oauth import verify_admin
         from fastapi import HTTPException
+
+        from oauth import verify_admin
 
         with patch.object(settings, "ADMIN_EMAILS", "admin@example.com"):
 
@@ -248,8 +246,9 @@ class TestAdminEndpoints:
     @pytest.mark.asyncio
     async def test_admin_rejects_when_not_configured(self):
         """Admin endpoint returns 403 when ADMIN_EMAILS is empty."""
-        from oauth import verify_admin
         from fastapi import HTTPException
+
+        from oauth import verify_admin
 
         with patch.object(settings, "ADMIN_EMAILS", ""):
 

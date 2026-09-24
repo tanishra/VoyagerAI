@@ -9,8 +9,6 @@ Uses in-memory fallback by forcing Redis unavailable. Verifies:
 - Error summary aggregation
 """
 
-import asyncio
-import time
 import pytest
 
 from observability_store import ObservabilityStore, _hash_user_id, _redact_tool_input
@@ -28,7 +26,7 @@ def store(monkeypatch):
 
 async def _async_none():
     """Async helper that returns None — used to mock out SQLite fallback."""
-    return None
+    return
 
 
 # --- PII redaction tests ---

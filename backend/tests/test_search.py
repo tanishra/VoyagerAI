@@ -128,7 +128,7 @@ class TestSearchThreads:
             "user1", "thread:t1", "Tokyo trip",
             search_text="Plan a trip to Tokyo",
         )
-        results, total = await store.search_threads("user1", "")
+        _results, total = await store.search_threads("user1", "")
         # Store returns all for empty string; endpoint-level guard prevents this
         assert total == 1
 

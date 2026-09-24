@@ -3,7 +3,8 @@ from __future__ import annotations
 
 import base64
 import json
-from unittest.mock import AsyncMock, patch
+from typing import ClassVar
+from unittest.mock import patch
 
 import pytest
 
@@ -39,13 +40,13 @@ async def test_generate_destination_image_success():
             data = fake_image_bytes
 
     class FakeContent:
-        parts = [FakePart()]
+        parts: ClassVar = [FakePart()]
 
     class FakeCandidate:
-        content = FakeContent()
+        content: ClassVar = FakeContent()
 
     class FakeResponse:
-        candidates = [FakeCandidate()]
+        candidates: ClassVar = [FakeCandidate()]
 
     class FakeModels:
         def generate_content(self, **kwargs):
@@ -118,7 +119,7 @@ def test_share_create_includes_image_in_response(authed_client, csrf_headers, mo
                             break
                     except json.JSONDecodeError:
                         pass
-    except Exception:
+    except Exception:  # noqa: BLE001
         pytest.skip("Cannot create thread for share image test")
 
     if not thread_id:
@@ -173,7 +174,7 @@ def test_share_create_image_generation_disabled(authed_client, csrf_headers, mon
                             break
                     except json.JSONDecodeError:
                         pass
-    except Exception:
+    except Exception:  # noqa: BLE001
         pytest.skip("Cannot create thread for share image test")
 
     if not thread_id:

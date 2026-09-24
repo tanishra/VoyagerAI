@@ -7,6 +7,7 @@ Covers the Phase 4.2 bug fix: raw langchain v2 astream_events were dropped by
 from __future__ import annotations
 
 import asyncio
+from typing import ClassVar
 
 from main import _parse_chat_event
 
@@ -281,8 +282,8 @@ class TestRawEventsDropped:
     def test_on_chat_model_end_with_usage_emits_usage_event(self):
         """on_chat_model_end with usage_metadata should emit a usage SSE event."""
         class _OutputWithUsage:
-            usage_metadata = {"input_tokens": 100, "output_tokens": 50}
-            response_metadata = {"model_name": "gemini-3.7-flash"}
+            usage_metadata: ClassVar = {"input_tokens": 100, "output_tokens": 50}
+            response_metadata: ClassVar = {"model_name": "gemini-3.7-flash"}
 
         event = _ev("on_chat_model_end", data={"output": _OutputWithUsage()})
         payloads = _parse_chat_event(event, {})
@@ -1143,8 +1144,8 @@ class TestConversationModeGate:
                         parsed.append(_json.loads(line[6:]))
 
         events = [(p["event"], p["data"]) for p in parsed]
-        # Should have thread_id, status, token, done — NO itinerary or comparison
         event_types = [e[0] for e in events]
+        # Should have thread_id, status, token, done — NO itinerary or comparison
         assert "done" in event_types
         assert "itinerary" not in event_types
         assert "comparison" not in event_types
@@ -1152,7 +1153,7 @@ class TestConversationModeGate:
     def test_tag_detection_regex(self):
         """Verify that the tag detection regexes match itinerary/comparison tags
         but not conversational text."""
-        from agents.deep_agent import _ITINERARY_TAG_RE, _COMPARISON_TAG_RE
+        from agents.deep_agent import _COMPARISON_TAG_RE, _ITINERARY_TAG_RE
 
         # Conversational text — no tags
         conv = "Where would you like to go? Please tell me your destination and budget."
@@ -1218,14 +1219,13 @@ class TestConversationModeGate:
                     if line.startswith("data: "):
                         parsed.append(_json.loads(line[6:]))
 
-        events = [(p["event"], p["data"]) for p in parsed]
-        event_types = [e[0] for e in events]
         # The stream should yield tokens + done (the mock stream doesn't emit
         # comparison events itself — that's done by stream_chat_agent which
         # we mocked). But the key regression check is that _detect_plan_kind
         # correctly classifies this prose as "comparison", not "none".
-        from agents.deep_agent import _detect_plan_kind
         import asyncio as _aio
+
+        from agents.deep_agent import _detect_plan_kind
         plan_kind = _aio.run(_detect_plan_kind(_COMPARISON_PROSE))
         assert plan_kind == "comparison", f"Expected 'comparison', got '{plan_kind}'"
 
@@ -1294,8 +1294,9 @@ class TestSubagentProgress:
 
     def test_throttling_progress_events(self):
         """_ModelStream._maybe_yield_progress should throttle to 1 per 2 seconds."""
-        from agents.deep_agent import _ModelStream
         import time
+
+        from agents.deep_agent import _ModelStream
 
         stream = _ModelStream.__new__(_ModelStream)
         stream._last_progress_time = {}
@@ -1332,8 +1333,6 @@ class TestClientMessageIdDedup:
 
     def _patch_agent(self, monkeypatch, state, stream_events=None, state_error=None):
         import agents.deep_agent as deep_agent_module
-
-        outer = self
 
         class _FakeAgent:
             def __init__(self):
@@ -1498,7 +1497,7 @@ def test_scoped_thread_id_deterministic_with_client_message_id():
 
     # Already-scoped thread id passes through unchanged
     import hashlib
-    tag = hashlib.sha256("u1".encode()).hexdigest()[:12]
+    tag = hashlib.sha256(b"u1").hexdigest()[:12]
     tid = _scoped_chat_thread_id(f"chat:{tag}:xyz", "u1", "cm-abc")
     assert tid == f"chat:{tag}:xyz"
 
@@ -1572,7 +1571,6 @@ class TestPersistCostsDelta:
         return store, metrics
 
     def _persist(self, stream):
-        import agents.deep_agent as m
         return asyncio.run(stream.persist_costs("t1", "u1"))
 
     def test_second_persist_with_no_new_cost_writes_nothing(self, monkeypatch):
@@ -1623,7 +1621,7 @@ class TestPersistCostsDelta:
         assert store.records[1]["cost_usd"] == 0.003
 
     def test_metrics_increment_by_delta_only(self, monkeypatch):
-        store, metrics = self._patch(monkeypatch)
+        _store, metrics = self._patch(monkeypatch)
         stream = self._make_stream({
             "researcher": {"input_tokens": 100, "output_tokens": 50, "cost": 0.02, "model": "m1"},
         })

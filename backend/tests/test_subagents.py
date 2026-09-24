@@ -15,7 +15,11 @@ from agents.prompts import (
     RESEARCHER_SYSTEM_PROMPT,
     RISK_DETECTOR_SYSTEM_PROMPT,
 )
-from agents.subagents import get_subagents, _ResilientModel, wrap_subagent_for_resilience
+from agents.subagents import (
+    _ResilientModel,
+    get_subagents,
+    wrap_subagent_for_resilience,
+)
 
 
 class TestSubagentRegistry:
@@ -40,8 +44,8 @@ class TestSubagentRegistry:
             assert isinstance(spec["model"], _ResilientModel)
 
     def test_resilient_model_preserves_name_and_description(self):
-        from agents.subagents import build_researcher
         from agents.llm import get_subagent_model
+        from agents.subagents import build_researcher
 
         raw = build_researcher(get_subagent_model())
         wrapped = wrap_subagent_for_resilience(raw)
@@ -131,6 +135,7 @@ class TestConstraintAnalyzerPrompt:
 class TestResilientModel:
     def test_agenerate_returns_fallback_on_exception(self):
         import asyncio
+
         from langchain_core.language_models import BaseChatModel
         from langchain_core.messages import HumanMessage
 
@@ -157,6 +162,7 @@ class TestResilientModel:
 
     def test_agenerate_passes_through_on_success(self):
         import asyncio
+
         from langchain_core.language_models import BaseChatModel
         from langchain_core.messages import AIMessage, HumanMessage
         from langchain_core.outputs import ChatGeneration, ChatResult

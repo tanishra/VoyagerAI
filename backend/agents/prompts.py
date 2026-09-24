@@ -94,7 +94,7 @@ def extract_stated_currency(text: str | None) -> str | None:
         match = _CURRENCY_CODE_RE.search(text)
         if match:
             return match.group(1).upper()
-    except Exception:
+    except Exception:  # noqa: BLE001
         return None
     return None
 
@@ -122,7 +122,7 @@ def extract_stated_budget(text: str | None) -> tuple[float, str] | None:
             amount = float(m.group(1).replace(",", ""))
             if amount > 0:
                 return amount, m.group(2).upper()
-    except Exception:
+    except Exception:  # noqa: BLE001
         return None
     return None
 
@@ -232,7 +232,7 @@ def build_chat_agent_prompt(
                 f"</current_datetime>\n"
             )
             prompt += dt_block
-        except (ZoneInfoNotFoundError, ValueError, Exception):
+        except (ZoneInfoNotFoundError, ValueError, Exception):  # noqa: BLE001
             logger.warning("Invalid timezone '%s' — skipping datetime injection", timezone)
 
     if user_id:
@@ -247,7 +247,7 @@ def build_chat_agent_prompt(
                 if user_text or learned_text:
                     user_text = _sanitize_instructions(user_text)[:_USER_INSTRUCTIONS_MAX]
                     learned_text = learned_text[:_LEARNED_PREFS_MAX]
-                    context_block = f"\n<user_context>\n"
+                    context_block = "\n<user_context>\n"
                     if user_text:
                         context_block += f"<user_instructions>\n{user_text}\n</user_instructions>\n"
                     if learned_text:

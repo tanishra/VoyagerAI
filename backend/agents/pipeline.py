@@ -19,7 +19,7 @@ import asyncio
 import json
 import logging
 import uuid
-from typing import Any, Literal
+from typing import Literal
 
 from langchain.agents import create_agent
 from langchain_core.messages import HumanMessage
@@ -27,17 +27,17 @@ from pydantic import BaseModel, Field
 
 from agents.constraints import TripConstraints
 from agents.llm import get_subagent_model
-from payload_store import payload_store
 from agents.prompts import (
+    COMPARISON_SUMMARY_PROMPT,
     CONSTRAINT_ANALYZER_SYSTEM_PROMPT,
     LANGUAGE_INSTRUCTIONS,
-    COMPARISON_SUMMARY_PROMPT,
-    SINGLE_TIER_REGEN_PROMPT,
     RESEARCHER_SYSTEM_PROMPT,
     RISK_DETECTOR_SYSTEM_PROMPT,
+    SINGLE_TIER_REGEN_PROMPT,
 )
 from agents.tools.internet import get_internet_tools
 from agents.validation import Issue, validate_comparison, validate_itinerary
+from payload_store import payload_store
 
 logger = logging.getLogger("travel_agent.pipeline")
 
@@ -238,7 +238,7 @@ async def _run_specialist(
         )
         messages = result.get("messages", [])
         return _last_ai_text(messages), _usage_of(messages)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         logger.warning("Pipeline specialist '%s' failed: %s", name, exc)
         return f"[{name} unavailable — proceed with remaining context]", _usage_of([])
 
@@ -279,7 +279,7 @@ async def _generate_structured(
                 stage_name, perr,
             )
         return (parsed.model_dump() if parsed is not None else None), usage
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         logger.warning("Pipeline stage '%s' generation failed: %r", stage_name, exc)
         return None, _usage_of([])
 
@@ -310,7 +310,7 @@ def _check_cancel(cancel_event) -> bool:
 def _check_budget(budget_check) -> bool:
     try:
         return bool(budget_check and budget_check())
-    except Exception:
+    except Exception:  # noqa: BLE001
         return False
 
 

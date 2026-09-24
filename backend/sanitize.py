@@ -219,12 +219,12 @@ def scan_text_for_injection(text: str | None) -> SanitizeResult:
     matched_categories: list[str] = []
 
     for pattern in CONTROL_TOKEN_PATTERNS:
-        if pattern.search(text):
+        if pattern.search(text):  # noqa: SIM102
             if "control_token" not in matched_categories:
                 matched_categories.append("control_token")
 
     for category, pattern in _ALL_PHRASE_PATTERNS:
-        if pattern.search(text):
+        if pattern.search(text):  # noqa: SIM102
             if category not in matched_categories:
                 matched_categories.append(category)
 

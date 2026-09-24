@@ -9,10 +9,16 @@ import secrets
 import uuid
 from dataclasses import asdict
 
-from fastapi import Depends, FastAPI, HTTPException, Request, UploadFile, File as FastAPIFile, status
+from fastapi import Depends, FastAPI, HTTPException, Request, UploadFile, status
+from fastapi import File as FastAPIFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.openapi.docs import get_swagger_ui_html, get_redoc_html
-from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
+from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
+from fastapi.responses import (
+    HTMLResponse,
+    JSONResponse,
+    PlainTextResponse,
+    RedirectResponse,
+)
 from pydantic import ValidationError
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
@@ -39,16 +45,23 @@ from agents.deep_agent import (
     regenerate_chat_agent,
 )
 from agents.prompts import (
-    _dict_to_learned_preferences_text,
     _parse_learned_preferences_to_dict,
     _parse_preferences,
     _sanitize_instructions,
     extract_stated_currency,
 )
+from agents.tools.pipeline_tools import is_pipeline_tool
+from agents.tools.visuals import generate_destination_image
 from auth import verify_api_key
 from cache import cache_client
 from cancel_registry import cancel_stream, register_cancel, unregister_cancel
 from config import REQUEST_TIMEOUT_SECONDS, logger, settings
+from cost_store import cost_store
+from feedback_store import feedback_store
+from file_store import file_store
+from guard import classify_injection_risk
+from ical_generator import generate_ics
+from locale_utils import classify_exception, extract_locale, get_error_message
 from logging_config import generate_request_id, set_request_context
 from models import (
     AuthLogoutResponse,
@@ -80,7 +93,6 @@ from models import (
     UploadResponse,
 )
 from oauth import (
-    DEV_USER,
     SESSION_COOKIE_NAME,
     SESSION_TTL,
     create_session,
@@ -90,20 +102,12 @@ from oauth import (
     oauth,
     verify_admin,
 )
-from locale_utils import classify_exception, extract_locale, get_error_message
-from sanitize import sanitize_prompt_input, sanitize_prompt_input_detailed
-from share_store import share_store
-from agents.tools.pipeline_tools import is_pipeline_tool
-from agents.tools.visuals import generate_destination_image
-from threads import generate_summary, thread_store
-from cost_store import cost_store
-from feedback_store import feedback_store
-from research_cache import research_cache
-from ical_generator import generate_ics
-from file_store import file_store
-from guard import classify_injection_risk
-from security_store import security_store
 from observability_store import observability_store
+from research_cache import research_cache
+from sanitize import sanitize_prompt_input, sanitize_prompt_input_detailed
+from security_store import security_store
+from share_store import share_store
+from threads import generate_summary, thread_store
 
 ALLOWED_ORIGINS: list[str] = [
     orig.strip()
@@ -192,7 +196,7 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # --- Per-user rate limiting (Phase 7.2) ---
-from rate_limiter import RateLimitMiddleware  # noqa: E402
+from rate_limiter import RateLimitMiddleware
 
 app.add_middleware(RateLimitMiddleware)
 
@@ -403,7 +407,7 @@ class _ObsQueue:
             self._task.cancel()
 
 
-def _send_obs_event(obs: "_ObsQueue", thread_id: str, payload: dict) -> None:
+def _send_obs_event(obs: _ObsQueue, thread_id: str, payload: dict) -> None:
     """Enqueue an observability record_event for one SSE payload."""
     try:
         evt_data = json.loads(payload["data"]) if payload.get("data") else {}
@@ -648,7 +652,6 @@ def _parse_chat_event(
     if event_type == "on_tool_error":
         run_id = event.get("run_id", "")
         name = event.get("name", "")
-        error_msg = event_data.get("error") if isinstance(event_data, dict) else str(event_data)
         parent_ids = event.get("parent_ids") or []
         parent_run_id = None
         for pid in parent_ids:
@@ -1078,7 +1081,7 @@ async def submit_feedback(
     # avoid a CORS preflight OPTIONS request (see chat_stream for details).
     try:
         body = FeedbackRequest(**json.loads(await _read_capped_body(request, 64 * 1024)))
-    except (json.JSONDecodeError, ValidationError) as exc:
+    except (json.JSONDecodeError, ValidationError):
         raise HTTPException(status_code=422, detail="Invalid request body.")
 
     user_id = user["user_id"]
@@ -1740,7 +1743,7 @@ async def chat_stream(
     try:
         raw_body = await _read_capped_body(request, 20 * 1024 * 1024)
         chat_req = ChatRequest(**json.loads(raw_body))
-    except (json.JSONDecodeError, ValidationError) as exc:
+    except (json.JSONDecodeError, ValidationError):
         raise HTTPException(status_code=422, detail="Invalid request body.")
 
     _msg_safe = sanitize_prompt_input(chat_req.message, "message")
@@ -2149,7 +2152,7 @@ async def chat_regenerate_tier(
     constraints_data = await payload_store.get_thread_state(thread_id, "constraints")
     try:
         constraints = TripConstraints(**constraints_data) if isinstance(constraints_data, dict) else None
-    except Exception:
+    except Exception:  # noqa: BLE001
         constraints = None
     if constraints is None:
         raise HTTPException(
@@ -2605,7 +2608,7 @@ async def get_thread_history(
         from agents.deep_agent import get_activity_store
         _store = get_activity_store()
         all_activity = await _load_all_activity(_store, thread_id)
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
 
     # Fallback: try legacy latest-only activity
@@ -2616,7 +2619,7 @@ async def get_thread_history(
             from agents.deep_agent import get_activity_store
             _store = get_activity_store()
             legacy_activity = await _load_activity(_store, thread_id)
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
 
     # --- Payload replay (R4) --------------------------------------------------
@@ -2641,7 +2644,7 @@ async def get_thread_history(
         for i, pid in payload_msgs:
             try:
                 record = await _payload_store.get_thread_state(thread_id, f"payload:{pid}")
-            except Exception:  # noqa: BLE001, S110
+            except Exception:  # noqa: BLE001
                 record = None
             if not isinstance(record, dict) or not isinstance(record.get("data"), dict):
                 continue  # expired/missing — card just doesn't render, as before
@@ -2887,7 +2890,7 @@ async def update_thread(
     # avoid a CORS preflight OPTIONS request (see chat_stream for details).
     try:
         body = ThreadUpdateRequest(**json.loads(await _read_capped_body(request, 64 * 1024)))
-    except (json.JSONDecodeError, ValidationError) as exc:
+    except (json.JSONDecodeError, ValidationError):
         raise HTTPException(status_code=422, detail="Invalid request body.")
 
     user_id = user["user_id"]
@@ -3366,7 +3369,7 @@ async def _export_openapi_schema() -> None:
     os.makedirs(static_dir, exist_ok=True)
     schema = app.openapi()
     path = os.path.join(static_dir, "openapi.json")
-    with open(path, "w") as f:
+    with open(path, "w") as f:  # noqa: ASYNC230
         json.dump(schema, f, indent=2)
     logger.info("OpenAPI schema exported to %s (%d endpoints)", path, len(schema.get("paths", {})))
 

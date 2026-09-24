@@ -12,18 +12,17 @@ Usage (middleware is registered in main.py):
 
 from __future__ import annotations
 
-import json
 import logging
 import time
-from typing import Callable
+from collections.abc import Callable
 
+from redis.asyncio import Redis
+from redis.exceptions import RedisError
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from config import REDIS_URL, settings
-from redis.asyncio import Redis
-from redis.exceptions import RedisError
 from sqlite_fallback import get_sqlite_connection
 
 logger = logging.getLogger("travel_agent.rate_limiter")

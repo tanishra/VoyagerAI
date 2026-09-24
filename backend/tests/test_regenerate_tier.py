@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -72,7 +71,7 @@ class TestRegenerateTierPlan:
     """pipeline.regenerate_tier_plan — single-call regen with enforcement."""
 
     def test_patches_only_target_tier_and_syncs_matrix(self, monkeypatch):
-        import agents.pipeline as pipeline
+        from agents import pipeline
 
         new_plan = _plan("premium", 72000)
         new_plan["highlights"] = ["fresh premium option"]
@@ -104,7 +103,7 @@ class TestRegenerateTierPlan:
         assert original["plans"][2]["itinerary"]["estimated_total_cost_usd"] == 75000
 
     def test_enforces_constraints_on_model_output(self, monkeypatch):
-        import agents.pipeline as pipeline
+        from agents import pipeline
 
         bad_plan = _plan("budget", 31000)
         bad_plan["itinerary"]["currency"] = "USD"
@@ -124,7 +123,7 @@ class TestRegenerateTierPlan:
         assert it["destination"] == "Delhi, India"
 
     def test_missing_tier_returns_none(self, monkeypatch):
-        import agents.pipeline as pipeline
+        from agents import pipeline
 
         async def fake_gen(model, prompt, task, stage):
             pytest.fail("should not generate for a missing tier")
@@ -134,7 +133,7 @@ class TestRegenerateTierPlan:
         assert result is None
 
     def test_validation_failure_retries_then_fails(self, monkeypatch):
-        import agents.pipeline as pipeline
+        from agents import pipeline
         from agents.validation import Issue
 
         calls = []
@@ -156,7 +155,7 @@ class TestRegenerateTierPlan:
         assert "issues_to_fix" in calls[-1]  # feedback loop engaged
 
     def test_cancel_and_budget_guards(self, monkeypatch):
-        import agents.pipeline as pipeline
+        from agents import pipeline
 
         async def fake_gen(model, prompt, task, stage):
             pytest.fail("guards must short-circuit before generation")
@@ -184,6 +183,7 @@ class TestRegenerateTierPlan:
 
 def _create_dev_session():
     import asyncio
+
     from oauth import DEV_USER, create_session
     loop = asyncio.new_event_loop()
     try:
@@ -220,8 +220,8 @@ def _scoped_thread_id(raw: str = "tier-test") -> str:
 
 def _wire_stores(monkeypatch, *, constraints=None, comparison=None):
     """Point payload_store thread-state reads at fixtures."""
-    import payload_store as ps_module
     import agents.pipeline as pipeline_module
+    import payload_store as ps_module
 
     async def fake_get_state(tid, key):
         return {
@@ -312,7 +312,7 @@ class TestRegenerateTierEndpoint:
         assert captured["payload:pc1"] == {"kind": "comparison", "data": updated}
 
         # Scoped thread id + tier reached the pipeline call
-        args, kwargs = fake_regen.call_args
+        args, _kwargs = fake_regen.call_args
         assert args[1] == "balanced"
 
     def test_requires_auth(self, monkeypatch):

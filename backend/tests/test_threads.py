@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+from typing import ClassVar
 from unittest.mock import patch
 
 import pytest
@@ -426,7 +427,7 @@ class TestReadThreadValues:
         import main as main_module
 
         class _Tup:
-            checkpoint = {"channel_values": {"messages": ["hello"]}}
+            checkpoint: ClassVar = {"channel_values": {"messages": ["hello"]}}
 
         class _Saver:
             async def aget_tuple(self, config):
@@ -449,7 +450,7 @@ class TestReadThreadValues:
         seen = {}
 
         class _Tup:
-            checkpoint = {"channel_values": {"messages": []}}
+            checkpoint: ClassVar = {"channel_values": {"messages": []}}
 
         class _Saver:
             async def aget_tuple(self, config):

@@ -255,7 +255,7 @@ async def get_sqlite_connection() -> aiosqlite.Connection | None:
         await _conn.executescript(_SCHEMA_SQL)
         try:
             await _conn.execute("ALTER TABLE shares ADD COLUMN image_base64 TEXT")
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass  # Column already exists
         await _conn.execute(f"PRAGMA user_version = {_SCHEMA_VERSION}")
         await _conn.commit()

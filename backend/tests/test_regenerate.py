@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+from typing import ClassVar
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -12,6 +13,7 @@ from fastapi.testclient import TestClient
 def _create_dev_session():
     """Create a real dev session and return the session ID."""
     import asyncio
+
     from oauth import DEV_USER, create_session
     loop = asyncio.new_event_loop()
     try:
@@ -187,8 +189,8 @@ class TestBranchesEndpoint:
                 self.content = content
 
         class _FakeState:
-            config = {"configurable": {"checkpoint_id": branch_1_id}}
-            values = {"messages": []}
+            config: ClassVar = {"configurable": {"checkpoint_id": branch_1_id}}
+            values: ClassVar = {"messages": []}
 
         class _FakeAgent:
             async def aget_state(self, config):

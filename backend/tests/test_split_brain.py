@@ -26,22 +26,22 @@ _tmpdir = tempfile.mkdtemp(prefix="voyager_splitbrain_")
 _test_db_path = os.path.join(_tmpdir, "test_stores.sqlite")
 os.environ["SQLITE_FALLBACK_DB_PATH"] = _test_db_path
 
-from config import settings  # noqa: E402
+from config import settings
+
 settings.SQLITE_FALLBACK_DB_PATH = _test_db_path
 
-import sqlite_fallback  # noqa: E402
-from threads import ThreadStore  # noqa: E402
-from share_store import ShareStore  # noqa: E402
-from cost_store import CostStore  # noqa: E402
-from security_store import SecurityStore  # noqa: E402
-from feedback_store import FeedbackStore  # noqa: E402
-from research_cache import ResearchCache  # noqa: E402
-from geocode_cache import GeocodeCache  # noqa: E402
-from file_store import FileStore  # noqa: E402
-import rate_limiter as rl_module  # noqa: E402
-from rate_limiter import RateLimiter  # noqa: E402
-from sqlite_fallback import get_sqlite_connection as _real_get_sqlite  # noqa: E402
-
+import rate_limiter as rl_module
+import sqlite_fallback
+from cost_store import CostStore
+from feedback_store import FeedbackStore
+from file_store import FileStore
+from geocode_cache import GeocodeCache
+from rate_limiter import RateLimiter
+from research_cache import ResearchCache
+from security_store import SecurityStore
+from share_store import ShareStore
+from sqlite_fallback import get_sqlite_connection as _real_get_sqlite
+from threads import ThreadStore
 
 # ---------------------------------------------------------------------------
 # Minimal in-memory Redis double
@@ -49,7 +49,7 @@ from sqlite_fallback import get_sqlite_connection as _real_get_sqlite  # noqa: E
 
 
 class FakePipeline:
-    def __init__(self, r: "FakeRedis") -> None:
+    def __init__(self, r: FakeRedis) -> None:
         self._r = r
         self._ops: list[tuple] = []
 
@@ -672,6 +672,7 @@ class TestMultiWorkerWarning:
     @pytest.mark.asyncio
     async def test_warns_when_workers_gt_1(self, monkeypatch, caplog):
         import logging
+
         import main as main_module
 
         monkeypatch.setenv("UVICORN_WORKERS", "4")
@@ -682,6 +683,7 @@ class TestMultiWorkerWarning:
     @pytest.mark.asyncio
     async def test_silent_when_single_worker(self, monkeypatch, caplog):
         import logging
+
         import main as main_module
 
         for var in ("UVICORN_WORKERS", "WEB_CONCURRENCY", "GUNICORN_WORKERS"):

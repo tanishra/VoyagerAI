@@ -305,7 +305,7 @@ class TestDevBypassRemoved:
             assert resp.status_code in (302, 307)
             # Should NOT set a voyager_session cookie (that was the old dev bypass behavior)
             assert "voyager_session" not in resp.cookies
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             # In test environments without Google OAuth configured, the endpoint
             # will raise an error — but the key assertion is that it does NOT
             # set a voyager_session cookie (dev bypass behavior)

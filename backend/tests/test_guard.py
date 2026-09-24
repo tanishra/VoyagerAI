@@ -6,8 +6,9 @@ These tests mock the LLM to avoid real API calls. They verify:
 - Disabled guard returns benign verdict
 """
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 from guard import GuardVerdict, classify_injection_risk
 

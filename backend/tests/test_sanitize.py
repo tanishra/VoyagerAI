@@ -2,7 +2,12 @@
 
 import logging
 
-from sanitize import sanitize_prompt_input, sanitize_prompt_input_detailed, scan_text_for_injection, SanitizeResult
+from sanitize import (
+    SanitizeResult,
+    sanitize_prompt_input,
+    sanitize_prompt_input_detailed,
+    scan_text_for_injection,
+)
 
 
 def test_none_passthrough():

@@ -3,11 +3,9 @@
 from __future__ import annotations
 
 import json
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
-import pytest
-
-from agents.llm import get_subagent_model, _parse_subagent_overrides
+from agents.llm import _parse_subagent_overrides, get_subagent_model
 from config.settings import settings
 
 

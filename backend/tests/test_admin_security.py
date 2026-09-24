@@ -7,9 +7,10 @@ Tests verify:
 - Non-admin users get 403
 """
 
-import pytest
-from httpx import AsyncClient, ASGITransport
 from unittest.mock import AsyncMock, patch
+
+import pytest
+from httpx import ASGITransport, AsyncClient
 
 from main import app
 from oauth import get_current_user, verify_admin

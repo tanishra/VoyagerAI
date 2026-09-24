@@ -182,7 +182,7 @@ class ShareStore:
                             "destination": row["destination"] or "",
                             "created_at": float(row["created_at"] or 0),
                             "expires_at": expires_at,
-                            "image_base64": row["image_base64"] if "image_base64" in row.keys() else None,
+                            "image_base64": row["image_base64"] if "image_base64" in row.keys() else None,  # noqa: SIM118 — sqlite3.Row membership tests values, not keys
                         }
             except Exception as exc:  # noqa: BLE001
                 logger.warning("ShareStore get_share SQLite error: %s", exc)

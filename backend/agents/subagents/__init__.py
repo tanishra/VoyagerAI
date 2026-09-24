@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
 
 from deepagents import SubAgent
 from langchain_core.language_models import BaseChatModel
@@ -36,14 +35,14 @@ class _ResilientModel(BaseChatModel):
     def _generate(self, messages, stop=None, run_manager=None, **kwargs):
         try:
             return self.inner._generate(messages, stop=stop, run_manager=run_manager, **kwargs)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             logger.warning("Subagent '%s' model failed: %s", self.subagent_name, exc)
             return self._fallback_result(exc)
 
     async def _agenerate(self, messages, stop=None, run_manager=None, **kwargs):
         try:
             return await self.inner._agenerate(messages, stop=stop, run_manager=run_manager, **kwargs)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             logger.warning("Subagent '%s' model failed: %s", self.subagent_name, exc)
             return self._fallback_result(exc)
 

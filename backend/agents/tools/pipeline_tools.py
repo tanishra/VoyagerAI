@@ -16,7 +16,8 @@ import asyncio
 import contextvars
 import json
 import logging
-from typing import Callable, Literal
+from collections.abc import Callable
+from typing import Literal
 
 from langchain_core.tools import tool
 from pydantic import BaseModel, Field
@@ -57,15 +58,15 @@ async def _record_retries(thread_id: str, stage_usage: dict) -> None:
             name="generation_retries",
             output=json.dumps(retried),
         )
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         logger.debug("record_retries failed: %s", exc)
 
 __all__ = [
     "PIPELINE_TOOL_NAMES",
+    "get_latest_comparison",
     "get_pipeline_tools",
     "is_pipeline_tool",
     "pop_payload",
-    "get_latest_comparison",
     "set_pipeline_context",
 ]
 
@@ -93,7 +94,7 @@ async def _get_last_constraints(thread_id: str) -> TripConstraints | None:
         return None
     try:
         return TripConstraints.model_validate(data)
-    except Exception:
+    except Exception:  # noqa: BLE001
         return None
 
 

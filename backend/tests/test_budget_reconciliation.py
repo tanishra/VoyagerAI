@@ -41,7 +41,7 @@ class TestReconcileItineraryBudget:
 
     def test_within_5pct_tolerance_unchanged(self):
         it = _itinerary(355000, [75000, 75000, 75000, 75000, 75000])
-        out = reconcile(it)
+        reconcile(it)
         # 355000 vs 375000 = 5.33% off — actually over tolerance; use exact 5%:
         it2 = _itinerary(375000 * 0.95 + 1, [75000] * 5)
         assert reconcile(it2)["estimated_total_cost_usd"] == it2["estimated_total_cost_usd"]

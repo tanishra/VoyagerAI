@@ -22,12 +22,12 @@ _tmpdir = tempfile.mkdtemp(prefix="voyager_test_")
 _test_db_path = os.path.join(_tmpdir, "test_cost_monitoring.sqlite")
 os.environ["SQLITE_FALLBACK_DB_PATH"] = _test_db_path
 
-from config import settings  # noqa: E402
+from config import settings
+
 settings.SQLITE_FALLBACK_DB_PATH = _test_db_path
 
-import sqlite_fallback  # noqa: E402
-from cost_store import CostStore  # noqa: E402
-
+import sqlite_fallback
+from cost_store import CostStore
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -249,13 +249,13 @@ class TestCheckPlatformAlerts:
 class TestPrometheusMetrics:
     def test_metrics_are_registered(self):
         from metrics import (
-            LLM_CALLS_TOTAL,
-            LLM_TOKENS_TOTAL,
-            LLM_COST_TOTAL,
+            ACTIVE_SESSIONS,
             CIRCUIT_BREAKER_STATUS,
             DAILY_PLATFORM_SPEND,
             HOURLY_PLATFORM_SPEND,
-            ACTIVE_SESSIONS,
+            LLM_CALLS_TOTAL,
+            LLM_COST_TOTAL,
+            LLM_TOKENS_TOTAL,
             RATE_LIMIT_HITS_TOTAL,
         )
         # Prometheus strips _total suffix from Counter._name internally
@@ -347,7 +347,11 @@ class TestStructuredLogging:
         assert not log_output.startswith("{")
 
     def test_request_context_sets_and_gets(self):
-        from logging_config import set_request_context, get_log_context, generate_request_id
+        from logging_config import (
+            generate_request_id,
+            get_log_context,
+            set_request_context,
+        )
 
         req_id = generate_request_id()
         set_request_context(request_id=req_id, user_id="alice", thread_id="t1")
@@ -379,7 +383,7 @@ class TestCreatedAtPreserved:
             assert first is not None
             original_created = first["created_at"]
 
-            time.sleep(0.05)
+            time.sleep(0.05)  # noqa: ASYNC251
             await store.update_session_total(
                 thread_id="t1", user_id="alice",
                 total_input_tokens=200, total_output_tokens=100,

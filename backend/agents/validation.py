@@ -33,11 +33,12 @@ class Issue(BaseModel):
 
 
 def _as_float(value) -> float | None:
+    import math
     try:
         f = float(value)
     except (TypeError, ValueError):
         return None
-    return f if f == f else None  # NaN guard
+    return None if math.isnan(f) else f  # NaN guard
 
 
 def validate_itinerary(
@@ -136,7 +137,7 @@ def validate_itinerary(
                 ),
             ))
         destination = str(itinerary.get("destination") or "")
-        if destination and constraints.destination:
+        if destination and constraints.destination:  # noqa: SIM102
             if constraints.destination.split(",")[0].strip().lower() not in destination.lower():
                 issues.append(Issue(
                     code="destination_mismatch",

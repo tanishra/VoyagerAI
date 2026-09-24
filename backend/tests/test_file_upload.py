@@ -7,8 +7,7 @@ stream_chat_agent — same pattern as test_threads.py.
 from __future__ import annotations
 
 import base64
-import io
-from unittest.mock import patch, AsyncMock
+from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -19,6 +18,7 @@ from file_store import FileStore
 def _create_dev_session():
     """Create a real dev session and return the session ID."""
     import asyncio
+
     from oauth import DEV_USER, create_session
     loop = asyncio.new_event_loop()
     try:

@@ -8,13 +8,19 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
-from cancel_registry import _cancel_events, cancel_stream, register_cancel, unregister_cancel
+from cancel_registry import (
+    _cancel_events,
+    cancel_stream,
+    register_cancel,
+    unregister_cancel,
+)
 from main import _parse_chat_event
 
 
 def _create_dev_session():
     """Create a real dev session and return the session ID."""
     import asyncio
+
     from oauth import DEV_USER, create_session
     loop = asyncio.new_event_loop()
     try:

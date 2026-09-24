@@ -2,10 +2,10 @@
 from __future__ import annotations
 
 import pytest
+from pydantic import ValidationError
 
 import agents.deep_agent as da
 import main as main_module
-
 
 # --- A6: resilient PG wrappers ----------------------------------------------
 
@@ -176,7 +176,7 @@ def test_attachments_count_cap():
                        content_type="image/png", data_url="data:image/png;base64,x")
         for i in range(6)
     ]
-    with pytest.raises(Exception):
+    with pytest.raises(ValidationError):
         ChatRequest(message="hi", attachments=atts)
 
 
@@ -185,7 +185,7 @@ def test_attachment_data_url_optional_and_capped():
     # data_url now optional (frontend strips it; server resolves via file_id)
     a = AttachmentInfo(file_id="f1", filename="a.png", content_type="image/png")
     assert a.data_url is None
-    with pytest.raises(Exception):
+    with pytest.raises(ValidationError):
         AttachmentInfo(file_id="f1", filename="a.png", content_type="image/png",
                        data_url="x" * 14_000_001)
 
@@ -225,8 +225,9 @@ class TestBodyCaps:
 class TestApiKeyFallback:
     @pytest.mark.asyncio
     async def test_query_param_warns_but_authenticates(self, monkeypatch, caplog):
-        import auth
         from unittest.mock import MagicMock
+
+        import auth
         monkeypatch.setattr(auth, "AUTH_MODE", "production")
         monkeypatch.setattr(auth, "API_AUTH_KEY", "secret-key")
         req = MagicMock()
@@ -240,8 +241,9 @@ class TestApiKeyFallback:
 
     @pytest.mark.asyncio
     async def test_header_preferred_no_warning(self, monkeypatch, caplog):
-        import auth
         from unittest.mock import MagicMock
+
+        import auth
         monkeypatch.setattr(auth, "AUTH_MODE", "production")
         monkeypatch.setattr(auth, "API_AUTH_KEY", "secret-key")
         req = MagicMock()

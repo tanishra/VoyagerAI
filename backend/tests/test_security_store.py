@@ -8,8 +8,6 @@ Uses in-memory fallback by forcing Redis unavailable. Verifies:
 - User ID hashing for privacy
 """
 
-import asyncio
-import time
 import pytest
 
 from security_store import SecurityStore, _hash_user_id

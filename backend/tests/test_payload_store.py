@@ -30,7 +30,7 @@ class TestPayloads:
         asyncio.run(s.store("p1", "itinerary", {"days": []}))
         # Push the mem entry into the past
         key = "pipeline:payload:p1"
-        exp, raw = s._mem[key]
+        _exp, raw = s._mem[key]
         s._mem[key] = (time.time() - 1, raw)
         assert asyncio.run(s.pop("p1")) is None
 

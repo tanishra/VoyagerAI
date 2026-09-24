@@ -119,7 +119,7 @@ async def _search_with_retry(query: str, max_results: int = 5, topic: str = "gen
             )
             last_error = TimeoutError("Search timed out")
 
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             logger.warning(
                 "Tavily search failed (attempt %d/%d): %s",
                 attempt + 1, _MAX_RETRIES + 1, exc,
@@ -258,7 +258,7 @@ async def _quick_search(query: str, topic: str = "general") -> str:
             )
             last_error = TimeoutError("Search timed out")
 
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             logger.warning(
                 "Tavily search failed (attempt %d/%d): %s",
                 attempt + 1, _MAX_RETRIES + 1, exc,

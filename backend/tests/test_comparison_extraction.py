@@ -5,10 +5,10 @@ from __future__ import annotations
 import json
 
 from agents.deep_agent import (
+    _detect_plan_kind,
     _extract_comparison_from_text,
     _find_largest_comparison_object,
     _format_comparison,
-    _detect_plan_kind,
 )
 
 _SAMPLE_COMPARISON = {

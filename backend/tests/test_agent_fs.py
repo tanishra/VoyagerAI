@@ -3,8 +3,6 @@
 import asyncio
 import hashlib
 
-import agents.deep_agent as deep_agent_module
-
 
 def _run_create(user_id):
     """Call create_chat_agent with everything external stubbed; return captured root_dir."""
@@ -55,7 +53,7 @@ def _run_create(user_id):
 class TestPerUserFilesystem:
     def test_root_dir_is_per_user_hash(self):
         _, cap = _run_create("alice")
-        expected = hashlib.sha256("alice".encode()).hexdigest()[:12]
+        expected = hashlib.sha256(b"alice").hexdigest()[:12]
         assert cap["root_dir"] == f"/tmp/agent_fs/{expected}"
 
     def test_different_users_get_different_dirs(self):
@@ -78,7 +76,7 @@ class TestPerUserFilesystem:
 
     def test_anonymous_user_gets_hashed_dir(self):
         _, cap = _run_create(None)
-        expected = hashlib.sha256("anonymous".encode()).hexdigest()[:12]
+        expected = hashlib.sha256(b"anonymous").hexdigest()[:12]
         assert cap["root_dir"] == f"/tmp/agent_fs/{expected}"
 
     def test_memory_namespace_is_label_safe_for_email_user_ids(self):

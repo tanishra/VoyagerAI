@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Literal
 
 from langchain_core.output_parsers import PydanticOutputParser
 from pydantic import BaseModel, Field
