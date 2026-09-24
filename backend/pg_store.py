@@ -13,9 +13,8 @@ Supabase notes:
 - SSL is required: ``sslmode=require`` is appended when missing.
 
 Usage:
-    from pg_store import pg_fetchone, pg_execute
+    from pg_store import pg_execute
 
-    row = await pg_fetchone("SELECT x FROM t WHERE k = $1", (key,))
     await pg_execute("INSERT INTO t (k, v) VALUES ($1, $2) ON CONFLICT (k) DO UPDATE SET v = $2", (k, v))
 """
 
@@ -318,38 +317,6 @@ def mark_pg_broken() -> None:
             asyncio.get_running_loop().create_task(pool.close())
         except RuntimeError:
             pass
-
-
-async def pg_fetchone(sql: str, params: tuple = ()) -> dict | None:
-    pool = await get_pg_pool()
-    if pool is None:
-        return None
-    try:
-        from psycopg.rows import dict_row
-
-        async with pool.connection() as conn:
-            cur = await conn.cursor(row_factory=dict_row).execute(sql, params)
-            return await cur.fetchone()
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("pg_fetchone failed: %s", exc)
-        mark_pg_broken()
-        return None
-
-
-async def pg_fetch(sql: str, params: tuple = ()) -> list[dict] | None:
-    pool = await get_pg_pool()
-    if pool is None:
-        return None
-    try:
-        from psycopg.rows import dict_row
-
-        async with pool.connection() as conn:
-            cur = await conn.cursor(row_factory=dict_row).execute(sql, params)
-            return await cur.fetchall()
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("pg_fetch failed: %s", exc)
-        mark_pg_broken()
-        return None
 
 
 async def pg_execute(sql: str, params: tuple = ()) -> int:

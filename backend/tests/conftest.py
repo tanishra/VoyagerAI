@@ -57,16 +57,27 @@ def _fast_redis_fail(monkeypatch):
     except Exception:  # noqa: BLE001, S110
         pass
 
-    # Reset shared SQLite connection to prevent stale event-loop hangs
+    # Reset shared SQLite connection — close the orphaned conn's worker thread
+    # instead of just dropping the reference (dead-loop postings otherwise warn)
     import sqlite_fallback
-    sqlite_fallback._conn = None
-    sqlite_fallback._init_failed = False
+
+    def _reset_sqlite_state():
+        if sqlite_fallback._conn is not None:
+            sqlite_fallback._stop_orphaned(sqlite_fallback._conn)
+        sqlite_fallback._conn = None
+        sqlite_fallback._conn_loop = None
+        sqlite_fallback._init_failed = False
+        saver = deep_agent_module._sqlite_checkpointer
+        if saver is not None and getattr(saver, "conn", None) is not None:
+            sqlite_fallback._stop_orphaned(saver.conn)
+        deep_agent_module._sqlite_checkpointer = None
+
+    _reset_sqlite_state()
 
     yield
 
     # Clean up SQLite connection after test
-    sqlite_fallback._conn = None
-    sqlite_fallback._init_failed = False
+    _reset_sqlite_state()
 
 
 @pytest.fixture

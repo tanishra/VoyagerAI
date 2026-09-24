@@ -38,10 +38,6 @@ def set_request_context(
         _thread_id.set(thread_id)
 
 
-def get_request_id() -> str | None:
-    return _request_id.get()
-
-
 def generate_request_id() -> str:
     return uuid.uuid4().hex[:12]
 

@@ -18,6 +18,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import threading
 import time
 
 import aiosqlite
@@ -223,6 +224,24 @@ _conn_loop: asyncio.AbstractEventLoop | None = None
 _init_failed = False
 
 
+def _stop_orphaned(conn: aiosqlite.Connection) -> None:
+    """Close an aiosqlite connection whose owning event loop is gone.
+
+    stop() is synchronous; called from a plain thread, asyncio.get_event_loop()
+    raises inside it so the close op carries no future — the worker thread
+    executes close_and_stop and exits without posting to a dead loop (which is
+    what produced 'Event loop is closed' PytestUnhandledThreadExceptionWarning).
+    """
+    def _do() -> None:
+        try:
+            conn.stop()
+        except Exception:  # noqa: BLE001, S110
+            pass
+    t = threading.Thread(target=_do, daemon=True)
+    t.start()
+    t.join(timeout=5)
+
+
 async def get_sqlite_connection() -> aiosqlite.Connection | None:
     """Return shared async SQLite connection, creating the DB + schema on first call.
 
@@ -240,6 +259,7 @@ async def get_sqlite_connection() -> aiosqlite.Connection | None:
 
     if _conn is not None:
         if _conn_loop is not None and (_conn_loop.is_closed() or _conn_loop is not current_loop):
+            _stop_orphaned(_conn)
             _conn = None
             _conn_loop = None
         else:

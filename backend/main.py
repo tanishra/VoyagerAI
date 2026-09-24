@@ -7,6 +7,7 @@ import json
 import re
 import secrets
 import uuid
+from contextlib import asynccontextmanager
 from dataclasses import asdict
 
 from fastapi import Depends, FastAPI, HTTPException, Request, UploadFile, status
@@ -150,7 +151,23 @@ if settings.AUTH_MODE == "production":
             "GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET must be set in production mode."
         )
 
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    """Startup/shutdown lifecycle — replaces deprecated @app.on_event handlers.
+
+    Startup: export OpenAPI schema, launch hourly cleanup task, warn on
+    multi-worker. Shutdown: cancel cleanup task + close PG pool."""
+    await _export_openapi_schema()
+    await _start_thread_cleanup_task()
+    await _warn_multi_worker()
+    try:
+        yield
+    finally:
+        await _cancel_thread_cleanup_task()
+
+
 app = FastAPI(
+    lifespan=_lifespan,
     title="VoyagerAI — Travel Planning AI Agent",
     version="2.2.0",
     description=(
@@ -1519,23 +1536,6 @@ async def get_observability_usage(
     usage = await observability_store.get_usage(from_ts=from_ts, to_ts=to_ts)
     return JSONResponse(content=usage)
 
-
-def _sanitize_preferences_sections(content: str) -> str:
-    """Sanitize the <user_instructions> section of preferences content.
-
-    Strips XML-like tags from the user_instructions section only,
-    leaving the rest of the file (including <learned_preferences>) untouched.
-    """
-    if not content:
-        return content
-
-    instr_match = re.search(r"<user_instructions>\s*(.*?)\s*</user_instructions>", content, re.DOTALL)
-    if not instr_match:
-        return content
-
-    raw_instr = instr_match.group(1)
-    sanitized = re.sub(r"</?[\w-]+>", "", raw_instr).strip()
-    return content[:instr_match.start(1)] + sanitized + content[instr_match.end(1):]
 
 
 @app.get(
@@ -3361,7 +3361,6 @@ async def export_itinerary(
     )
 
 
-@app.on_event("startup")
 async def _export_openapi_schema() -> None:
     """Export OpenAPI JSON to static file for frontend consumption."""
     import os
@@ -3374,7 +3373,6 @@ async def _export_openapi_schema() -> None:
     logger.info("OpenAPI schema exported to %s (%d endpoints)", path, len(schema.get("paths", {})))
 
 
-@app.on_event("startup")
 async def _start_thread_cleanup_task() -> None:
     """Launch a background task that periodically cleans up expired thread checkpoints."""
 
@@ -3418,7 +3416,6 @@ async def _start_thread_cleanup_task() -> None:
     app.state._cleanup_task = asyncio.create_task(_cleanup_loop())
 
 
-@app.on_event("startup")
 async def _warn_multi_worker() -> None:
     """Warn when running with >1 worker — several stores keep in-process state.
 
@@ -3442,7 +3439,6 @@ async def _warn_multi_worker() -> None:
             break
 
 
-@app.on_event("shutdown")
 async def _cancel_thread_cleanup_task() -> None:
     """Cancel the background cleanup task on shutdown."""
     task = getattr(app.state, "_cleanup_task", None)

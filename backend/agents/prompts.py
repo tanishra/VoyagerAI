@@ -186,14 +186,6 @@ def _parse_learned_preferences_to_dict(text: str) -> dict:
     return result
 
 
-def _dict_to_learned_preferences_text(d: dict) -> str:
-    """Convert a learned preferences dict back to text (key: value lines).
-
-    Reverse of _parse_learned_preferences_to_dict.
-    """
-    if not d:
-        return ""
-    return "\n".join(f"{k}: {v}" for k, v in d.items())
 
 
 def build_chat_agent_prompt(
