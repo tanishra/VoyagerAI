@@ -7,7 +7,7 @@ import { useTranslations } from 'next-intl';
 import { useLocale } from '@/lib/useLocale';
 import { streamChat, cancelStream, regenerateStream, editStream, editItinerary, regenerateTier, TierRegenError } from '@/lib/chat-api';
 import { sanitizeError } from '@/lib/errors';
-import { listThreads, getThreadHistory, getBranches, deleteThread, updateThread, type ThreadMeta } from '@/lib/threads-api';
+import { listThreads, getThreadHistory, getBranches, type ThreadMeta } from '@/lib/threads-api';
 import { getSession, clearSessionCache, type SessionUser } from '@/lib/auth';
 import { useOnlineStatus } from '@/lib/useOnlineStatus';
 import { useThrottledValue } from '@/lib/useThrottledValue';
@@ -35,8 +35,9 @@ import { stripStructuredTags } from '@/lib/utils';
 import { deriveStage, deriveStageDetail, STAGE_LABEL_KEYS } from '@/lib/stage';
 import { uploadFile, type UploadedFile } from '@/lib/upload-api';
 import type { ChatMessage, ClarifyData, ComparisonData, Itinerary, ActivityData, BranchInfo, GeneratedImage, GeneratedChart } from '@/lib/types';
-
-const THREAD_STORAGE_KEY = 'voyagerai_chat_thread_id';
+import { useStreamAccumulators } from '@/hooks/chat/useStreamAccumulators';
+import { useGenerationProgress } from '@/hooks/chat/useGenerationProgress';
+import { useThreads, mergeThreads, THREAD_STORAGE_KEY } from '@/hooks/chat/useThreads';
 
 const TOOL_LABEL_KEYS: Record<string, string> = {
   researcher: 'researching',
@@ -57,16 +58,6 @@ const TOOL_ICONS: Record<string, React.ReactNode> = {
   quality_scorer: <ListChecks className="w-3 h-3" />,
 };
 
-function mergeThreads(prev: ThreadMeta[], next: ThreadMeta[]): ThreadMeta[] {
-  const nextIds = new Set(next.map(t => t.thread_id));
-  const updated = prev
-    .filter(t => nextIds.has(t.thread_id))
-    .map(t => next.find(nt => nt.thread_id === t.thread_id) ?? t);
-  const existingIds = new Set(prev.map(t => t.thread_id));
-  const newThreads = next.filter(t => !existingIds.has(t.thread_id));
-  return [...newThreads, ...updated];
-}
-
 export default function ChatPage() {
   const t = useTranslations('chat');
   const tStatus = useTranslations('status');
@@ -83,20 +74,26 @@ export default function ChatPage() {
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [streamingText, setStreamingText] = useState('');
-  const [streamingItinerary, setStreamingItinerary] = useState<Itinerary | null>(null);
-  const [streamingComparison, setStreamingComparison] = useState<ComparisonData | null>(null);
-  const [streamingClarify, setStreamingClarify] = useState<ClarifyData | null>(null);
-  const [streamingImages, setStreamingImages] = useState<GeneratedImage[]>([]);
-  const [streamingCharts, setStreamingCharts] = useState<GeneratedChart[]>([]);
-  const [partialResearch, setPartialResearch] = useState(false);
-  const [streamingActivity, setStreamingActivity] = useState<ActivityData | null>(null);
-  const [activeWorkers, setActiveWorkers] = useState<string[]>([]);
-  const [progressMap, setProgressMap] = useState<Record<string, string>>({});
-  const [generatingPlans, setGeneratingPlans] = useState(false);
-  const [buildingItinerary, setBuildingItinerary] = useState(false);
-  const plansRunIdRef = useRef<string | null>(null);
-  const itinRunIdRef = useRef<string | null>(null);
+  const {
+    streamingText, setStreamingText,
+    streamingItinerary, setStreamingItinerary,
+    streamingComparison, setStreamingComparison,
+    streamingClarify, setStreamingClarify,
+    streamingImages, setStreamingImages,
+    streamingCharts, setStreamingCharts,
+    partialResearch, setPartialResearch,
+    streamingActivity, setStreamingActivity,
+    streamingActivityRef,
+    activeWorkers, setActiveWorkers,
+    progressMap, setProgressMap,
+    updateActivity,
+    resetStreamAccumulators,
+  } = useStreamAccumulators();
+  const {
+    generatingPlans, buildingItinerary,
+    setGeneratingPlans, setBuildingItinerary,
+    trackPipelineToolStart, trackPipelineToolEnd, resetGenerationUI,
+  } = useGenerationProgress();
   const [threadId, setThreadId] = useState<string | null>(() => {
     if (typeof window !== 'undefined') {
       return localStorage.getItem(THREAD_STORAGE_KEY);
@@ -105,10 +102,7 @@ export default function ChatPage() {
   });
   const [showSidebar, setShowSidebar] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [threads, setThreads] = useState<ThreadMeta[]>([]);
-  const [loadingHistory, setLoadingHistory] = useState(false);
-  const [hasMoreThreads, setHasMoreThreads] = useState(false);
-  const [loadingMore, setLoadingMore] = useState(false);
+  // thread list state lives in useThreads — declared after deps below
   const [elapsed, setElapsed] = useState(0);
   const [isAtBottom, setIsAtBottom] = useState(true);
   const [authChecked, setAuthChecked] = useState(false);
@@ -135,7 +129,18 @@ export default function ChatPage() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
-  const streamingActivityRef = useRef<ActivityData | null>(null);
+
+  const {
+    threads, setThreads,
+    hasMoreThreads, setHasMoreThreads,
+    loadingMore, loadingHistory, setLoadingHistory,
+    handleNewChat, handleSelectThread, handleDeleteThread, handleTogglePin,
+    handleLoadMore, refreshThreads,
+  } = useThreads({
+    threadId, setThreadId, abortRef, sessionResetRef, setMessages,
+    setBranches, setActiveBranchIndex, setEditingMessageId, setEditContent,
+    setError, setSidebarOpen, resetStreamAccumulators, resetGenerationUI,
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -214,130 +219,6 @@ export default function ChatPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     setIsAtBottom(true);
   }, []);
-
-  const handleNewChat = () => {
-    abortRef.current?.abort();
-    sessionResetRef.current = true;
-    setSidebarOpen(false);
-    setMessages([]);
-    setThreadId(null);
-    setBranches([]);
-    setActiveBranchIndex(0);
-    setEditingMessageId(null);
-    setEditContent('');
-    localStorage.removeItem(THREAD_STORAGE_KEY);
-    setError(null);
-    setStreamingText('');
-    setStreamingItinerary(null);
-    setStreamingComparison(null);
-            setStreamingClarify(null);
-    setStreamingImages([]);
-    setStreamingCharts([]);
-    setStreamingActivity(null);
-    streamingActivityRef.current = null;
-    setActiveWorkers([]);
-    setProgressMap({});
-    resetGenerationUI();
-  };
-
-  const trackPipelineToolStart = (tool: { name: string; run_id: string; parent_run_id?: string }) => {
-    if (tool.parent_run_id) return;
-    if (tool.name === 'generate_trip_plans') {
-      plansRunIdRef.current = tool.run_id;
-      setGeneratingPlans(true);
-    } else if (tool.name === 'refine_itinerary') {
-      itinRunIdRef.current = tool.run_id;
-      setBuildingItinerary(true);
-    }
-  };
-
-  const trackPipelineToolEnd = (tool: { run_id: string }) => {
-    if (tool.run_id === plansRunIdRef.current) {
-      plansRunIdRef.current = null;
-      setGeneratingPlans(false);
-    }
-    if (tool.run_id === itinRunIdRef.current) {
-      itinRunIdRef.current = null;
-      setBuildingItinerary(false);
-    }
-  };
-
-  const resetGenerationUI = () => {
-    plansRunIdRef.current = null;
-    itinRunIdRef.current = null;
-    setGeneratingPlans(false);
-    setBuildingItinerary(false);
-  };
-
-  const handleSelectThread = async (selectedThreadId: string) => {
-    if (selectedThreadId === threadId) return;
-
-    abortRef.current?.abort();
-    setLoadingHistory(true);
-    setThreadId(selectedThreadId);
-    setBranches([]);
-    setActiveBranchIndex(0);
-    setEditingMessageId(null);
-    setEditContent('');
-    setSidebarOpen(false);
-    try {
-      localStorage.setItem(THREAD_STORAGE_KEY, selectedThreadId);
-    } catch {
-      // storage unavailable
-    }
-
-    const history = await getThreadHistory(selectedThreadId);
-    const historyMessages: ChatMessage[] = history.map((msg, i) => ({
-      id: `history-${i}`,
-      role: msg.role,
-      content: stripStructuredTags(msg.content),
-      itinerary: msg.itinerary,
-      comparison: msg.comparison,
-      activity: msg.activity,
-      images: msg.images,
-      charts: msg.charts,
-    }));
-
-    if (historyMessages.length === 0) {
-      setMessages([]);
-    } else {
-      setMessages(historyMessages);
-    }
-
-    setError(null);
-    setStreamingText('');
-    setStreamingItinerary(null);
-    setStreamingComparison(null);
-            setStreamingClarify(null);
-    setStreamingImages([]);
-    setStreamingCharts([]);
-    setStreamingActivity(null);
-    streamingActivityRef.current = null;
-    setActiveWorkers([]);
-    setProgressMap({});
-    setLoadingHistory(false);
-  };
-
-  const handleDeleteThread = async (threadIdToDelete: string) => {
-    const ok = await deleteThread(threadIdToDelete);
-    if (ok) {
-      setThreads((prev) => prev.filter((t) => t.thread_id !== threadIdToDelete));
-      if (threadIdToDelete === threadId) {
-        handleNewChat();
-      }
-    }
-  };
-
-  const handleTogglePin = async (threadIdToPin: string, pinned: boolean) => {
-    const ok = await updateThread(threadIdToPin, pinned);
-    if (ok) {
-      setThreads((prev) => prev.map(t =>
-        t.thread_id === threadIdToPin
-          ? { ...t, pinned, pinned_at: pinned ? Date.now() / 1000 : 0 }
-          : t
-      ));
-    }
-  };
 
   const handleFileSelect = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
@@ -437,11 +318,6 @@ export default function ChatPage() {
     let errorMessage = '';
     let aborted = false;
 
-    const updateActivity = (updater: (prev: ActivityData | null) => ActivityData) => {
-      const next = updater(streamingActivityRef.current);
-      streamingActivityRef.current = next;
-      setStreamingActivity(next);
-    };
 
     try {
       const newThreadId = await streamChat(
@@ -1085,11 +961,6 @@ export default function ChatPage() {
     let errorMessage = '';
     let aborted = false;
 
-    const updateActivity = (updater: (prev: ActivityData | null) => ActivityData) => {
-      const next = updater(streamingActivityRef.current);
-      streamingActivityRef.current = next;
-      setStreamingActivity(next);
-    };
 
     try {
       await editStream(
@@ -1554,7 +1425,7 @@ export default function ChatPage() {
         prev.map((m) => (m.id === msgId ? { ...m, comparison } : m))
       );
     } catch (err) {
-      if (err instanceof TierRegenError && err.status === 409) {
+      if (err instanceof TierRegenError && (err.code === 'constraints_expired' || err.status === 409)) {
         setError(t('regenTierExpired'));
       } else if (!(err instanceof DOMException && err.name === 'AbortError')) {
         setError(t('regenTierFailed'));
@@ -1606,13 +1477,7 @@ export default function ChatPage() {
                 onTogglePin={handleTogglePin}
                 onClose={() => setShowSidebar(false)}
                 user={currentUser}
-                onLoadMore={async () => {
-                  setLoadingMore(true);
-                  const res = await listThreads(threads.length);
-                  setThreads((prev) => [...prev, ...res.threads]);
-                  setHasMoreThreads(res.has_more);
-                  setLoadingMore(false);
-                }}
+                onLoadMore={handleLoadMore}
               />
             </motion.div>
           )}
@@ -1651,13 +1516,7 @@ export default function ChatPage() {
                   onTogglePin={handleTogglePin}
                   onClose={() => setSidebarOpen(false)}
                   user={currentUser}
-                  onLoadMore={async () => {
-                    setLoadingMore(true);
-                    const res = await listThreads(threads.length);
-                    setThreads((prev) => [...prev, ...res.threads]);
-                    setHasMoreThreads(res.has_more);
-                    setLoadingMore(false);
-                  }}
+                  onLoadMore={handleLoadMore}
                 />
               </motion.div>
             </motion.div>

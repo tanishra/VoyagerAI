@@ -711,10 +711,12 @@ export async function editStream(
 export class TierRegenError extends Error {
   status: number;
   detail: string;
-  constructor(status: number, detail: string) {
+  code: string | null;
+  constructor(status: number, detail: string, code: string | null = null) {
     super(detail || `HTTP ${status}`);
     this.status = status;
     this.detail = detail;
+    this.code = code;
   }
 }
 
@@ -743,7 +745,13 @@ export async function regenerateTier(
 
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new TierRegenError(response.status, String(data?.detail ?? ''));
+    const raw = data?.detail;
+    const detail = typeof raw === 'string' ? raw
+      : (raw && typeof raw === 'object' && typeof (raw as { message?: unknown }).message === 'string'
+        ? (raw as { message: string }).message : '');
+    const code = raw && typeof raw === 'object' && typeof (raw as { code?: unknown }).code === 'string'
+      ? (raw as { code: string }).code : null;
+    throw new TierRegenError(response.status, detail, code);
   }
   return data.comparison as ComparisonData;
 }

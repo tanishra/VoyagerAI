@@ -250,3 +250,45 @@ class TestApiKeyFallback:
             out = await auth.verify_api_key(req, x_api_key="secret-key")
         assert out == "secret-key"
         assert "query-param" not in caplog.text
+
+
+# --- /ready readiness probe ---------------------------------------------------
+
+class TestReady:
+    def test_ready_returns_tier_statuses(self, client):
+        resp = client.get("/ready")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["status"] in ("ok", "degraded")
+        for tier in ("redis", "postgres", "sqlite"):
+            assert tier in body
+
+    def test_ready_postgres_disabled_without_database_url(self, client, monkeypatch):
+        monkeypatch.setattr(main_module.settings, "DATABASE_URL", "")
+        body = client.get("/ready").json()
+        assert body["postgres"] == "disabled"
+
+
+# --- DATA_DIR resolution -------------------------------------------------------
+
+class TestDataDir:
+    def test_data_dir_rewrites_default_paths(self):
+        from config.settings import Settings
+        s = Settings(DATA_DIR="/tmp/voy-data-test",
+                     CHECKPOINTER_DB_PATH="./data/checkpoints.sqlite",
+                     SQLITE_FALLBACK_DB_PATH="./data/stores.sqlite")
+        assert s.CHECKPOINTER_DB_PATH == "/tmp/voy-data-test/checkpoints.sqlite"
+        assert s.SQLITE_FALLBACK_DB_PATH == "/tmp/voy-data-test/stores.sqlite"
+
+    def test_explicit_path_not_rewritten(self):
+        from config.settings import Settings
+        s = Settings(DATA_DIR="/tmp/voy-data-test", CHECKPOINTER_DB_PATH="/custom/cp.sqlite")
+        assert s.CHECKPOINTER_DB_PATH == "/custom/cp.sqlite"
+
+
+# --- structured errors ----------------------------------------------------------
+
+def test_err_produces_structured_detail():
+    exc = main_module._err(404, "thread_not_found", "nope")
+    assert exc.status_code == 404
+    assert exc.detail == {"code": "thread_not_found", "message": "nope"}

@@ -40,11 +40,32 @@ export function friendlyHttpError(
   let detail = '';
   try {
     const parsed = JSON.parse(body) as { detail?: unknown };
-    if (typeof parsed.detail === 'string') detail = parsed.detail;
+    if (typeof parsed.detail === 'string') {
+      detail = parsed.detail;
+    } else if (parsed.detail && typeof parsed.detail === 'object') {
+      // Structured error: {code, message} — display the message, code is for logic
+      const msg = (parsed.detail as { message?: unknown }).message;
+      if (typeof msg === 'string') detail = msg;
+    }
   } catch {
     detail = body;
   }
   const safe = sanitizeError(detail, '');
   if (safe) return safe;
   return status >= 500 ? fallbacks.server : fallbacks.request;
+}
+
+/** Extract the machine-readable error code from a backend error body, if any.
+ *  Returns null for legacy string details or unparseable bodies. */
+export function parseErrorCode(body: string): string | null {
+  try {
+    const parsed = JSON.parse(body) as { detail?: unknown };
+    if (parsed.detail && typeof parsed.detail === 'object') {
+      const code = (parsed.detail as { code?: unknown }).code;
+      if (typeof code === 'string') return code;
+    }
+  } catch {
+    // not JSON — no code
+  }
+  return null;
 }

@@ -27,6 +27,12 @@ COPY --chown=user:user . /home/user/app
 
 RUN mkdir -p /home/user/app/data && chown -R user:user /home/user/app
 
+# SQLite disaster-tier (checkpoints + store fallbacks) lives here — without a
+# mounted volume every redeploy wipes it.
+# Plain docker: -v voyager-data:/home/user/app/data
+# HF Spaces: enable persistent storage (mounts /data, auto-detected by settings).
+VOLUME /home/user/app/data
+
 USER user
 
 EXPOSE 7860

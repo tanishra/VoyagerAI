@@ -1,4 +1,4 @@
-import type { Itinerary, ComparisonData, ActivityData, BranchInfo, GeneratedImage, GeneratedChart } from '@/lib/types';
+import type { Itinerary, ComparisonData, ClarifyData, ActivityData, BranchInfo, GeneratedImage, GeneratedChart } from '@/lib/types';
 import { putThreads, getAllCachedThreads, putThreadHistory, getCachedThreadHistory, clearOldThreads } from './offline-db';
 import { withAuthParams } from './api-headers';
 
@@ -37,6 +37,7 @@ export interface ThreadMessage {
   content: string;
   itinerary?: Itinerary;
   comparison?: ComparisonData;
+  clarify?: ClarifyData;
   activity?: ActivityData;
   images?: GeneratedImage[];
   charts?: GeneratedChart[];

@@ -36,6 +36,30 @@
         }
       }
     },
+    "/ready": {
+      "get": {
+        "tags": [
+          "ops"
+        ],
+        "summary": "Readiness probe \u2014 per-tier storage status",
+        "description": "Readiness probe for deploy platforms \u2014 reports each storage tier so\nrouting decisions can distinguish \"PG down, SQLite fine\" from fully dead.\n\nAlways 200 when the process can serve (memory tier never fails). Use\n`/health` for alerting on Redis specifically.\n\n**Response fields:**\n- `status`: \"ok\" if any durable tier is up, \"degraded\" otherwise\n- `redis`/`postgres`/`sqlite`: per-tier \"connected|degraded|disabled\"",
+        "operationId": "ready_ready_get",
+        "responses": {
+          "200": {
+            "description": "Service is able to handle requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Ready Ready Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/admin/costs": {
       "get": {
         "tags": [

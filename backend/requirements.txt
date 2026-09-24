@@ -1,3 +1,5 @@
+# NOTE: ranges only — requirements.lock.txt is authoritative.
+# Dockerfile installs the lock; regenerate it after changing this file.
 fastapi>=0.115.0
 uvicorn>=0.34.0
 pydantic>=2.10.0

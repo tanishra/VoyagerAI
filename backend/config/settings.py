@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 logger = logging.getLogger("travel_agent")
@@ -44,6 +45,12 @@ class Settings(BaseSettings):
     CHECKPOINTER_BACKEND: str = "postgres"  # "postgres", "redis", "sqlite", or "memory"
     CHECKPOINTER_DB_PATH: str = "./data/checkpoints.sqlite"
     STORE_BACKEND: str = "postgres"  # "postgres", "redis", or "memory"
+
+    # Root dir for SQLite disaster-tier files. Empty = auto: explicit env value
+    # wins, else /data when it exists and is writable (HF Spaces persistent
+    # storage, k8s mounts), else ./data. Container redeploys wipe ./data —
+    # mount a volume for durability when Postgres is not configured.
+    DATA_DIR: str = ""
 
     # Postgres (Supabase) — durable tier for LangGraph state AND the fallback
     # tier of every app store. Empty string disables it entirely (stores then
@@ -114,6 +121,26 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"
     PROMETHEUS_ENABLED: bool = True
     ALERT_DAILY_THRESHOLD_PCT: float = 0.8  # alert at 80% of daily cap
+
+    @model_validator(mode="after")
+    def _resolve_data_dir(self) -> "Settings":
+        """Point default ./data paths at DATA_DIR when set, or at a writable
+        /data mount (HF Spaces persistent storage) when not. Explicit
+        CHECKPOINTER_DB_PATH/SQLITE_FALLBACK_DB_PATH env values win."""
+        import os
+
+        data_dir = self.DATA_DIR
+        if not data_dir and os.path.isdir("/data") and os.access("/data", os.W_OK):
+            data_dir = "/data"
+        if not data_dir:
+            return self
+        for field, default_name in (
+            ("CHECKPOINTER_DB_PATH", "checkpoints.sqlite"),
+            ("SQLITE_FALLBACK_DB_PATH", "stores.sqlite"),
+        ):
+            if getattr(self, field) == f"./data/{default_name}":
+                setattr(self, field, os.path.join(data_dir, default_name))
+        return self
 
 
 settings = Settings()

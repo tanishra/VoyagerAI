@@ -259,7 +259,12 @@ class TestRegenerateTierEndpoint:
             json={"thread_id": _scoped_thread_id(), "tier": "premium"},
         )
         assert resp.status_code == 409
-        assert "constraints_expired" in resp.json()["detail"]
+        detail = resp.json()["detail"]
+        # Structured error: {"code", "message"} — legacy string detail also accepted
+        if isinstance(detail, dict):
+            assert detail["code"] == "constraints_expired"
+        else:
+            assert "constraints_expired" in detail
 
     def test_missing_comparison_returns_404(self, client, monkeypatch):
         _wire_stores(monkeypatch, constraints=_constraints().model_dump(), comparison=None)

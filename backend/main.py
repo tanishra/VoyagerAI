@@ -427,6 +427,12 @@ def _send_obs_event(obs: "_ObsQueue", thread_id: str, payload: dict) -> None:
         pass
 
 
+def _err(status_code: int, code: str, message: str) -> HTTPException:
+    """HTTPException with a machine-readable detail: {"code", "message"}.
+    Clients should branch on `code`; `message` stays human-readable."""
+    return HTTPException(status_code=status_code, detail={"code": code, "message": message})
+
+
 def _validate_body_fields(body: dict, limits: dict[str, int]) -> None:
     """Validate that string fields in body dict don't exceed max length."""
     for field, max_len in limits.items():
@@ -476,10 +482,10 @@ async def _read_capped_body(request: Request, max_bytes: int) -> bytes:
     before buffering, and re-checks the actual length (chunked/lied headers)."""
     content_length = request.headers.get("content-length")
     if content_length and content_length.isdigit() and int(content_length) > max_bytes:
-        raise HTTPException(status_code=413, detail="Request body too large.")
+        raise _err(413, "body_too_large", "Request body too large.")
     body = await request.body()
     if len(body) > max_bytes:
-        raise HTTPException(status_code=413, detail="Request body too large.")
+        raise _err(413, "body_too_large", "Request body too large.")
     return body
 
 
@@ -717,6 +723,48 @@ async def health() -> HealthResponse:
         "status": "ok" if redis_ok else "degraded",
         "redis": "connected" if redis_ok else "unavailable",
         "agent": "deepagent",
+    }
+
+
+@app.get(
+    "/ready",
+    summary="Readiness probe — per-tier storage status",
+    tags=["ops"],
+    responses={200: {"description": "Service is able to handle requests"}},
+)
+async def ready() -> dict:
+    """Readiness probe for deploy platforms — reports each storage tier so
+    routing decisions can distinguish "PG down, SQLite fine" from fully dead.
+
+    Always 200 when the process can serve (memory tier never fails). Use
+    `/health` for alerting on Redis specifically.
+
+    **Response fields:**
+    - `status`: "ok" if any durable tier is up, "degraded" otherwise
+    - `redis`/`postgres`/`sqlite`: per-tier "connected|degraded|disabled"
+    """
+    redis_ok = await cache_client.ping()
+
+    pg_status = "disabled"
+    if settings.DATABASE_URL:
+        try:
+            import pg_store as _pg_store
+            pg_status = "connected" if await _pg_store.get_pg_pool() is not None else "degraded"
+        except Exception:  # noqa: BLE001
+            pg_status = "degraded"
+
+    try:
+        import sqlite_fallback as _sqlite
+        sqlite_ok = await _sqlite.get_sqlite_connection() is not None
+    except Exception:  # noqa: BLE001
+        sqlite_ok = False
+
+    durable_up = redis_ok or pg_status == "connected" or sqlite_ok
+    return {
+        "status": "ok" if durable_up else "degraded",
+        "redis": "connected" if redis_ok else "unavailable",
+        "postgres": pg_status,
+        "sqlite": "connected" if sqlite_ok else "unavailable",
     }
 
 
@@ -1708,13 +1756,13 @@ async def chat_stream(
     if not within_budget:
         raise HTTPException(
             status_code=429,
-            detail=f"Daily cost limit reached (${_spent:.2f}/${_cap:.2f}). Try again tomorrow.",
+            detail={"code": "daily_budget", "message": f"Daily cost limit reached (${_spent:.2f}/${_cap:.2f}). Try again tomorrow."},
         )
     tripped, _p_spent, _p_cap = await cost_store.check_circuit_breaker()
     if tripped:
         raise HTTPException(
             status_code=503,
-            detail="Platform temporarily unavailable due to high demand. Please try again shortly.",
+            detail={"code": "platform_overloaded", "message": "Platform temporarily unavailable due to high demand. Please try again shortly."},
         )
 
     # --- Phase 6.30: Prompt injection defense ---
@@ -1722,7 +1770,7 @@ async def chat_stream(
     if await security_store.is_in_cooldown(user_id):
         raise HTTPException(
             status_code=429,
-            detail=get_error_message("cooldown_active", locale),
+            detail={"code": "cooldown_active", "message": get_error_message("cooldown_active", locale)},
         )
 
     # Step 2: Detailed sanitization with confidence levels
@@ -1751,7 +1799,7 @@ async def chat_stream(
                 )
             raise HTTPException(
                 status_code=400,
-                detail=get_error_message("injection_blocked", locale),
+                detail={"code": "injection_blocked", "message": get_error_message("injection_blocked", locale)},
             )
         else:
             # Guard says benign — log as reviewed and continue
@@ -1957,13 +2005,13 @@ async def chat_regenerate(
     if not within_budget:
         raise HTTPException(
             status_code=429,
-            detail=f"Daily cost limit reached (${_spent:.2f}/${_cap:.2f}). Try again tomorrow.",
+            detail={"code": "daily_budget", "message": f"Daily cost limit reached (${_spent:.2f}/${_cap:.2f}). Try again tomorrow."},
         )
     tripped, _p_spent, _p_cap = await cost_store.check_circuit_breaker()
     if tripped:
         raise HTTPException(
             status_code=503,
-            detail="Platform temporarily unavailable due to high demand. Please try again shortly.",
+            detail={"code": "platform_overloaded", "message": "Platform temporarily unavailable due to high demand. Please try again shortly."},
         )
 
     logger.info("POST /chat/regenerate — thread_id=%s, user=%s", thread_id, user_id)
@@ -2085,13 +2133,13 @@ async def chat_regenerate_tier(
     if not within_budget:
         raise HTTPException(
             status_code=429,
-            detail=f"Daily cost limit reached (${_spent:.2f}/${_cap:.2f}). Try again tomorrow.",
+            detail={"code": "daily_budget", "message": f"Daily cost limit reached (${_spent:.2f}/${_cap:.2f}). Try again tomorrow."},
         )
     tripped, _p_spent, _p_cap = await cost_store.check_circuit_breaker()
     if tripped:
         raise HTTPException(
             status_code=503,
-            detail="Platform temporarily unavailable due to high demand. Please try again shortly.",
+            detail={"code": "platform_overloaded", "message": "Platform temporarily unavailable due to high demand. Please try again shortly."},
         )
 
     from agents.constraints import TripConstraints
@@ -2106,18 +2154,18 @@ async def chat_regenerate_tier(
     if constraints is None:
         raise HTTPException(
             status_code=409,
-            detail="constraints_expired",
+            detail={"code": "constraints_expired", "message": "Trip constraints expired — start a new search."},
         )
 
     comparison = await get_latest_comparison(thread_id)
     if comparison is None:
-        raise HTTPException(status_code=404, detail="No comparison on record for this thread")
+        raise _err(404, "comparison_not_found", "No comparison on record for this thread")
 
     logger.info("POST /chat/regenerate-tier — thread_id=%s tier=%s user=%s", thread_id, tier, user_id)
 
     updated = await regenerate_tier_plan(constraints, tier, comparison, locale=locale)
     if updated is None:
-        raise HTTPException(status_code=502, detail="Tier regeneration failed — existing plan unchanged")
+        raise _err(502, "regen_failed", "Tier regeneration failed — existing plan unchanged")
 
     await payload_store.set_thread_state(thread_id, "latest_comparison", updated)
     # Keep the replayable record fresh — reload must show the regenerated card.
@@ -2182,13 +2230,13 @@ async def chat_edit(
     if not within_budget:
         raise HTTPException(
             status_code=429,
-            detail=f"Daily cost limit reached (${_spent:.2f}/${_cap:.2f}). Try again tomorrow.",
+            detail={"code": "daily_budget", "message": f"Daily cost limit reached (${_spent:.2f}/${_cap:.2f}). Try again tomorrow."},
         )
     tripped, _p_spent, _p_cap = await cost_store.check_circuit_breaker()
     if tripped:
         raise HTTPException(
             status_code=503,
-            detail="Platform temporarily unavailable due to high demand. Please try again shortly.",
+            detail={"code": "platform_overloaded", "message": "Platform temporarily unavailable due to high demand. Please try again shortly."},
         )
 
     logger.info("POST /chat/edit — thread_id=%s, user=%s", thread_id, user_id)
@@ -2312,13 +2360,13 @@ async def chat_edit_itinerary(
     if not within_budget:
         raise HTTPException(
             status_code=429,
-            detail=f"Daily cost limit reached (${_spent:.2f}/${_cap:.2f}). Try again tomorrow.",
+            detail={"code": "daily_budget", "message": f"Daily cost limit reached (${_spent:.2f}/${_cap:.2f}). Try again tomorrow."},
         )
     tripped, _p_spent, _p_cap = await cost_store.check_circuit_breaker()
     if tripped:
         raise HTTPException(
             status_code=503,
-            detail="Platform temporarily unavailable due to high demand. Please try again shortly.",
+            detail={"code": "platform_overloaded", "message": "Platform temporarily unavailable due to high demand. Please try again shortly."},
         )
 
     logger.info("POST /chat/%s/edit-itinerary — user=%s", scoped_thread_id, user_id)
@@ -2536,7 +2584,7 @@ async def get_thread_history(
     # Security: verify the thread belongs to this user
     user_tag = hashlib.sha256(user_id.encode()).hexdigest()[:12]
     if not thread_id.startswith(f"chat:{user_tag}:"):
-        raise HTTPException(status_code=403, detail="Thread does not belong to this user")
+        raise _err(403, "thread_forbidden", "Thread does not belong to this user")
 
     try:
         values = await _read_thread_values(thread_id, checkpoint_id)
@@ -2545,7 +2593,7 @@ async def get_thread_history(
         raise HTTPException(status_code=503, detail="Failed to load thread history")
 
     if not values or not values.get("messages"):
-        raise HTTPException(status_code=404, detail="Thread not found or empty")
+        raise _err(404, "thread_not_found", "Thread not found or empty")
 
     messages = values.get("messages", [])
     result: list[dict] = []
@@ -2690,7 +2738,7 @@ async def get_thread_branches(
     # Security: verify the thread belongs to this user
     user_tag = hashlib.sha256(user_id.encode()).hexdigest()[:12]
     if not thread_id.startswith(f"chat:{user_tag}:"):
-        raise HTTPException(status_code=403, detail="Thread does not belong to this user")
+        raise _err(403, "thread_forbidden", "Thread does not belong to this user")
 
     try:
         agent = await create_chat_agent(user_id=user_id)
@@ -2787,7 +2835,7 @@ async def delete_thread(
     # Security: verify ownership via prefix check
     user_tag = hashlib.sha256(user_id.encode()).hexdigest()[:12]
     if not thread_id.startswith(f"chat:{user_tag}:"):
-        raise HTTPException(status_code=403, detail="Thread does not belong to this user")
+        raise _err(403, "thread_forbidden", "Thread does not belong to this user")
 
     deleted = await thread_store.delete_thread(user_id, thread_id)
     if not deleted:
@@ -2847,7 +2895,7 @@ async def update_thread(
     # Security: verify ownership via prefix check
     user_tag = hashlib.sha256(user_id.encode()).hexdigest()[:12]
     if not thread_id.startswith(f"chat:{user_tag}:"):
-        raise HTTPException(status_code=403, detail="Thread does not belong to this user")
+        raise _err(403, "thread_forbidden", "Thread does not belong to this user")
 
     if body.pinned is not None:
         ok = await thread_store.update_pin_status(user_id, thread_id, body.pinned)
@@ -3110,7 +3158,7 @@ async def create_share_link(
     user_id = user["user_id"]
     itinerary = await _get_latest_itinerary(thread_id, user_id)
     if itinerary is None:
-        raise HTTPException(status_code=404, detail="No itinerary found in this thread")
+        raise _err(404, "no_itinerary", "No itinerary found in this thread")
     itinerary = await _enrich_itinerary_with_coordinates(itinerary)
     destination = itinerary.get("destination", "Untitled Trip")
     itinerary_json = json.dumps(itinerary)
@@ -3288,7 +3336,7 @@ async def export_itinerary(
     user_id = user["user_id"]
     itinerary = await _get_latest_itinerary(thread_id, user_id)
     if itinerary is None:
-        raise HTTPException(status_code=404, detail="No itinerary found in this thread")
+        raise _err(404, "no_itinerary", "No itinerary found in this thread")
     itinerary = await _enrich_itinerary_with_coordinates(itinerary)
     if fmt == "ical":
         ics_content = generate_ics(itinerary, thread_id=thread_id)
