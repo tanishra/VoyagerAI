@@ -701,3 +701,92 @@ class TestRetryAttempts:
             "t1", {"multi_plan_generator": {"attempts": 1}}
         ))
         assert events == []
+
+
+class TestEditDiff:
+    """U5 — the validator's changes must be visible, not silent."""
+
+    def setup_method(self):
+        pipeline_module._reset_for_tests()
+        pipeline_tools_module._reset_for_tests()
+
+    def test_changed_activity(self):
+        before = _valid_itinerary()
+        after = _valid_itinerary()
+        after["days"][0]["morning"]["activity"] = "Different Museum"
+        changes = pipeline_module._diff_itineraries(before, after)
+        assert any(
+            c["type"] == "changed" and c["day"] == 1 and c["slot"] == "morning"
+            for c in changes
+        )
+
+    def test_added_and_removed(self):
+        before = _valid_itinerary()
+        before["days"][1]["evening"] = {}  # empty slot for the validator to fill
+        after = _valid_itinerary()
+        after["days"][0]["morning"] = {}
+        after["days"][1]["evening"] = {"activity": "Night market", "location": "Old town"}
+        changes = pipeline_module._diff_itineraries(before, after)
+        assert any(c["type"] == "removed" and c["slot"] == "morning" for c in changes)
+        assert any(c["type"] == "added" and c["slot"] == "evening" for c in changes)
+
+    def test_moved_detection(self):
+        before = _valid_itinerary()
+        before["days"][1]["evening"] = {}  # destination slot must be empty
+        after = _valid_itinerary()
+        name = before["days"][0]["morning"]["activity"]
+        after["days"][0]["morning"] = {}
+        after["days"][1]["evening"] = {"activity": name, "location": "x"}
+        changes = pipeline_module._diff_itineraries(before, after)
+        assert any(
+            c["type"] == "moved" and c["activity"] == name and "day 1 morning" in c["detail"]
+            for c in changes
+        )
+        assert not any(c["type"] in ("added", "removed") for c in changes)
+
+    def test_cost_delta(self):
+        before = _valid_itinerary()
+        after = _valid_itinerary()
+        after["estimated_total_cost_usd"] = 99999
+        changes = pipeline_module._diff_itineraries(before, after)
+        assert any(c["type"] == "cost" and c["after"] == 99999 for c in changes)
+
+    def test_identical_no_changes(self):
+        assert pipeline_module._diff_itineraries(_valid_itinerary(), _valid_itinerary()) == []
+
+    def test_fix_pass_attaches_edit_changes(self, monkeypatch):
+        """Broken edit → LLM fix → result carries edit_changes."""
+        fixed = _valid_itinerary()
+        fixed["days"][2] = {
+            "day": 3, "theme": "Fixed",
+            "morning": {"activity": "Museum", "location": "x", "cost_usd": 10},
+            "afternoon": {"activity": "Park", "location": "x", "cost_usd": 5},
+            "evening": {"activity": "Dinner", "location": "x", "cost_usd": 20},
+            "transport": "", "accommodation": "", "daily_cost_usd": 35, "tips": [],
+        }
+
+        async def _fake_gen(schema, prompt, task, stage):
+            return fixed, {"input_tokens": 5, "output_tokens": 5, "model": "m"}
+        monkeypatch.setattr(pipeline_module, "_generate_structured", _fake_gen)
+
+        async def _fake_enrich(it):
+            return it
+        monkeypatch.setattr(
+            deep_agent_module, "_enrich_itinerary_with_coordinates", _fake_enrich
+        )
+
+        edited = _valid_itinerary()
+        edited["days"][2] = {"day": 3}  # emptied day → fix-pass fills it
+        out = asyncio.run(pipeline_module.run_edit_validation_pipeline(edited))
+        assert out is not None
+        assert out[0]["edit_changes"], "validator filled day 3 — diff must be attached"
+
+    def test_clean_edit_no_edit_changes(self, monkeypatch):
+        async def _fake_enrich(it):
+            return it
+        monkeypatch.setattr(
+            deep_agent_module, "_enrich_itinerary_with_coordinates", _fake_enrich
+        )
+        out = asyncio.run(pipeline_module.run_edit_validation_pipeline(_valid_itinerary()))
+        assert out is not None
+        assert "edit_changes" not in out[0]

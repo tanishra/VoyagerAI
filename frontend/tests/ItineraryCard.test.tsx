@@ -221,3 +221,29 @@ describe('limited research badge (R5)', () => {
     expect(screen.queryByText(/Limited live data/i)).not.toBeInTheDocument();
   });
 });
+
+describe('edit changes strip (U5)', () => {
+  const changes = [
+    { type: 'changed' as const, day: 2, slot: 'morning', activity: 'Museum', detail: 'Temple' },
+    { type: 'added' as const, day: 4, slot: 'evening', activity: 'Cooking class' },
+    { type: 'cost' as const, before: 45000, after: 47500 },
+  ];
+
+  it('shows the strip when edit_changes present', () => {
+    render(<ItineraryCard itinerary={makeItinerary({ edit_changes: changes })} threadId="t1" />);
+    expect(screen.getByText(/adjusted your edits/i)).toBeInTheDocument();
+  });
+
+  it('expands to list each change', () => {
+    render(<ItineraryCard itinerary={makeItinerary({ edit_changes: changes })} threadId="t1" />);
+    fireEvent.click(screen.getByText(/adjusted your edits/i));
+    expect(screen.getByText(/Museum.*→.*Temple/)).toBeInTheDocument();
+    expect(screen.getByText(/added.*Cooking class/i)).toBeInTheDocument();
+    expect(screen.getByText(/45,000.*→.*47,500/)).toBeInTheDocument();
+  });
+
+  it('hidden when edit_changes absent', () => {
+    render(<ItineraryCard itinerary={makeItinerary()} threadId="t1" />);
+    expect(screen.queryByText(/adjusted your edits/i)).not.toBeInTheDocument();
+  });
+});

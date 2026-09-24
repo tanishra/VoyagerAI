@@ -226,7 +226,15 @@
     "locationPlaceholder": "Ort (optional)",
     "durationPlaceholder": "Dauer (z.B. 2h)",
     "approxLocation": "Ungefährer Standort",
-    "limitedResearch": "Begrenzte Live-Daten — Preise und Verfügbarkeit können ungenau sein"
+    "limitedResearch": "Begrenzte Live-Daten — Preise und Verfügbarkeit können ungenau sein",
+    "editChangesTitle": "Wir haben deine Änderungen angepasst ({count})",
+    "editChange": {
+      "added": "Tag {day} {slot}: \"{activity}\" hinzugefügt",
+      "removed": "Tag {day} {slot}: \"{activity}\" entfernt",
+      "changed": "Tag {day} {slot}: \"{activity}\" → \"{detail}\"",
+      "moved": "\"{activity}\" auf Tag {day} {slot} verschoben (von {detail})",
+      "cost": "Gesamtkosten: {before} → {after}"
+    }
   },
   "comparison": {
     "title": "Pläne vergleichen",

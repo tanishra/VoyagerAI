@@ -226,7 +226,15 @@
     "locationPlaceholder": "Location (optional)",
     "durationPlaceholder": "Duration (e.g., 2h)",
     "approxLocation": "Approximate location",
-    "limitedResearch": "Limited live data — prices and availability may be less accurate"
+    "limitedResearch": "Limited live data — prices and availability may be less accurate",
+    "editChangesTitle": "We adjusted your edits ({count})",
+    "editChange": {
+      "added": "Day {day} {slot}: added \"{activity}\"",
+      "removed": "Day {day} {slot}: removed \"{activity}\"",
+      "changed": "Day {day} {slot}: \"{activity}\" → \"{detail}\"",
+      "moved": "\"{activity}\" moved to day {day} {slot} (from {detail})",
+      "cost": "Total cost: {before} → {after}"
+    }
   },
   "comparison": {
     "title": "Compare Plans",

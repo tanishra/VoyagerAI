@@ -226,7 +226,15 @@
     "locationPlaceholder": "स्थान (वैकल्पिक)",
     "durationPlaceholder": "अवधि (जैसे 2h)",
     "approxLocation": "अनुमानित स्थान",
-    "limitedResearch": "सीमित लाइव डेटा — कीमतें और उपलब्धता कम सटीक हो सकती हैं"
+    "limitedResearch": "सीमित लाइव डेटा — कीमतें और उपलब्धता कम सटीक हो सकती हैं",
+    "editChangesTitle": "हमने आपके बदलावों में समायोजन किया ({count})",
+    "editChange": {
+      "added": "दिन {day} {slot}: \"{activity}\" जोड़ा गया",
+      "removed": "दिन {day} {slot}: \"{activity}\" हटाया गया",
+      "changed": "दिन {day} {slot}: \"{activity}\" → \"{detail}\"",
+      "moved": "\"{activity}\" दिन {day} {slot} पर ले जाया गया ({detail} से)",
+      "cost": "कुल लागत: {before} → {after}"
+    }
   },
   "comparison": {
     "title": "योजनाएँ तुलना करें",

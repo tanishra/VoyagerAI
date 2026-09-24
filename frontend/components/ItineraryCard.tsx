@@ -1,6 +1,6 @@
 'use client';
 
-import { MoreHorizontal, Printer, FileJson, FileText, Share2, Check, Map as MapIcon, ChevronDown, Calendar, Pencil, ExternalLink, AlertTriangle } from 'lucide-react';
+import { MoreHorizontal, Printer, FileJson, FileText, Share2, Check, Map as MapIcon, ChevronDown, Calendar, Pencil, ExternalLink, AlertTriangle, PencilRuler } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import { useTranslations } from 'next-intl';
 import dynamic from 'next/dynamic';
@@ -38,6 +38,7 @@ export default function ItineraryCard({ itinerary, threadId, printMode = false, 
   const [shareStatus, setShareStatus] = useState<'idle' | 'creating' | 'copied' | 'error'>('idle');
   const [mapExpanded, setMapExpanded] = useState(false);
   const [selectedDay, setSelectedDay] = useState<DayPlan | null>(null);
+  const [showEditChanges, setShowEditChanges] = useState(false);
   const [activeDay, setActiveDay] = useState<number | null>(null);
   const [editing, setEditing] = useState(false);
   const [preferredCurrency] = useCurrency();
@@ -142,6 +143,39 @@ export default function ItineraryCard({ itinerary, threadId, printMode = false, 
         <div className="flex items-center gap-2 px-4 py-2 border-b border-indigo-500/10 bg-amber-500/10 text-amber-700 dark:text-amber-400 text-xs">
           <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
           <span>{t('limitedResearch')}</span>
+        </div>
+      )}
+      {/* Edit-diff strip — what the validator changed after a manual edit */}
+      {(itinerary.edit_changes?.length ?? 0) > 0 && (
+        <div className="px-4 py-2 border-b border-indigo-500/10 bg-muted/40 text-xs">
+          <button
+            onClick={() => setShowEditChanges((v) => !v)}
+            className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+            aria-expanded={showEditChanges}
+          >
+            <PencilRuler className="w-3.5 h-3.5" />
+            <span>{t('editChangesTitle', { count: itinerary.edit_changes!.length })}</span>
+            <ChevronDown className={`w-3 h-3 transition-transform ${showEditChanges ? 'rotate-180' : ''}`} />
+          </button>
+          {showEditChanges && (
+            <ul className="mt-1.5 space-y-1 text-muted-foreground">
+              {itinerary.edit_changes!.map((c, i) => (
+                <li key={i}>
+                  {c.type === 'cost'
+                    ? t('editChange.cost', {
+                        before: formatCurrency(c.before ?? 0, locale, undefined, currency),
+                        after: formatCurrency(c.after ?? 0, locale, undefined, currency),
+                      })
+                    : t(`editChange.${c.type}`, {
+                        day: c.day ?? '',
+                        slot: c.slot ? t(c.slot) : '',
+                        activity: c.activity ?? '',
+                        detail: c.detail ?? '',
+                      })}
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       )}
       <div className="px-4 py-3 border-b border-indigo-500/10 flex items-center justify-end">

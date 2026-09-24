@@ -226,7 +226,15 @@
     "locationPlaceholder": "場所（任意）",
     "durationPlaceholder": "所要時間（例: 2h）",
     "approxLocation": "おおよその位置",
-    "limitedResearch": "ライブデータが限定的 — 価格や空き状況の精度が低い可能性があります"
+    "limitedResearch": "ライブデータが限定的 — 価格や空き状況の精度が低い可能性があります",
+    "editChangesTitle": "編集内容を調整しました（{count}件）",
+    "editChange": {
+      "added": "{day}日目 {slot}: 「{activity}」を追加",
+      "removed": "{day}日目 {slot}: 「{activity}」を削除",
+      "changed": "{day}日目 {slot}: 「{activity}」→「{detail}」",
+      "moved": "「{activity}」を{day}日目{slot}へ移動（{detail}から）",
+      "cost": "合計費用: {before} → {after}"
+    }
   },
   "comparison": {
     "title": "プランを比較",

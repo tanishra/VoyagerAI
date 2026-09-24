@@ -620,6 +620,84 @@ async def run_refinement_pipeline(
     return itinerary, stage_usage
 
 
+def _diff_itineraries(before: dict, after: dict) -> list[dict]:
+    """Diff two itinerary dicts at the activity level + total cost.
+
+    Used to tell the user what the edit validator changed. Tracks
+    added/removed/changed/moved activities per day+slot (names normalized),
+    plus a total-cost delta. Per-slot cost tweaks are intentionally ignored —
+    reconcile adjusts them routinely and listing them is noise.
+    Never raises; returns [] when nothing meaningful changed.
+    """
+    slots = ("morning", "afternoon", "evening")
+    changes: list[dict] = []
+
+    try:
+        def activity_of(day: dict, slot: str) -> str:
+            s = day.get(slot)
+            return str(s.get("activity", "")).strip() if isinstance(s, dict) else ""
+
+        def days_by_num(it: dict) -> dict:
+            return {
+                d.get("day"): d
+                for d in it.get("days") or []
+                if isinstance(d, dict) and isinstance(d.get("day"), int)
+            }
+
+        before_days = days_by_num(before)
+        after_days = days_by_num(after)
+        all_days = sorted(set(before_days) | set(after_days))
+
+        removed: list[dict] = []
+        added: list[dict] = []
+        for day_num in all_days:
+            b_day = before_days.get(day_num) or {}
+            a_day = after_days.get(day_num) or {}
+            for slot in slots:
+                b_act = activity_of(b_day, slot)
+                a_act = activity_of(a_day, slot)
+                if b_act.lower() == a_act.lower():
+                    continue
+                if b_act and not a_act:
+                    removed.append({"day": day_num, "slot": slot, "activity": b_act})
+                elif not b_act and a_act:
+                    added.append({"day": day_num, "slot": slot, "activity": a_act})
+                elif b_act and a_act:
+                    changes.append({
+                        "type": "changed", "day": day_num, "slot": slot,
+                        "activity": b_act, "detail": a_act,
+                    })
+
+        # A name that vanished from one slot and appeared in another is a move,
+        # not remove+add — cross-match by normalized name.
+        add_by_name = {a["activity"].lower(): a for a in added}
+        still_removed = []
+        for r in removed:
+            match = add_by_name.pop(r["activity"].lower(), None)
+            if match:
+                changes.append({
+                    "type": "moved", "day": match["day"], "slot": match["slot"],
+                    "activity": r["activity"],
+                    "detail": f"day {r['day']} {r['slot']}",
+                })
+            else:
+                still_removed.append(r)
+        for r in still_removed:
+            changes.append({"type": "removed", **r})
+        for a in add_by_name.values():
+            changes.append({"type": "added", **a})
+
+        b_total = before.get("estimated_total_cost_usd")
+        a_total = after.get("estimated_total_cost_usd")
+        if isinstance(b_total, (int, float)) and isinstance(a_total, (int, float)) and b_total != a_total:
+            changes.append({"type": "cost", "before": b_total, "after": a_total})
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Itinerary diff failed: %s", exc)
+        return []
+
+    return changes[:20]
+
+
 async def run_edit_validation_pipeline(
     modified_itinerary: dict,
     *,
@@ -641,6 +719,13 @@ async def run_edit_validation_pipeline(
 
     if _check_cancel(cancel_event) or _check_budget(budget_check):
         return None
+
+    # Snapshot the user's edit as submitted — the pipeline may mutate the
+    # dict (currency enforcement), and the diff baseline must be pristine.
+    try:
+        baseline = json.loads(json.dumps(modified_itinerary))
+    except Exception:  # noqa: BLE001
+        baseline = None
 
     stage_usage: dict[str, dict] = {}
     it = modified_itinerary
@@ -703,6 +788,11 @@ async def run_edit_validation_pipeline(
     it["currency"] = pseudo.budget_currency
     it = _reconcile_itinerary_budget(it, (pseudo.budget_amount, pseudo.budget_currency))
     it = await _enrich_itinerary_with_coordinates(it)
+    # Tell the user what the validator changed — silent fixes erode trust.
+    if isinstance(baseline, dict):
+        changes = _diff_itineraries(baseline, it)
+        if changes:
+            it["edit_changes"] = changes
     return it, stage_usage
 
 

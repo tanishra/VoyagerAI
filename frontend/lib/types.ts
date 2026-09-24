@@ -44,6 +44,22 @@ export interface Itinerary {
   // built on partial live data; UI shows a limited-data badge.
   research_limited?: boolean;
   research_gaps?: string[];
+  // Set when a manual edit was adjusted by the validator — the card shows
+  // a collapsible "what changed" strip.
+  edit_changes?: EditChange[];
+}
+
+// One entry in the validator's diff of a manual edit. `changed` carries the
+// new name in `detail`; `moved` carries the origin ("day 1 morning");
+// `cost` carries before/after totals.
+export interface EditChange {
+  type: 'added' | 'removed' | 'changed' | 'moved' | 'cost';
+  day?: number;
+  slot?: string;
+  activity?: string;
+  detail?: string;
+  before?: number;
+  after?: number;
 }
 
 export interface CostBreakdown {

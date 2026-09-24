@@ -226,7 +226,15 @@
     "locationPlaceholder": "Ubicación (opcional)",
     "durationPlaceholder": "Duración (ej. 2h)",
     "approxLocation": "Ubicación aproximada",
-    "limitedResearch": "Datos en vivo limitados — los precios y la disponibilidad pueden ser menos precisos"
+    "limitedResearch": "Datos en vivo limitados — los precios y la disponibilidad pueden ser menos precisos",
+    "editChangesTitle": "Ajustamos tus cambios ({count})",
+    "editChange": {
+      "added": "Día {day} {slot}: «{activity}» añadido",
+      "removed": "Día {day} {slot}: «{activity}» eliminado",
+      "changed": "Día {day} {slot}: «{activity}» → «{detail}»",
+      "moved": "«{activity}» movido al día {day} {slot} (desde {detail})",
+      "cost": "Coste total: {before} → {after}"
+    }
   },
   "comparison": {
     "title": "Comparar Planes",

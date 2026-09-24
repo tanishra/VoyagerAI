@@ -226,7 +226,15 @@
     "locationPlaceholder": "Lieu (optionnel)",
     "durationPlaceholder": "Durée (ex. 2h)",
     "approxLocation": "Position approximative",
-    "limitedResearch": "Données en direct limitées — prix et disponibilités peuvent être moins précis"
+    "limitedResearch": "Données en direct limitées — prix et disponibilités peuvent être moins précis",
+    "editChangesTitle": "Nous avons ajusté vos modifications ({count})",
+    "editChange": {
+      "added": "Jour {day} {slot} : « {activity} » ajouté",
+      "removed": "Jour {day} {slot} : « {activity} » supprimé",
+      "changed": "Jour {day} {slot} : « {activity} » → « {detail} »",
+      "moved": "« {activity} » déplacé au jour {day} {slot} (depuis {detail})",
+      "cost": "Coût total : {before} → {after}"
+    }
   },
   "comparison": {
     "title": "Comparer les Plans",
