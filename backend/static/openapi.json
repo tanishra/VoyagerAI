@@ -2926,6 +2926,7 @@
           "ops"
         ],
         "summary": "Prometheus metrics",
+        "description": "Prometheus exposition format. Requires X-API-Key when AUTH_MODE=production.",
         "operationId": "prometheus_metrics_metrics_get",
         "parameters": [
           {

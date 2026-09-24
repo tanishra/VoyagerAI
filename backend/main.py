@@ -3475,6 +3475,7 @@ if settings.PROMETHEUS_ENABLED:
     # shape to unauthenticated callers. Dev mode: verify_api_key is a no-op.
     @app.get("/metrics", summary="Prometheus metrics", tags=["ops"], dependencies=[Depends(verify_api_key)])
     async def prometheus_metrics() -> PlainTextResponse:
+        """Prometheus exposition format. Requires X-API-Key when AUTH_MODE=production."""
         from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
         return PlainTextResponse(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
