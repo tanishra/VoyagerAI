@@ -1,15 +1,14 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, Trash2, MessageSquare, Loader2, ChevronDown, Link2, Copy as CopyIcon, Check, X, LogOut, Home, Settings, MoreHorizontal, Search, ArrowLeft, Bookmark, BookmarkCheck } from 'lucide-react';
+import { Plus, Trash2, MessageSquare, Loader2, ChevronDown, LogOut, Home, Settings, MoreHorizontal, Search, ArrowLeft, Bookmark, BookmarkCheck } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
 import type { ThreadMeta, SearchResult } from '@/lib/threads-api';
 import { searchThreads } from '@/lib/threads-api';
-import { listShares, revokeShare, type ShareLink } from '@/lib/share-api';
 import { type SessionUser, logout } from '@/lib/auth';
 import { useLocale } from '@/lib/useLocale';
 
@@ -138,40 +137,7 @@ export default function ThreadSidebar({
   const [deepSearchHasMore, setDeepSearchHasMore] = useState(false);
   const [deepSearchOffset, setDeepSearchOffset] = useState(0);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [shares, setShares] = useState<ShareLink[]>([]);
-  const [sharesExpanded, setSharesExpanded] = useState(false);
-  const [copiedToken, setCopiedToken] = useState<string | null>(null);
-  const [revokingToken, setRevokingToken] = useState<string | null>(null);
   const [pinningId, setPinningId] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    listShares().then((result) => {
-      if (!cancelled) setShares(result);
-    });
-    return () => { cancelled = true; };
-  }, []);
-
-  const handleCopy = async (e: React.MouseEvent, share: ShareLink) => {
-    e.stopPropagation();
-    try {
-      await navigator.clipboard.writeText(share.share_url);
-      setCopiedToken(share.token);
-      setTimeout(() => setCopiedToken(null), 2000);
-    } catch {
-      // clipboard not available
-    }
-  };
-
-  const handleRevoke = async (e: React.MouseEvent, token: string) => {
-    e.stopPropagation();
-    setRevokingToken(token);
-    const ok = await revokeShare(token);
-    if (ok) {
-      setShares((prev) => prev.filter((s) => s.token !== token));
-    }
-    setRevokingToken(null);
-  };
 
   const handleDelete = (e: React.MouseEvent, threadId: string) => {
     e.stopPropagation();
@@ -558,77 +524,6 @@ export default function ThreadSidebar({
               </button>
             )}
           </>
-        )}
-      </div>
-
-      {/* Shared Links section */}
-      <div className="border-t border-border/50 shrink-0">
-        <button
-          onClick={() => setSharesExpanded(!sharesExpanded)}
-          className="w-full flex items-center justify-between px-3 py-2 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-        >
-          <span className="flex items-center gap-1.5">
-            <Link2 className="w-3.5 h-3.5" />
-            {t('sharedLinks')}
-            {shares.length > 0 && (
-              <span className="px-1.5 py-0.5 rounded-full bg-primary/10 text-primary text-[10px] font-medium">
-                {shares.length}
-              </span>
-            )}
-          </span>
-          <ChevronDown className={`w-3.5 h-3.5 transition-transform ${sharesExpanded ? 'rotate-180' : ''}`} />
-        </button>
-        {sharesExpanded && (
-          <div className="px-2 pb-2 space-y-1 max-h-48 overflow-y-auto">
-            {shares.length === 0 ? (
-              <p className="text-[11px] text-muted-foreground px-3 py-2">
-                {t('noSharedLinks')}
-              </p>
-            ) : (
-              shares.map((share) => (
-                <div
-                  key={share.token}
-                  className="group px-3 py-2 rounded-lg hover:bg-muted transition-colors"
-                >
-                  <div className="flex items-center justify-between gap-1">
-                    <p className="text-xs text-foreground truncate flex-1">
-                      {share.destination}
-                    </p>
-                    <div className="flex items-center gap-0.5 shrink-0">
-                      <button
-                        onClick={(e) => handleCopy(e, share)}
-                        className="p-1 rounded text-muted-foreground hover:text-foreground cursor-pointer"
-                        aria-label={t('copyShareLink')}
-                        title={t('copyLink')}
-                      >
-                        {copiedToken === share.token ? (
-                          <Check className="w-3 h-3 text-chart-2" />
-                        ) : (
-                          <CopyIcon className="w-3 h-3" />
-                        )}
-                      </button>
-                      <button
-                        onClick={(e) => handleRevoke(e, share.token)}
-                        disabled={revokingToken === share.token}
-                        className="p-1 rounded text-muted-foreground hover:text-destructive cursor-pointer disabled:opacity-50"
-                        aria-label={t('revokeShareLink')}
-                        title={t('revoke')}
-                      >
-                        {revokingToken === share.token ? (
-                          <Loader2 className="w-3 h-3 animate-spin" />
-                        ) : (
-                          <X className="w-3 h-3" />
-                        )}
-                      </button>
-                    </div>
-                  </div>
-                  <p className="text-[10px] text-muted-foreground mt-0.5">
-                    {t('expires', { time: formatRelativeTime(share.expires_at) })}
-                  </p>
-                </div>
-              ))
-            )}
-          </div>
         )}
       </div>
 

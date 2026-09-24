@@ -4,11 +4,6 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import ThreadSidebar from '@/app/[locale]/chat/ThreadSidebar';
 import type { ThreadMeta } from '@/lib/threads-api';
 
-vi.mock('@/lib/share-api', () => ({
-  listShares: vi.fn().mockResolvedValue([]),
-  revokeShare: vi.fn().mockResolvedValue(true),
-}));
-
 vi.mock('@/lib/threads-api', () => ({
   searchThreads: vi.fn().mockResolvedValue({ results: [], total: 0, has_more: false }),
 }));

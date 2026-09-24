@@ -4,11 +4,6 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import ThreadSidebar from '@/app/[locale]/chat/ThreadSidebar';
 import type { ThreadMeta } from '@/lib/threads-api';
 
-vi.mock('@/lib/share-api', () => ({
-  listShares: vi.fn().mockResolvedValue([]),
-  revokeShare: vi.fn().mockResolvedValue(true),
-}));
-
 vi.mock('next/navigation', () => ({
   usePathname: vi.fn().mockReturnValue('/en/chat'),
   useRouter: vi.fn().mockReturnValue({ push: vi.fn() }),
