@@ -78,6 +78,8 @@ vi.mock('next-intl', async () => {
 
   const useLocale = () => React.useContext(I18nContext).locale;
 
+  const useMessages = () => React.useContext(I18nContext).messages;
+
   const NextIntlClientProvider = ({
     children,
     locale,
@@ -96,6 +98,7 @@ vi.mock('next-intl', async () => {
   return {
     useTranslations,
     useLocale,
+    useMessages,
     NextIntlClientProvider,
   };
 });

@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Send, Square, RotateCcw, Globe, Search, ShieldAlert, ListChecks, Loader2, PanelLeft, ChevronDown, ChevronLeft, ChevronRight, Clock, Sparkles, Copy, Check, Pencil, X, Paperclip, FileText, Info } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useLocale } from '@/lib/useLocale';
-import { streamChat, cancelStream, regenerateStream, editStream, editItinerary, regenerateTier, TierRegenError } from '@/lib/chat-api';
+import { streamChat, cancelStream, regenerateStream, editStream, editItinerary } from '@/lib/chat-api';
 import { sanitizeError } from '@/lib/errors';
 import { listThreads, getThreadHistory, getBranches, type ThreadMeta } from '@/lib/threads-api';
 import { getSession, clearSessionCache, type SessionUser } from '@/lib/auth';
@@ -57,6 +57,17 @@ const TOOL_ICONS: Record<string, React.ReactNode> = {
   multi_plan_generator: <Globe className="w-3 h-3" />,
   quality_scorer: <ListChecks className="w-3 h-3" />,
 };
+
+function mergeClarify(prev: ClarifyData | null, next: ClarifyData): ClarifyData {
+  if (!prev) return next;
+  const seen = new Set(prev.questions.map((q) => q.field));
+  return {
+    questions: [
+      ...prev.questions,
+      ...next.questions.filter((q) => !seen.has(q.field)),
+    ],
+  };
+}
 
 export default function ChatPage() {
   const t = useTranslations('chat');
@@ -113,7 +124,7 @@ export default function ChatPage() {
   const [branches, setBranches] = useState<BranchInfo[]>([]);
   const [activeBranchIndex, setActiveBranchIndex] = useState(0);
   const [regenerating, setRegenerating] = useState(false);
-  const [regeneratingTier, setRegeneratingTier] = useState<{ msgId: string; tier: string } | null>(null);
+
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [editContent, setEditContent] = useState('');
   const [reconnecting, setReconnecting] = useState<{ attempt: number; max: number } | null>(null);
@@ -339,8 +350,8 @@ export default function ChatPage() {
             setStreamingComparison(data);
           },
           onClarify: (data) => {
-            accumulatedClarify = data;
-            setStreamingClarify(data);
+            accumulatedClarify = mergeClarify(accumulatedClarify, data);
+            setStreamingClarify(accumulatedClarify);
           },
           onImage: (image) => {
             accumulatedImages = [...accumulatedImages, image];
@@ -699,8 +710,8 @@ export default function ChatPage() {
             setStreamingComparison(data);
           },
           onClarify: (data) => {
-            accumulatedClarify = data;
-            setStreamingClarify(data);
+            accumulatedClarify = mergeClarify(accumulatedClarify, data);
+            setStreamingClarify(accumulatedClarify);
           },
           onImage: (image) => {
             accumulatedImages = [...accumulatedImages, image];
@@ -982,8 +993,8 @@ export default function ChatPage() {
             setStreamingComparison(data);
           },
           onClarify: (data) => {
-            accumulatedClarify = data;
-            setStreamingClarify(data);
+            accumulatedClarify = mergeClarify(accumulatedClarify, data);
+            setStreamingClarify(accumulatedClarify);
           },
           onImage: (image) => {
             accumulatedImages = [...accumulatedImages, image];
@@ -1233,8 +1244,8 @@ export default function ChatPage() {
                 setStreamingComparison(data);
               },
               onClarify: (data) => {
-                accumulatedClarify = data;
-                setStreamingClarify(data);
+                accumulatedClarify = mergeClarify(accumulatedClarify, data);
+                setStreamingClarify(accumulatedClarify);
               },
               onImage: (image) => {
                 accumulatedImages = [...accumulatedImages, image];
@@ -1409,31 +1420,6 @@ export default function ChatPage() {
   const handleClarifySend = useCallback((text: string) => {
     handleSend(text);
   }, [handleSend]);
-
-  const handleRegenerateTier = useCallback(async (tier: string, msgId: string) => {
-    if (!threadId || loading || regenerating || regeneratingTier) return;
-    setRegeneratingTier({ msgId, tier });
-    setError(null);
-    try {
-      const comparison = await regenerateTier({
-        thread_id: threadId,
-        tier,
-        locale,
-        currency,
-      });
-      setMessages((prev) =>
-        prev.map((m) => (m.id === msgId ? { ...m, comparison } : m))
-      );
-    } catch (err) {
-      if (err instanceof TierRegenError && (err.code === 'constraints_expired' || err.status === 409)) {
-        setError(t('regenTierExpired'));
-      } else if (!(err instanceof DOMException && err.name === 'AbortError')) {
-        setError(t('regenTierFailed'));
-      }
-    } finally {
-      setRegeneratingTier(null);
-    }
-  }, [threadId, loading, regenerating, regeneratingTier, locale, currency, t]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
@@ -1756,8 +1742,6 @@ export default function ChatPage() {
                       <ComparisonView
                         data={msg.comparison}
                         onSelect={handleSelectPlan}
-                        onRegenerateTier={(tier) => handleRegenerateTier(tier, msg.id)}
-                        regeneratingTier={regeneratingTier?.msgId === msg.id ? regeneratingTier.tier : null}
                       />
                     )}
                     {msg.itinerary && <ItineraryCard itinerary={msg.itinerary} threadId={threadId ?? undefined} onEditItinerary={(modified) => handleEditItinerary(modified, msg.id)} />}

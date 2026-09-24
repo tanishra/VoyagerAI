@@ -31,19 +31,23 @@ const twoQuestions: ClarifyData = {
 const click = (el: Element) => act(() => { fireEvent.click(el); });
 
 describe('ClarifyCard (U7)', () => {
-  it('renders questions and options', () => {
+  it('renders one question per tab with switchable chips', () => {
     render(<ClarifyCard data={twoQuestions} onSend={() => {}} />);
+    // first question active; second lives on its own tab
     expect(screen.getByText('What pace do you prefer?')).toBeInTheDocument();
-    expect(screen.getByText('Who is travelling?')).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Group' })).toBeInTheDocument();
     expect(screen.getByText('Relaxed pace')).toBeInTheDocument(); // enum label localized
-    expect(screen.getAllByText('Other')).toHaveLength(2);
+    expect(screen.getAllByText('Other')).toHaveLength(1);
+    // switch to second question via its tab
+    click(screen.getByRole('tab', { name: 'Group' }));
+    expect(screen.getByText('Who is travelling?')).toBeInTheDocument();
   });
 
   it('Send disabled until every question answered', () => {
     render(<ClarifyCard data={twoQuestions} onSend={() => {}} />);
     const send = () => screen.getByRole('button', { name: /send answers/i });
     expect(send()).toBeDisabled();
-    click(screen.getByText('Relaxed pace'));
+    click(screen.getByText('Relaxed pace')); // auto-advances to Q2
     expect(send()).toBeDisabled(); // second question unanswered
     click(screen.getByText('Solo'));
     expect(send()).not.toBeDisabled();
@@ -51,12 +55,12 @@ describe('ClarifyCard (U7)', () => {
 
   it('single-select replaces the previous choice', () => {
     render(<ClarifyCard data={twoQuestions} onSend={() => {}} />);
-    click(screen.getByText('Relaxed pace'));
-    expect(screen.getByText('Relaxed pace')).toHaveAttribute('aria-pressed', 'true');
+    click(screen.getByText('Relaxed pace')); // auto-advances to Q2
+    click(screen.getByRole('tab', { name: 'Travel style' })); // back to Q1
     click(screen.getByText('Adventurous'));
-    expect(screen.getByText('Adventurous')).toHaveAttribute('aria-pressed', 'true');
-    // option buttons remount on selection change — re-query
-    expect(screen.getByText('Relaxed pace')).toHaveAttribute('aria-pressed', 'false');
+    click(screen.getByRole('tab', { name: 'Travel style' }));
+    expect(screen.getByText('Adventurous').closest('button')).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByText('Relaxed pace').closest('button')).toHaveAttribute('aria-pressed', 'false');
   });
 
   it('multi-select accumulates choices', () => {
@@ -72,8 +76,8 @@ describe('ClarifyCard (U7)', () => {
     render(<ClarifyCard data={multi} onSend={() => {}} />);
     click(screen.getByText('Vegetarian'));
     click(screen.getByText('Vegan'));
-    expect(screen.getByText('Vegetarian')).toHaveAttribute('aria-pressed', 'true');
-    expect(screen.getByText('Vegan')).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByText('Vegetarian').closest('button')).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByText('Vegan').closest('button')).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('Other input counts as an answer and is included in the composed text', () => {
@@ -91,7 +95,7 @@ describe('ClarifyCard (U7)', () => {
   it('composes header: label per question', () => {
     const onSend = vi.fn();
     render(<ClarifyCard data={twoQuestions} onSend={onSend} />);
-    click(screen.getByText('Adventurous'));
+    click(screen.getByText('Adventurous')); // auto-advances to Q2
     click(screen.getByText('Friends'));
     click(screen.getByRole('button', { name: /send answers/i }));
     expect(onSend).toHaveBeenCalledWith('Travel style: Adventurous; Group: Friends');
