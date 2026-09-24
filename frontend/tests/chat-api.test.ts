@@ -306,6 +306,25 @@ describe('streamChat — client_message_id dedup (Bug #6)', () => {
     const id2 = JSON.parse(mockFetch.mock.calls[1][1].body).client_message_id;
     expect(id1).not.toBe(id2);
   });
+
+  it('strips data_url from attachments — server resolves bytes via file_id', async () => {
+    const mockFetch = vi.fn().mockResolvedValue(makeDoneStream());
+    vi.stubGlobal('fetch', mockFetch);
+
+    await streamChat({
+      message: 'with file',
+      attachments: [{
+        file_id: 'f1', filename: 'photo.png', content_type: 'image/png',
+        size: 100, data_url: 'data:image/png;base64,HUGE',
+      }],
+    }, {});
+
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+    expect(body.attachments[0].data_url).toBeUndefined();
+    expect(body.attachments[0]).toMatchObject({
+      file_id: 'f1', filename: 'photo.png', content_type: 'image/png', size: 100,
+    });
+  });
 });
 
 describe('regenerate/edit streams — sawDone truncation guard (Improvement I3)', () => {

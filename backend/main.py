@@ -234,6 +234,9 @@ async def csrf_middleware(request: Request, call_next):
         response.set_cookie(
             CSRF_COOKIE_NAME,
             secrets.token_urlsafe(32),
+            # httponly=False is REQUIRED: double-submit needs JS to read this
+            # cookie and echo it in X-CSRF-Token. Token is random and carries
+            # no session data — XSS exposure is acceptable by design.
             httponly=False,
             samesite="none" if _use_secure_cookies else "lax",
             secure=_use_secure_cookies,
@@ -433,6 +436,51 @@ def _validate_body_fields(body: dict, limits: dict[str, int]) -> None:
                 status_code=422,
                 detail=f"Field '{field}' exceeds maximum length of {max_len} characters.",
             )
+
+
+_ATTACHMENT_DATA_URL_RE = re.compile(r"^data:(image/(?:jpeg|png|webp)|application/pdf);base64,")
+
+
+async def _resolve_attachments(user_id: str, attachments: list[dict]) -> list[dict]:
+    """Resolve attachment bytes server-side via file_id (file_store is the
+    source of truth — client-supplied data_url is never trusted directly).
+    Falls back to the client data_url only when file_id resolution fails and
+    the URL passes a strict shape check (legacy/offline-queue payloads)."""
+    resolved: list[dict] = []
+    for att in attachments:
+        file_id = att.get("file_id") or ""
+        if file_id:
+            try:
+                meta = await file_store.get(user_id, file_id)
+            except Exception:  # noqa: BLE001 — treat lookup failure as a miss
+                meta = None
+            if meta is not None and meta.data:
+                resolved.append({
+                    "data_url": f"data:{meta.content_type};base64,{meta.data}",
+                    "content_type": meta.content_type,
+                    "filename": meta.filename or att.get("filename", ""),
+                })
+                continue
+        # Fallback: client-sent data_url, strictly validated
+        data_url = att.get("data_url") or ""
+        ct = att.get("content_type") or ""
+        if _ATTACHMENT_DATA_URL_RE.match(data_url) and ct in ALLOWED_CONTENT_TYPES:
+            resolved.append(att)
+        else:
+            logger.warning("Dropped attachment for user=%s file_id=%s (unresolvable)", user_id, file_id[:20])
+    return resolved
+
+
+async def _read_capped_body(request: Request, max_bytes: int) -> bytes:
+    """Read a request body with a hard size cap — rejects via Content-Length
+    before buffering, and re-checks the actual length (chunked/lied headers)."""
+    content_length = request.headers.get("content-length")
+    if content_length and content_length.isdigit() and int(content_length) > max_bytes:
+        raise HTTPException(status_code=413, detail="Request body too large.")
+    body = await request.body()
+    if len(body) > max_bytes:
+        raise HTTPException(status_code=413, detail="Request body too large.")
+    return body
 
 
 def _truncate_tool_data(data, max_chars: int = 1000) -> str:
@@ -981,7 +1029,7 @@ async def submit_feedback(
     # Body is parsed manually (independent of Content-Type) so the frontend can
     # avoid a CORS preflight OPTIONS request (see chat_stream for details).
     try:
-        body = FeedbackRequest(**json.loads(await request.body()))
+        body = FeedbackRequest(**json.loads(await _read_capped_body(request, 64 * 1024)))
     except (json.JSONDecodeError, ValidationError) as exc:
         raise HTTPException(status_code=422, detail="Invalid request body.")
 
@@ -1508,7 +1556,7 @@ async def put_preferences(request: Request, user: dict = Depends(get_current_use
     user_id = user["user_id"]
     locale = extract_locale(request)
     logger.info("PUT /preferences user=%s locale=%s", user_id, locale)
-    body = await request.body()
+    body = await _read_capped_body(request, 64 * 1024)
     try:
         payload = json.loads(body) if body else {}
     except (json.JSONDecodeError, UnicodeDecodeError):
@@ -1594,8 +1642,8 @@ async def upload_file(
     if ext not in ALLOWED_EXTENSIONS:
         raise HTTPException(status_code=415, detail="Unsupported file extension. Use .jpg, .png, .webp, or .pdf.")
 
-    # Read file data and validate size
-    data = await file.read()
+    # Read at most MAX+1 bytes — an oversized body must never be fully buffered
+    data = await file.read(MAX_FILE_SIZE + 1)
     if len(data) > MAX_FILE_SIZE:
         raise HTTPException(status_code=413, detail="File is too large (max 10MB).")
     if len(data) == 0:
@@ -1642,7 +1690,7 @@ async def chat_stream(
     # frontend can send it as text/plain and avoid a CORS preflight OPTIONS
     # request, which some hosting proxies (e.g. Hugging Face Spaces) mishandle.
     try:
-        raw_body = await request.body()
+        raw_body = await _read_capped_body(request, 20 * 1024 * 1024)
         chat_req = ChatRequest(**json.loads(raw_body))
     except (json.JSONDecodeError, ValidationError) as exc:
         raise HTTPException(status_code=422, detail="Invalid request body.")
@@ -1767,7 +1815,9 @@ async def chat_stream(
                 timezone=chat_req.timezone,
                 currency=effective_currency,
                 cancel_event=cancel_event,
-                attachments=[a.model_dump() for a in chat_req.attachments] if chat_req.attachments else None,
+                attachments=await _resolve_attachments(
+                    user_id, [a.model_dump() for a in chat_req.attachments]
+                ) if chat_req.attachments else None,
                 client_message_id=chat_req.client_message_id,
             ):
                 if cancel_event.is_set():
@@ -1846,7 +1896,7 @@ async def chat_cancel(
     # Body is parsed manually (independent of Content-Type) to allow the frontend
     # to avoid a CORS preflight OPTIONS request (see chat_stream for details).
     try:
-        body = json.loads(await request.body())
+        body = json.loads(await _read_capped_body(request, 2 * 1024 * 1024))
     except json.JSONDecodeError:
         raise HTTPException(status_code=422, detail="Invalid JSON body")
     thread_id = body.get("thread_id", "")
@@ -1888,7 +1938,7 @@ async def chat_regenerate(
     # Body is parsed manually (independent of Content-Type) to allow the frontend
     # to avoid a CORS preflight OPTIONS request (see chat_stream for details).
     try:
-        body = json.loads(await request.body())
+        body = json.loads(await _read_capped_body(request, 2 * 1024 * 1024))
     except json.JSONDecodeError:
         raise HTTPException(status_code=422, detail="Invalid JSON body")
     raw_thread_id = body.get("thread_id", "")
@@ -2015,7 +2065,7 @@ async def chat_regenerate_tier(
     # Body is parsed manually (independent of Content-Type) to allow the frontend
     # to avoid a CORS preflight OPTIONS request (see chat_stream for details).
     try:
-        body = json.loads(await request.body())
+        body = json.loads(await _read_capped_body(request, 2 * 1024 * 1024))
     except json.JSONDecodeError:
         raise HTTPException(status_code=422, detail="Invalid JSON body")
     raw_thread_id = body.get("thread_id", "")
@@ -2109,7 +2159,7 @@ async def chat_edit(
     # Body is parsed manually (independent of Content-Type) to allow the frontend
     # to avoid a CORS preflight OPTIONS request (see chat_stream for details).
     try:
-        body = json.loads(await request.body())
+        body = json.loads(await _read_capped_body(request, 2 * 1024 * 1024))
     except json.JSONDecodeError:
         raise HTTPException(status_code=422, detail="Invalid JSON body")
     raw_thread_id = body.get("thread_id", "")
@@ -2244,7 +2294,7 @@ async def chat_edit_itinerary(
     # Body is parsed manually (independent of Content-Type) to allow the frontend
     # to avoid a CORS preflight OPTIONS request (see chat_stream for details).
     try:
-        body = json.loads(await request.body())
+        body = json.loads(await _read_capped_body(request, 2 * 1024 * 1024))
     except json.JSONDecodeError:
         raise HTTPException(status_code=422, detail="Invalid JSON body")
     itinerary_data = body.get("itinerary")
@@ -2788,7 +2838,7 @@ async def update_thread(
     # Body is parsed manually (independent of Content-Type) so the frontend can
     # avoid a CORS preflight OPTIONS request (see chat_stream for details).
     try:
-        body = ThreadUpdateRequest(**json.loads(await request.body()))
+        body = ThreadUpdateRequest(**json.loads(await _read_capped_body(request, 64 * 1024)))
     except (json.JSONDecodeError, ValidationError) as exc:
         raise HTTPException(status_code=422, detail="Invalid request body.")
 
@@ -2881,8 +2931,11 @@ async def auth_callback(request: Request) -> RedirectResponse:
     session_id = await create_session(session_data)
     logger.info("OAuth callback: session created for %s (id=%s)", email, session_id[:12])
 
+    # ?token= carries the session id for cross-domain auth fallback (browsers
+    # that block third-party cookies). Frontend strips it via replaceState
+    # before navigation. Never log it — tokens must not land in log streams.
     redirect_target = f"{_frontend_base_url()}/auth/callback?success=1&token={session_id}"
-    logger.info("OAuth callback: redirecting to %s", redirect_target[:80])
+    logger.info("OAuth callback: redirecting to frontend callback for %s", email)
     resp = RedirectResponse(url=redirect_target)
     resp.set_cookie(
         SESSION_COOKIE_NAME, session_id,
@@ -3365,7 +3418,14 @@ if settings.PROMETHEUS_ENABLED:
         should_ignore_untemplated=True,
         should_respect_env_var=False,
         excluded_handlers=["/metrics"],
-    ).instrument(app).expose(app, endpoint="/metrics", include_in_schema=False)
+    ).instrument(app)
+
+    # /metrics is auth-gated — request counts/latency/endpoints leak infra
+    # shape to unauthenticated callers. Dev mode: verify_api_key is a no-op.
+    @app.get("/metrics", include_in_schema=False, dependencies=[Depends(verify_api_key)])
+    async def prometheus_metrics() -> PlainTextResponse:
+        from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+        return PlainTextResponse(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
 if __name__ == "__main__":

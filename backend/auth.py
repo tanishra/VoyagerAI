@@ -33,7 +33,16 @@ async def verify_api_key(
             detail="Server authentication is misconfigured",
         )
 
-    x_api_key = x_api_key or request.query_params.get("api_key")
+    if x_api_key is None:
+        # Query-param fallback exists because custom headers force a CORS
+        # preflight that some hosting proxies mishandle. Query strings land in
+        # access logs/proxies, so prefer the header and flag the fallback.
+        x_api_key = request.query_params.get("api_key")
+        if x_api_key:
+            logger.warning(
+                "api_key query-param auth used from %s — prefer X-API-Key header",
+                request.client.host if request.client else "unknown",
+            )
     if not x_api_key or not hmac.compare_digest(x_api_key, API_AUTH_KEY):
         logger.warning("Unauthorized request received")
         raise HTTPException(

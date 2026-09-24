@@ -37,10 +37,14 @@ class Itinerary(BaseModel):
 
 
 class AttachmentInfo(BaseModel):
-    file_id: str = Field(..., description="Unique file ID from POST /upload.")
+    file_id: str = Field(..., max_length=100, description="Unique file ID from POST /upload.")
     filename: str = Field(..., max_length=200, description="Original filename.")
     content_type: str = Field(..., max_length=100, description="MIME type (e.g. image/jpeg).")
-    data_url: str = Field(..., description="Base64 data URL for frontend rendering.")
+    data_url: str | None = Field(
+        None,
+        max_length=14_000_000,
+        description="Base64 data URL — optional; the server resolves stored bytes via file_id when available.",
+    )
 
 
 class ChatRequest(BaseModel):
@@ -63,7 +67,7 @@ class ChatRequest(BaseModel):
         None, max_length=10, description="User's preferred currency code (e.g. 'USD', 'INR', 'EUR')."
     )
     attachments: list[AttachmentInfo] = Field(
-        default_factory=list, description="File attachments (images, PDFs)."
+        default_factory=list, max_length=5, description="File attachments (images, PDFs)."
     )
 
 

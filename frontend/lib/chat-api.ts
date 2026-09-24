@@ -55,7 +55,12 @@ export async function streamChat(
   };
   // One id per logical send — retries reuse it so the backend can dedupe
   // the message instead of appending it to the checkpoint twice.
-  const bodyStr = JSON.stringify({ ...body, client_message_id: body.client_message_id ?? makeClientMessageId() });
+  // Strip data_url from attachments — the backend resolves bytes server-side
+  // via file_id; sending multi-MB base64 in the chat body is wasteful.
+  const slimAttachments = body.attachments?.map(({ file_id, filename, content_type, size }) => ({
+    file_id, filename, content_type, size,
+  }));
+  const bodyStr = JSON.stringify({ ...body, attachments: slimAttachments, client_message_id: body.client_message_id ?? makeClientMessageId() });
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {

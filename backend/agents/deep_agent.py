@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import re
+import threading
 import uuid
 
 from langchain_core.messages import HumanMessage, RemoveMessage
@@ -171,28 +172,141 @@ async def create_redis_checkpointer() -> AsyncRedisSaver:
     return _checkpointer
 
 
+async def _pg_async_connect(conninfo: str):
+    """Open a fresh async psycopg connection for the checkpointer."""
+    import psycopg
+    return await psycopg.AsyncConnection.connect(
+        conninfo, autocommit=True, prepare_threshold=0, connect_timeout=10,
+    )
+
+
+def _pg_conn_errors():
+    """psycopg error types that mean the connection itself is dead."""
+    import psycopg
+    return (psycopg.OperationalError, psycopg.InterfaceError)
+
+
+def _resilient_saver_class():
+    """Lazily subclass AsyncPostgresSaver (import keeps psycopg optional).
+
+    LangGraph isinstance-checks ``BaseCheckpointSaver`` throughout pregel, so
+    a plain proxy would silently disable checkpointing — this must subclass.
+    """
+    from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+
+    class _ResilientPgSaver(AsyncPostgresSaver):
+        """Reconnects once on a dead connection instead of erroring every
+        stream until process restart. A second consecutive failure propagates
+        to the existing stream error path."""
+
+        def __init__(self, conn, conninfo: str):
+            super().__init__(conn)
+            self._conninfo = conninfo
+
+        async def _reconnect(self) -> None:
+            try:
+                await self.conn.close()
+            except Exception:  # noqa: BLE001, S110
+                pass
+            self.conn = await _pg_async_connect(self._conninfo)
+            logger.warning("pg checkpointer: reconnected after connection failure")
+
+        async def _retry(self, fn, *args, **kwargs):
+            try:
+                return await fn(*args, **kwargs)
+            except _pg_conn_errors():
+                await self._reconnect()
+                return await fn(*args, **kwargs)
+
+        async def aget_tuple(self, config, *args, **kwargs):
+            return await self._retry(super().aget_tuple, config, *args, **kwargs)
+
+        async def aput(self, *args, **kwargs):
+            return await self._retry(super().aput, *args, **kwargs)
+
+        async def aput_writes(self, *args, **kwargs):
+            return await self._retry(super().aput_writes, *args, **kwargs)
+
+        async def adelete_thread(self, *args, **kwargs):
+            return await self._retry(super().adelete_thread, *args, **kwargs)
+
+        async def alist(self, config, *args, **kwargs):
+            # Retry only the first pull — a mid-iteration failure propagates
+            # rather than risking duplicated checkpoints.
+            iterator = super().alist(config, *args, **kwargs)
+            try:
+                first = await iterator.__anext__()
+            except StopAsyncIteration:
+                return
+            except _pg_conn_errors():
+                await self._reconnect()
+                async for item in super().alist(config, *args, **kwargs):
+                    yield item
+                return
+            yield first
+            async for item in iterator:
+                yield item
+
+    return _ResilientPgSaver
+
+
+def _resilient_store_class():
+    """Lazily subclass PostgresStore (import keeps psycopg optional).
+
+    Serializes calls through a lock — the shared sync psycopg connection is
+    not concurrency-safe — and reconnects once on a dead connection. All ops
+    funnel through ``batch`` (async variants delegate via run_in_executor),
+    so wrapping it covers every read/write."""
+    from langgraph.store.postgres import PostgresStore
+
+    class _ResilientPgStore(PostgresStore):
+        def __init__(self, conn, conninfo: str, **kwargs):
+            super().__init__(conn=conn, **kwargs)
+            self._conninfo = conninfo
+            self._conn_lock = threading.Lock()
+
+        def _reconnect(self) -> None:
+            import psycopg
+            try:
+                self.conn.close()
+            except Exception:  # noqa: BLE001, S110
+                pass
+            self.conn = psycopg.Connection.connect(
+                self._conninfo, autocommit=True, prepare_threshold=0,
+                connect_timeout=10,
+            )
+            logger.warning("pg store: reconnected after connection failure")
+
+        def batch(self, ops):
+            with self._conn_lock:
+                try:
+                    return super().batch(ops)
+                except _pg_conn_errors():
+                    self._reconnect()
+                    return super().batch(ops)
+
+    return _ResilientPgStore
+
+
 async def create_postgres_checkpointer():
     """Build a Postgres-backed checkpointer (Supabase or any Postgres).
 
     Uses ``AsyncPostgresSaver`` on its own connection — LangGraph requires
     autocommit and manages its own tables via ``setup()``. The session-mode
     connection string is required (transaction poolers break prepared
-    statements); ``pg_store._conninfo()`` normalises sslmode.
+    statements); ``pg_store._conninfo()`` normalises sslmode. The saver is
+    wrapped in ``ResilientPostgresSaver`` so a mid-run connection drop
+    reconnects instead of failing every stream until restart.
     """
     global _postgres_checkpointer
     if _postgres_checkpointer is None:
-        import psycopg
-        from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
         from pg_store import _conninfo
 
         conninfo = _conninfo()
         if not conninfo:
             raise RuntimeError("DATABASE_URL not configured")
-        conn = await psycopg.AsyncConnection.connect(
-            conninfo, autocommit=True, prepare_threshold=0,
-            connect_timeout=10,
-        )
-        saver = AsyncPostgresSaver(conn)
+        conn = await _pg_async_connect(conninfo)
+        saver = _resilient_saver_class()(conn, conninfo)
         await saver.setup()
         _postgres_checkpointer = saver
         logger.info("pg durable tier: checkpointer CONNECTED (Postgres)")
@@ -272,11 +386,12 @@ def _pg_store_connection():
 
 def create_pg_semantic_store():
     """Postgres-backed semantic memory store (pgvector index)."""
-    from langgraph.store.postgres import PostgresStore
+    from pg_store import _conninfo
 
     conn = _pg_store_connection()
-    store = PostgresStore(
+    store = _resilient_store_class()(
         conn=conn,
+        conninfo=_conninfo(),
         index={"dims": 1536, "embed": "openai:text-embedding-3-small"},
     )
     store.setup()
@@ -285,10 +400,10 @@ def create_pg_semantic_store():
 
 def create_pg_file_store():
     """Postgres-backed file/memory store (no vector index needed)."""
-    from langgraph.store.postgres import PostgresStore
+    from pg_store import _conninfo
 
     conn = _pg_store_connection()
-    store = PostgresStore(conn=conn)
+    store = _resilient_store_class()(conn=conn, conninfo=_conninfo())
     store.setup()
     return store
 
@@ -1795,6 +1910,10 @@ async def stream_chat_agent(
     if attachments:
         content_blocks: list[dict] = [{"type": "text", "text": message}]
         for att in attachments:
+            data_url = att.get("data_url") or ""
+            if not data_url.startswith("data:"):
+                logger.warning("Skipping attachment with malformed data_url")
+                continue
             ct = att.get("content_type", "")
             if ct.startswith("image/"):
                 content_blocks.append({
