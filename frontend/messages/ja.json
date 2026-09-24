@@ -142,7 +142,9 @@
     "feedbackCommentPlaceholder": "何が悪かったか教えてください...",
     "feedbackSubmit": "フィードバックを送信",
     "feedbackThanks": "フィードバックありがとうございます！",
-    "feedbackError": "フィードバックの送信に失敗しました"
+    "feedbackError": "フィードバックの送信に失敗しました",
+    "regenTierFailed": "そのプランを再生成できませんでした — 元のプランはそのままです。",
+    "regenTierExpired": "この比較は更新できなくなりました — 新しいプランをリクエストしてください。"
   },
   "status": {
     "researching": "調査中",
@@ -238,7 +240,8 @@
     "premium": "プレミアム",
     "daysDestination": "{count}日 · {destination}",
     "recommended": "おすすめ",
-    "perDay": "{cost}/日"
+    "perDay": "{cost}/日",
+    "regenerateTier": "別のプランを試す"
   },
   "preferences": {
     "title": "あなたの設定",

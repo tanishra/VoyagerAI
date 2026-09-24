@@ -242,3 +242,40 @@ describe('ComparisonView', () => {
     delete mockSwrData['wikimedia:Tokyo'];
   });
 });
+
+describe('ComparisonView — single-tier regenerate (U6)', () => {
+  it('shows no refresh buttons without a handler (legacy callers)', () => {
+    render(<ComparisonView data={mockData} onSelect={() => {}} />);
+    expect(screen.queryAllByRole('button', { name: /try a different plan/i })).toHaveLength(0);
+  });
+
+  it('renders one refresh button per card when handler provided', () => {
+    render(<ComparisonView data={mockData} onSelect={() => {}} onRegenerateTier={() => {}} />);
+    expect(screen.getAllByRole('button', { name: /try a different plan/i })).toHaveLength(3);
+  });
+
+  it('calls onRegenerateTier with the tier and does NOT trigger select', () => {
+    const onRegen = vi.fn();
+    const onSelect = vi.fn();
+    render(<ComparisonView data={mockData} onSelect={onSelect} onRegenerateTier={onRegen} />);
+    fireEvent.click(screen.getAllByRole('button', { name: /try a different plan/i })[2]);
+    expect(onRegen).toHaveBeenCalledWith('premium');
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it('disables only the regenerating card button and spins its icon', () => {
+    render(
+      <ComparisonView
+        data={mockData}
+        onSelect={() => {}}
+        onRegenerateTier={() => {}}
+        regeneratingTier="balanced"
+      />
+    );
+    const buttons = screen.getAllByRole('button', { name: /try a different plan/i });
+    expect(buttons[0]).not.toBeDisabled();
+    expect(buttons[1]).toBeDisabled();
+    expect(buttons[2]).not.toBeDisabled();
+    expect(buttons[1].querySelector('svg')?.className.baseVal).toContain('animate-spin');
+  });
+});

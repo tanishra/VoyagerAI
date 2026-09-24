@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Send, Square, RotateCcw, Globe, Search, ShieldAlert, ListChecks, Loader2, PanelLeft, ChevronDown, ChevronLeft, ChevronRight, Clock, Sparkles, Copy, Check, Pencil, X, Paperclip, FileText, Info } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useLocale } from '@/lib/useLocale';
-import { streamChat, cancelStream, regenerateStream, editStream, editItinerary } from '@/lib/chat-api';
+import { streamChat, cancelStream, regenerateStream, editStream, editItinerary, regenerateTier, TierRegenError } from '@/lib/chat-api';
 import { sanitizeError } from '@/lib/errors';
 import { listThreads, getThreadHistory, getBranches, deleteThread, updateThread, type ThreadMeta } from '@/lib/threads-api';
 import { getSession, clearSessionCache, type SessionUser } from '@/lib/auth';
@@ -117,6 +117,7 @@ export default function ChatPage() {
   const [branches, setBranches] = useState<BranchInfo[]>([]);
   const [activeBranchIndex, setActiveBranchIndex] = useState(0);
   const [regenerating, setRegenerating] = useState(false);
+  const [regeneratingTier, setRegeneratingTier] = useState<{ msgId: string; tier: string } | null>(null);
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [editContent, setEditContent] = useState('');
   const [reconnecting, setReconnecting] = useState<{ attempt: number; max: number } | null>(null);
@@ -1489,6 +1490,31 @@ export default function ChatPage() {
     inputRef.current?.focus();
   }, [t]);
 
+  const handleRegenerateTier = useCallback(async (tier: string, msgId: string) => {
+    if (!threadId || loading || regenerating || regeneratingTier) return;
+    setRegeneratingTier({ msgId, tier });
+    setError(null);
+    try {
+      const comparison = await regenerateTier({
+        thread_id: threadId,
+        tier,
+        locale,
+        currency,
+      });
+      setMessages((prev) =>
+        prev.map((m) => (m.id === msgId ? { ...m, comparison } : m))
+      );
+    } catch (err) {
+      if (err instanceof TierRegenError && err.status === 409) {
+        setError(t('regenTierExpired'));
+      } else if (!(err instanceof DOMException && err.name === 'AbortError')) {
+        setError(t('regenTierFailed'));
+      }
+    } finally {
+      setRegeneratingTier(null);
+    }
+  }, [threadId, loading, regenerating, regeneratingTier, locale, currency, t]);
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
@@ -1818,7 +1844,14 @@ export default function ChatPage() {
                         {t('stopped')}
                       </span>
                     )}
-                    {msg.comparison && <ComparisonView data={msg.comparison} onSelect={handleSelectPlan} />}
+                    {msg.comparison && (
+                      <ComparisonView
+                        data={msg.comparison}
+                        onSelect={handleSelectPlan}
+                        onRegenerateTier={(tier) => handleRegenerateTier(tier, msg.id)}
+                        regeneratingTier={regeneratingTier?.msgId === msg.id ? regeneratingTier.tier : null}
+                      />
+                    )}
                     {msg.itinerary && <ItineraryCard itinerary={msg.itinerary} threadId={threadId ?? undefined} onEditItinerary={(modified) => handleEditItinerary(modified, msg.id)} />}
                     {msg.images && msg.images.map((img, i) => (
                       <GeneratedImageCard key={i} image={img} />

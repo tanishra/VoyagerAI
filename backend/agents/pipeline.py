@@ -32,6 +32,7 @@ from agents.prompts import (
     CONSTRAINT_ANALYZER_SYSTEM_PROMPT,
     LANGUAGE_INSTRUCTIONS,
     COMPARISON_SUMMARY_PROMPT,
+    SINGLE_TIER_REGEN_PROMPT,
     RESEARCHER_SYSTEM_PROMPT,
     RISK_DETECTOR_SYSTEM_PROMPT,
 )
@@ -414,6 +415,94 @@ async def run_comparison_pipeline(
             if isinstance(it, dict) and isinstance(it.get("estimated_total_cost_usd"), (int, float)):
                 totals[plan.get("tier")] = it["estimated_total_cost_usd"]
     return comparison, stage_usage
+
+
+async def regenerate_tier_plan(
+    constraints: TripConstraints,
+    tier: str,
+    comparison: dict,
+    *,
+    locale: str | None = None,
+    cancel_event=None,
+    budget_check=None,
+) -> dict | None:
+    """Regenerate ONE plan card inside an existing comparison.
+
+    Runs a single structured generation (no research fan-out — the sibling
+    plans carry enough context), patches the plan in place so card order is
+    preserved, then re-runs the same deterministic enforcement + validation
+    the full pipeline applies. Returns the updated comparison, or None on
+    total failure (caller keeps the old card).
+    """
+    if _check_cancel(cancel_event) or _check_budget(budget_check):
+        return None
+
+    plans = comparison.get("plans")
+    if not isinstance(plans, list):
+        return None
+    idx = next(
+        (i for i, p in enumerate(plans) if isinstance(p, dict) and p.get("tier") == tier),
+        None,
+    )
+    if idx is None:
+        logger.warning("Tier regen requested for missing tier '%s'", tier)
+        return None
+
+    rejected = plans[idx]
+    siblings = [
+        {
+            "tier": p.get("tier"),
+            "total": (p.get("itinerary") or {}).get("estimated_total_cost_usd"),
+            "accommodation": (p.get("cost_breakdown") or {}).get("accommodation"),
+        }
+        for i, p in enumerate(plans)
+        if i != idx and isinstance(p, dict)
+    ]
+    task_text = (
+        f"{_constraints_block(constraints)}\n\n"
+        f"<rejected_plan tier=\"{tier}\">\n{json.dumps(rejected, ensure_ascii=False)}\n</rejected_plan>\n\n"
+        f"<sibling_plans>\n{json.dumps(siblings, ensure_ascii=False)}\n</sibling_plans>\n\n"
+        f"{_language_block(locale)}\n"
+        f"Regenerate ONLY the '{tier}' plan. All costs in {constraints.budget_currency}. "
+        f"The plan must cover exactly {constraints.total_days} days."
+    )
+
+    stage_usage: dict[str, dict] = {}
+    patched: dict | None = None
+    feedback = ""
+    for attempt in range(_MAX_GENERATION_ATTEMPTS):
+        attempt_text = task_text
+        if feedback:
+            attempt_text += f"\n\n<issues_to_fix>\n{feedback}\n</issues_to_fix>"
+        plan, usage = await _generate_structured(
+            ComparisonPlan, SINGLE_TIER_REGEN_PROMPT, attempt_text, "multi_plan_generator"
+        )
+        stage_usage["multi_plan_generator"] = usage
+        if plan is None:
+            continue
+        candidate = json.loads(json.dumps(comparison))  # deep copy, JSON-safe
+        candidate["plans"][idx] = plan
+        it = candidate["plans"][idx].get("itinerary")
+        if isinstance(it, dict):
+            it["currency"] = constraints.budget_currency
+            it["total_days"] = constraints.total_days
+            it["destination"] = constraints.destination
+        from agents.deep_agent import _reconcile_comparison_budgets
+        candidate = _reconcile_comparison_budgets(
+            candidate, (constraints.budget_amount, constraints.budget_currency)
+        )
+        errors = [i for i in validate_comparison(candidate, constraints) if i.severity == "error"]
+        if not errors:
+            patched = candidate
+            break
+        feedback = "\n".join(i.message for i in errors)
+        logger.warning("Tier regen validation failed (attempt %d): %s", attempt + 1, feedback)
+
+    if patched is None:
+        logger.error("Tier regen failed after %d attempts (tier=%s)", _MAX_GENERATION_ATTEMPTS, tier)
+        return None
+    logger.info("Tier regen succeeded (tier=%s, usage=%s)", tier, stage_usage.get("multi_plan_generator"))
+    return patched
 
 
 async def run_refinement_pipeline(

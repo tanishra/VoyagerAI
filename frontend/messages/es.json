@@ -142,7 +142,9 @@
     "feedbackCommentPlaceholder": "Cuéntanos qué salió mal...",
     "feedbackSubmit": "Enviar comentario",
     "feedbackThanks": "¡Gracias por tu comentario!",
-    "feedbackError": "Error al enviar comentario"
+    "feedbackError": "Error al enviar comentario",
+    "regenTierFailed": "No se pudo regenerar ese plan — el original no cambió.",
+    "regenTierExpired": "Esta comparación ya no se puede actualizar — pide planes nuevos."
   },
   "status": {
     "researching": "Investigando",
@@ -238,7 +240,8 @@
     "premium": "Premium",
     "daysDestination": "{count} días · {destination}",
     "recommended": "Recomendado",
-    "perDay": "{cost} por día"
+    "perDay": "{cost} por día",
+    "regenerateTier": "Probar otro plan"
   },
   "preferences": {
     "title": "Tus Preferencias",

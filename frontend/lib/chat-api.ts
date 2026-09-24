@@ -696,3 +696,43 @@ export async function editStream(
   }
   return resolvedThreadId;
 }
+
+export class TierRegenError extends Error {
+  status: number;
+  detail: string;
+  constructor(status: number, detail: string) {
+    super(detail || `HTTP ${status}`);
+    this.status = status;
+    this.detail = detail;
+  }
+}
+
+export async function regenerateTier(
+  body: { thread_id: string; tier: string; locale?: string; currency?: string },
+  signal?: AbortSignal,
+): Promise<ComparisonData> {
+  const url = withAuthParams(
+    `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/chat/regenerate-tier`
+  );
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(body.locale ? { 'Accept-Language': body.locale } : {}),
+    },
+    body: JSON.stringify(body),
+    signal,
+    credentials: 'include',
+  });
+
+  if (response.status === 401) {
+    window.location.href = '/login';
+    throw new TierRegenError(401, 'unauthorized');
+  }
+
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new TierRegenError(response.status, String(data?.detail ?? ''));
+  }
+  return data.comparison as ComparisonData;
+}

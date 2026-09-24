@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronDown, ChevronUp, Wallet, Scale, Sparkles, TrendingUp, TrendingDown, BadgeCheck } from 'lucide-react';
+import { ChevronDown, ChevronUp, Wallet, Scale, Sparkles, TrendingUp, TrendingDown, BadgeCheck, RotateCcw } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import useSWR from 'swr';
 import type { ComparisonData, PlanTier } from '@/lib/types';
@@ -36,10 +36,14 @@ function PlanCard({
   plan,
   index,
   onSelect,
+  onRegenerateTier,
+  regeneratingTier,
 }: {
   plan: PlanTier;
   index: number;
   onSelect: (tier: string) => void;
+  onRegenerateTier?: (tier: string) => void;
+  regeneratingTier?: string | null;
 }) {
   const t = useTranslations('comparison');
   const tItin = useTranslations('itinerary');
@@ -64,6 +68,7 @@ function PlanCard({
   const total = planTotal(plan);
   const isRecommended = plan.tier === RECOMMENDED_TIER;
   const animatedTotal = useCountUp(total ?? 0);
+  const isRegenerating = regeneratingTier === plan.tier;
   // dayCount falls back to total_days so summary-only stubs (no days array)
   // still show a per-day figure.
   const perDay = total != null && dayCount > 0 ? total / dayCount : null;
@@ -85,12 +90,29 @@ function PlanCard({
       )}
       <div
         onClick={() => onSelect(plan.tier)}
-        className={`rounded-xl border overflow-hidden flex flex-col bg-card cursor-pointer transition-all hover:-translate-y-0.5 ${
+        className={`relative rounded-xl border overflow-hidden flex flex-col bg-card cursor-pointer transition-all hover:-translate-y-0.5 ${
           isRecommended
             ? 'border-primary/40 ring-1 ring-primary/20 shadow-lg shadow-primary/10 md:-translate-y-1'
             : 'border-border hover:border-primary/30'
-        }`}
+        } ${isRegenerating ? 'pointer-events-none' : ''}`}
       >
+        {onRegenerateTier && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onRegenerateTier(plan.tier);
+            }}
+            disabled={isRegenerating}
+            aria-label={t('regenerateTier')}
+            title={t('regenerateTier')}
+            className="absolute top-2.5 right-2.5 z-20 p-1.5 rounded-md text-muted-foreground/60 hover:text-foreground hover:bg-muted transition-colors cursor-pointer disabled:cursor-default"
+          >
+            <RotateCcw className={`w-3.5 h-3.5 ${isRegenerating ? 'animate-spin' : ''}`} />
+          </button>
+        )}
+        {isRegenerating && (
+          <div className="absolute inset-0 z-10 shimmer bg-muted/50" aria-hidden="true" />
+        )}
         {/* Tier header + hero price */}
         <div className="px-4 pt-4 pb-3 border-b border-border/60">
           <div className="flex items-center gap-2 mb-2">
@@ -225,9 +247,13 @@ function PlanCard({
 export default function ComparisonView({
   data,
   onSelect,
+  onRegenerateTier,
+  regeneratingTier,
 }: {
   data: ComparisonData;
   onSelect: (tier: string) => void;
+  onRegenerateTier?: (tier: string) => void;
+  regeneratingTier?: string | null;
 }) {
   const t = useTranslations('comparison');
   const locale = useLocale();
@@ -309,7 +335,14 @@ export default function ComparisonView({
       {/* Plan cards */}
       <div className="p-4 grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4">
         {data.plans.map((plan, i) => (
-          <PlanCard key={plan.tier} plan={plan} index={i} onSelect={onSelect} />
+          <PlanCard
+            key={plan.tier}
+            plan={plan}
+            index={i}
+            onSelect={onSelect}
+            onRegenerateTier={onRegenerateTier}
+            regeneratingTier={regeneratingTier}
+          />
         ))}
       </div>
     </div>

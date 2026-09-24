@@ -142,7 +142,9 @@
     "feedbackCommentPlaceholder": "Sagen Sie uns, was schiefgelaufen ist...",
     "feedbackSubmit": "Feedback senden",
     "feedbackThanks": "Danke für Ihr Feedback!",
-    "feedbackError": "Feedback konnte nicht gesendet werden"
+    "feedbackError": "Feedback konnte nicht gesendet werden",
+    "regenTierFailed": "Der Plan konnte nicht neu erstellt werden — Ihr Original bleibt unverändert.",
+    "regenTierExpired": "Dieser Vergleich kann nicht mehr aktualisiert werden — fordern Sie neue Pläne an."
   },
   "status": {
     "researching": "Recherchieren",
@@ -238,7 +240,8 @@
     "premium": "Premium",
     "daysDestination": "{count} Tage · {destination}",
     "recommended": "Empfohlen",
-    "perDay": "{cost} pro Tag"
+    "perDay": "{cost} pro Tag",
+    "regenerateTier": "Anderen Plan versuchen"
   },
   "preferences": {
     "title": "Ihre Einstellungen",

@@ -142,7 +142,9 @@
     "feedbackCommentPlaceholder": "Tell us what went wrong...",
     "feedbackSubmit": "Submit feedback",
     "feedbackThanks": "Thanks for your feedback!",
-    "feedbackError": "Failed to submit feedback"
+    "feedbackError": "Failed to submit feedback",
+    "regenTierFailed": "Couldn't regenerate that plan — your original is unchanged.",
+    "regenTierExpired": "This comparison can no longer be updated — ask for fresh plans."
   },
   "status": {
     "researching": "Researching",
@@ -238,7 +240,8 @@
     "premium": "Premium",
     "daysDestination": "{count} days · {destination}",
     "recommended": "Recommended",
-    "perDay": "{cost} per day"
+    "perDay": "{cost} per day",
+    "regenerateTier": "Try a different plan"
   },
   "preferences": {
     "title": "Your Preferences",

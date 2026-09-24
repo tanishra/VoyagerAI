@@ -211,7 +211,7 @@ async def request_context_middleware(request: Request, call_next):
 CSRF_COOKIE_NAME = "voyager_csrf"
 CSRF_HEADER_NAME = "X-CSRF-Token"
 _CSRF_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
-_CSRF_EXEMPT_PATHS = {"/chat/stream", "/chat/regenerate", "/chat/edit", "/auth/callback"}
+_CSRF_EXEMPT_PATHS = {"/chat/stream", "/chat/regenerate", "/chat/regenerate-tier", "/chat/edit", "/auth/callback"}
 
 
 @app.middleware("http")
@@ -1968,6 +1968,94 @@ async def chat_regenerate(
                 logger.warning("Failed to save thread metadata after regenerate", exc_info=True)
 
     return EventSourceResponse(event_generator())
+
+
+@app.post(
+    "/chat/regenerate-tier",
+    summary="Regenerate a single tier card in the latest comparison",
+    tags=["chat"],
+    dependencies=[Depends(verify_api_key)],
+    response_model=None,
+    responses={
+        200: {"description": "The updated comparison with the regenerated plan patched in place"},
+        404: {"description": "No comparison on record for this thread"},
+        409: {"description": "Trip constraints expired — generate fresh plans"},
+        422: {"description": "Invalid tier"},
+        502: {"description": "Tier regeneration failed — existing card unchanged"},
+    },
+)
+@limiter.limit("10/minute")
+async def chat_regenerate_tier(
+    request: Request,
+    user: dict = Depends(get_current_user),
+):
+    """Regenerate one plan card (budget/balanced/premium) in the thread's latest comparison.
+
+    Cheap alternative to `/chat/regenerate`: reuses stored trip constraints and
+    regenerates only the requested tier via a single structured generation.
+    The other two plans and the comparison matrix stay untouched.
+
+    **Request body:** `{"thread_id": "...", "tier": "premium", "locale": "en", "currency": "INR"}`
+    """
+    # Body is parsed manually (independent of Content-Type) to allow the frontend
+    # to avoid a CORS preflight OPTIONS request (see chat_stream for details).
+    try:
+        body = json.loads(await request.body())
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=422, detail="Invalid JSON body")
+    raw_thread_id = body.get("thread_id", "")
+    tier = body.get("tier", "")
+    if not raw_thread_id:
+        raise HTTPException(status_code=400, detail="thread_id required")
+    if tier not in ("budget", "balanced", "premium"):
+        raise HTTPException(status_code=422, detail="tier must be budget, balanced, or premium")
+    _validate_body_fields(body, {"thread_id": 200, "tier": 20, "locale": 10, "currency": 10})
+
+    user_id = user["user_id"]
+    thread_id = _scoped_chat_thread_id(raw_thread_id, user_id)
+    locale = extract_locale(request, body.get("locale"))
+
+    # Same blast-radius controls as /chat/regenerate.
+    within_budget, _spent, _cap = await cost_store.check_daily_budget(user_id)
+    if not within_budget:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Daily cost limit reached (${_spent:.2f}/${_cap:.2f}). Try again tomorrow.",
+        )
+    tripped, _p_spent, _p_cap = await cost_store.check_circuit_breaker()
+    if tripped:
+        raise HTTPException(
+            status_code=503,
+            detail="Platform temporarily unavailable due to high demand. Please try again shortly.",
+        )
+
+    from agents.constraints import TripConstraints
+    from agents.pipeline import get_latest_comparison, regenerate_tier_plan
+    from payload_store import payload_store
+
+    constraints_data = await payload_store.get_thread_state(thread_id, "constraints")
+    try:
+        constraints = TripConstraints(**constraints_data) if isinstance(constraints_data, dict) else None
+    except Exception:
+        constraints = None
+    if constraints is None:
+        raise HTTPException(
+            status_code=409,
+            detail="constraints_expired",
+        )
+
+    comparison = await get_latest_comparison(thread_id)
+    if comparison is None:
+        raise HTTPException(status_code=404, detail="No comparison on record for this thread")
+
+    logger.info("POST /chat/regenerate-tier — thread_id=%s tier=%s user=%s", thread_id, tier, user_id)
+
+    updated = await regenerate_tier_plan(constraints, tier, comparison, locale=locale)
+    if updated is None:
+        raise HTTPException(status_code=502, detail="Tier regeneration failed — existing plan unchanged")
+
+    await payload_store.set_thread_state(thread_id, "latest_comparison", updated)
+    return {"comparison": updated}
 
 
 @app.post(
