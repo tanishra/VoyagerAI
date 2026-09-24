@@ -93,3 +93,21 @@ describe('SubagentTimeline', () => {
     expect(screen.getByText('tool_c')).toBeInTheDocument();
   });
 });
+
+describe('generation attempts chip (R3)', () => {
+  it('shows attempts count when a pipeline tool retried', () => {
+    const tc = [
+      { run_id: 'r1', name: 'generate_trip_plans', status: 'done' as const, generation_attempts: 3 },
+    ];
+    render(<SubagentTimeline toolCalls={tc} />);
+    expect(screen.getByText('3 attempts')).toBeInTheDocument();
+  });
+
+  it('hides the chip on single-attempt runs', () => {
+    const tc = [
+      { run_id: 'r1', name: 'generate_trip_plans', status: 'done' as const, generation_attempts: 1 },
+    ];
+    render(<SubagentTimeline toolCalls={tc} />);
+    expect(screen.queryByText(/attempts/)).not.toBeInTheDocument();
+  });
+});

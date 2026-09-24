@@ -225,7 +225,8 @@
     "dropHere": "ここにアクティビティをドロップ",
     "locationPlaceholder": "場所（任意）",
     "durationPlaceholder": "所要時間（例: 2h）",
-    "approxLocation": "おおよその位置"
+    "approxLocation": "おおよその位置",
+    "limitedResearch": "ライブデータが限定的 — 価格や空き状況の精度が低い可能性があります"
   },
   "comparison": {
     "title": "プランを比較",
@@ -241,7 +242,8 @@
     "daysDestination": "{count}日 · {destination}",
     "recommended": "おすすめ",
     "perDay": "{cost}/日",
-    "regenerateTier": "別のプランを試す"
+    "regenerateTier": "別のプランを試す",
+    "limitedResearch": "ライブデータが限定的 — 価格や空き状況の精度が低い可能性があります"
   },
   "preferences": {
     "title": "あなたの設定",

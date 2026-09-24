@@ -183,6 +183,22 @@ def _usage_of(messages: list) -> dict:
     return total
 
 
+def _accumulate_usage(bucket: dict, stage: str, usage: dict) -> None:
+    """Merge one call's token usage into the per-stage bucket.
+
+    Retry loops call a stage more than once — overwriting (the old behavior)
+    silently dropped the tokens burned by failed attempts. Failed attempts
+    still cost money, so their usage must count too.
+    """
+    entry = bucket.setdefault(
+        stage, {"input_tokens": 0, "output_tokens": 0, "model": ""}
+    )
+    entry["input_tokens"] += usage.get("input_tokens") or 0
+    entry["output_tokens"] += usage.get("output_tokens") or 0
+    if usage.get("model"):
+        entry["model"] = usage["model"]
+
+
 async def _run_specialist(
     name: str,
     system_prompt: str,
@@ -343,10 +359,17 @@ async def run_comparison_pipeline(
     for n, b in zip(names, briefs):
         if isinstance(b, tuple):
             normalized.append(b[0])
-            stage_usage[n] = b[1]
+            _accumulate_usage(stage_usage, n, b[1])
         else:
             logger.warning("Pipeline specialist '%s' raised through gather: %s", n, b)
             normalized.append(f"[{n} unavailable — proceed with remaining context]")
+    # Specialists degrade to gap notes on failure — flag which ones failed so
+    # the payload can carry a "limited research" warning to the UI instead of
+    # silently shipping plans built on thin data.
+    research_gaps = [
+        n for n, brief in zip(names, normalized)
+        if isinstance(brief, str) and brief.startswith(f"[{n} unavailable")
+    ]
     research_brief, constraint_brief, risk_brief = normalized
 
     if _check_cancel(cancel_event) or _check_budget(budget_check):
@@ -373,7 +396,8 @@ async def run_comparison_pipeline(
         comparison, usage = await _generate_structured(
             ComparisonSummary, COMPARISON_SUMMARY_PROMPT, attempt_text, "multi_plan_generator"
         )
-        stage_usage["multi_plan_generator"] = usage
+        _accumulate_usage(stage_usage, "multi_plan_generator", usage)
+        stage_usage["multi_plan_generator"]["attempts"] = attempt + 1
         if comparison is None:
             continue
         errors = [i for i in validate_comparison(comparison, constraints) if i.severity == "error"]
@@ -420,6 +444,9 @@ async def run_comparison_pipeline(
             it = plan.get("itinerary")
             if isinstance(it, dict) and isinstance(it.get("estimated_total_cost_usd"), (int, float)):
                 totals[plan.get("tier")] = it["estimated_total_cost_usd"]
+    if research_gaps:
+        comparison["research_limited"] = True
+        comparison["research_gaps"] = research_gaps
     return comparison, stage_usage
 
 
@@ -483,7 +510,8 @@ async def regenerate_tier_plan(
         plan, usage = await _generate_structured(
             ComparisonPlan, SINGLE_TIER_REGEN_PROMPT, attempt_text, "multi_plan_generator"
         )
-        stage_usage["multi_plan_generator"] = usage
+        _accumulate_usage(stage_usage, "multi_plan_generator", usage)
+        stage_usage["multi_plan_generator"]["attempts"] = attempt + 1
         if plan is None:
             continue
         candidate = json.loads(json.dumps(comparison))  # deep copy, JSON-safe
@@ -564,7 +592,8 @@ async def run_refinement_pipeline(
         itinerary, usage = await _generate_structured(
             ItineraryPlan, _ITINERARY_GENERATION_PROMPT, attempt_text, "multi_plan_generator"
         )
-        stage_usage["itinerary_generator"] = usage
+        _accumulate_usage(stage_usage, "itinerary_generator", usage)
+        stage_usage["itinerary_generator"]["attempts"] = attempt + 1
         if itinerary is None:
             continue
         errors = [i for i in validate_itinerary(itinerary, constraints) if i.severity == "error"]
@@ -579,6 +608,11 @@ async def run_refinement_pipeline(
         return None
 
     itinerary["currency"] = constraints.budget_currency
+    # Carry the comparison's degraded-research flag forward so the itinerary
+    # card can warn the user the plan was built on partial data.
+    if isinstance(latest, dict) and latest.get("research_limited"):
+        itinerary["research_limited"] = True
+        itinerary["research_gaps"] = latest.get("research_gaps", [])
     itinerary = _reconcile_itinerary_budget(
         itinerary, (constraints.budget_amount, constraints.budget_currency)
     )
@@ -652,7 +686,8 @@ async def run_edit_validation_pipeline(
         fixed, usage = await _generate_structured(
             ItineraryPlan, _EDIT_FIX_PROMPT, task_text, "multi_plan_generator"
         )
-        stage_usage["edit_validator"] = usage
+        _accumulate_usage(stage_usage, "edit_validator", usage)
+        stage_usage["edit_validator"]["attempts"] = 1
         if fixed is not None:
             still_bad = [
                 i for i in validate_itinerary(fixed, pseudo) if i.severity == "error"

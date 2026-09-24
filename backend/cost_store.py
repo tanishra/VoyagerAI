@@ -102,6 +102,7 @@ class CostStore:
         output_tokens: int,
         cost_usd: float,
         model_used: str,
+        attempts: int = 0,
     ) -> None:
         """Record a single subagent's cost for a thread."""
         ts = time.time()
@@ -111,6 +112,7 @@ class CostStore:
             "output_tokens": output_tokens,
             "cost_usd": cost_usd,
             "model_used": model_used,
+            "attempts": attempts,
             "timestamp": ts,
         }
         persisted = False

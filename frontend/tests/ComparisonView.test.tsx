@@ -279,3 +279,16 @@ describe('ComparisonView — single-tier regenerate (U6)', () => {
     expect(buttons[1].querySelector('svg')?.className.baseVal).toContain('animate-spin');
   });
 });
+
+describe('limited research badge (R5)', () => {
+  it('shows the badge when research_limited is set', () => {
+    const data = { ...mockData, research_limited: true, research_gaps: ['researcher'] };
+    render(<ComparisonView data={data} onSelect={() => {}} />);
+    expect(screen.getByText(/Limited live data/i)).toBeInTheDocument();
+  });
+
+  it('hides the badge when research_limited is absent', () => {
+    render(<ComparisonView data={mockData} onSelect={() => {}} />);
+    expect(screen.queryByText(/Limited live data/i)).not.toBeInTheDocument();
+  });
+});

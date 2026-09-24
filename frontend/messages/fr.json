@@ -225,7 +225,8 @@
     "dropHere": "Déposer l'activité ici",
     "locationPlaceholder": "Lieu (optionnel)",
     "durationPlaceholder": "Durée (ex. 2h)",
-    "approxLocation": "Position approximative"
+    "approxLocation": "Position approximative",
+    "limitedResearch": "Données en direct limitées — prix et disponibilités peuvent être moins précis"
   },
   "comparison": {
     "title": "Comparer les Plans",
@@ -241,7 +242,8 @@
     "daysDestination": "{count} jours · {destination}",
     "recommended": "Recommandé",
     "perDay": "{cost} par jour",
-    "regenerateTier": "Essayer un autre plan"
+    "regenerateTier": "Essayer un autre plan",
+    "limitedResearch": "Données en direct limitées — prix et disponibilités peuvent être moins précis"
   },
   "preferences": {
     "title": "Vos Préférences",

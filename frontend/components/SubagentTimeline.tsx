@@ -143,6 +143,11 @@ function SubagentEntry({
         {tc.status === 'error' && (
           <span className="text-destructive/60">failed</span>
         )}
+        {tc.generation_attempts != null && tc.generation_attempts > 1 && (
+          <span className="text-muted-foreground/60 tabular-nums">
+            {tc.generation_attempts} attempts
+          </span>
+        )}
       </div>
 
       {/* Progress description */}

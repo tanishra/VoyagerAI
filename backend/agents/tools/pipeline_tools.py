@@ -36,6 +36,30 @@ from payload_store import payload_store
 
 logger = logging.getLogger("travel_agent.tools.pipeline")
 
+
+async def _record_retries(thread_id: str, stage_usage: dict) -> None:
+    """Emit an observability event when a pipeline stage needed >1 attempt.
+
+    Fire-and-forget — observability must never break generation.
+    """
+    try:
+        retried = {
+            stage: u.get("attempts")
+            for stage, u in (stage_usage or {}).items()
+            if isinstance(u, dict) and (u.get("attempts") or 0) > 1
+        }
+        if not retried:
+            return
+        from observability_store import observability_store
+        await observability_store.record_event(
+            thread_id,
+            "pipeline_retries",
+            name="generation_retries",
+            output=json.dumps(retried),
+        )
+    except Exception as exc:
+        logger.debug("record_retries failed: %s", exc)
+
 __all__ = [
     "PIPELINE_TOOL_NAMES",
     "get_pipeline_tools",
@@ -233,6 +257,7 @@ async def generate_trip_plans(constraints: TripConstraints) -> str:
     comparison, stage_usage = result
     await payload_store.set_thread_state(thread_id, "constraints", constraints.model_dump())
     payload_id = await store_payload(thread_id, "comparison", comparison)
+    await _record_retries(thread_id, stage_usage)
 
     totals = []
     for plan in comparison.get("plans", []):
@@ -304,6 +329,7 @@ async def refine_itinerary(
 
     itinerary, stage_usage = result
     payload_id = await store_payload(thread_id, "itinerary", itinerary)
+    await _record_retries(thread_id, stage_usage)
     total = itinerary.get("estimated_total_cost_usd")
     total_text = f"{total:,.0f} {constraints.budget_currency}" if total else "unknown total"
 

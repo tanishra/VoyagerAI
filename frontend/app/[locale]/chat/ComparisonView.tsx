@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronDown, ChevronUp, Wallet, Scale, Sparkles, TrendingUp, TrendingDown, BadgeCheck, RotateCcw } from 'lucide-react';
+import { ChevronDown, ChevronUp, Wallet, Scale, Sparkles, TrendingUp, TrendingDown, BadgeCheck, RotateCcw, AlertTriangle } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import useSWR from 'swr';
 import type { ComparisonData, PlanTier } from '@/lib/types';
@@ -291,6 +291,14 @@ export default function ComparisonView({
           </div>
         )}
       </div>
+
+      {/* Limited-research badge — plans built while a specialist failed */}
+      {data.research_limited && (
+        <div className="flex items-center gap-2 px-4 py-2 border-b border-border/60 bg-amber-500/10 text-amber-700 dark:text-amber-400 text-xs">
+          <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+          <span>{t('limitedResearch')}</span>
+        </div>
+      )}
 
       {/* Comparison matrix strip */}
       {matrix && (

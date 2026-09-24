@@ -209,3 +209,15 @@ describe('ItineraryCard', () => {
     expect(screen.getByAltText('Tokyo')).toBeInTheDocument();
   });
 });
+
+describe('limited research badge (R5)', () => {
+  it('shows the badge when research_limited is set', () => {
+    render(<ItineraryCard itinerary={makeItinerary({ research_limited: true })} threadId="t1" />);
+    expect(screen.getByText(/Limited live data/i)).toBeInTheDocument();
+  });
+
+  it('hides the badge when research_limited is absent', () => {
+    render(<ItineraryCard itinerary={makeItinerary()} threadId="t1" />);
+    expect(screen.queryByText(/Limited live data/i)).not.toBeInTheDocument();
+  });
+});

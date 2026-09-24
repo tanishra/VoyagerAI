@@ -619,12 +619,15 @@ class _ModelStream:
                     # stage's token usage on the tool result.
                     stage_usage = parsed_output.get("_stage_usage") if parsed_output else None
                     if isinstance(stage_usage, dict):
+                        max_attempts = 0
                         for stage, u in stage_usage.items():
                             if not isinstance(u, dict):
                                 continue
                             inp = u.get("input_tokens") or 0
                             outp = u.get("output_tokens") or 0
-                            if not inp and not outp:
+                            attempts = u.get("attempts") or 0
+                            max_attempts = max(max_attempts, attempts)
+                            if not inp and not outp and not attempts:
                                 continue
                             model = u.get("model") or ""
                             entry = self._subagent_costs.setdefault(
@@ -633,6 +636,12 @@ class _ModelStream:
                             entry["input_tokens"] += inp
                             entry["output_tokens"] += outp
                             entry["cost"] += calculate_cost(model, inp, outp)
+                            if attempts:
+                                entry["attempts"] = max(entry.get("attempts", 0), attempts)
+                        # Surface generation retries on the tool row so the UI
+                        # can show "N attempts" instead of hiding the work.
+                        if max_attempts > 1 and idx is not None and idx < len(self.activity["tool_calls"]):
+                            self.activity["tool_calls"][idx]["generation_attempts"] = max_attempts
                     if parsed_output and parsed_output.get("_pipeline_payload_id"):
                         payload = await pop_payload(parsed_output["_pipeline_payload_id"])
                         if payload is not None:
@@ -767,7 +776,8 @@ class _ModelStream:
             d_in = data["input_tokens"] - prev["input_tokens"]
             d_out = data["output_tokens"] - prev["output_tokens"]
             d_cost = round(data["cost"] - prev["cost"], 6)
-            if d_in == 0 and d_out == 0 and d_cost == 0:
+            d_att = data.get("attempts", 0) - prev.get("attempts", 0)
+            if d_in == 0 and d_out == 0 and d_cost == 0 and d_att == 0:
                 continue
             await cost_store.record_subagent_cost(
                 thread_id=thread_id,
@@ -777,12 +787,14 @@ class _ModelStream:
                 output_tokens=d_out,
                 cost_usd=d_cost,
                 model_used=data["model"],
+                attempts=d_att,
             )
-            deltas[name] = {"input_tokens": d_in, "output_tokens": d_out, "cost": d_cost, "model": data["model"]}
+            deltas[name] = {"input_tokens": d_in, "output_tokens": d_out, "cost": d_cost, "model": data["model"], "attempts": d_att}
             self._persisted_subagent_costs[name] = {
                 "input_tokens": data["input_tokens"],
                 "output_tokens": data["output_tokens"],
                 "cost": data["cost"],
+                "attempts": data.get("attempts", 0),
             }
         # Update session total (cumulative overwrite — idempotent)
         await cost_store.update_session_total(

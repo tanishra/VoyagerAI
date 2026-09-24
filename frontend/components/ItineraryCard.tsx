@@ -1,6 +1,6 @@
 'use client';
 
-import { MoreHorizontal, Printer, FileJson, FileText, Share2, Check, Map as MapIcon, ChevronDown, Calendar, Pencil, ExternalLink } from 'lucide-react';
+import { MoreHorizontal, Printer, FileJson, FileText, Share2, Check, Map as MapIcon, ChevronDown, Calendar, Pencil, ExternalLink, AlertTriangle } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import { useTranslations } from 'next-intl';
 import dynamic from 'next/dynamic';
@@ -137,6 +137,13 @@ export default function ItineraryCard({ itinerary, threadId, printMode = false, 
           </div>
         )}
       </div>
+      {/* Limited-research badge — plan built while a specialist failed */}
+      {itinerary.research_limited && (
+        <div className="flex items-center gap-2 px-4 py-2 border-b border-indigo-500/10 bg-amber-500/10 text-amber-700 dark:text-amber-400 text-xs">
+          <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+          <span>{t('limitedResearch')}</span>
+        </div>
+      )}
       <div className="px-4 py-3 border-b border-indigo-500/10 flex items-center justify-end">
         {!printMode && threadId && (
           <div className="flex items-center gap-1">

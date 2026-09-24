@@ -40,6 +40,10 @@ export interface Itinerary {
   days: DayPlan[];
   warnings?: string[];
   packing_essentials?: string[];
+  // Set when a research specialist failed during generation — the plan was
+  // built on partial live data; UI shows a limited-data badge.
+  research_limited?: boolean;
+  research_gaps?: string[];
 }
 
 export interface CostBreakdown {
@@ -75,6 +79,10 @@ export interface ComparisonMatrix {
 export interface ComparisonData {
   plans: PlanTier[];
   comparison_matrix: ComparisonMatrix;
+  // Set when a research specialist failed — plans were generated from
+  // partial live data; UI shows a limited-data badge.
+  research_limited?: boolean;
+  research_gaps?: string[];
 }
 
 // Clarify cards — the model asks for missing fields via
@@ -111,6 +119,9 @@ export interface ToolCallEntry {
   started_at?: number;
   ended_at?: number;
   parent_run_id?: string;
+  // Max generation attempts across pipeline stages (>1 means validation
+  // retries happened) — surfaced as a chip on the tool row.
+  generation_attempts?: number;
 }
 
 export interface UsageEntry {

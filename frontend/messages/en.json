@@ -225,7 +225,8 @@
     "dropHere": "Drop activity here",
     "locationPlaceholder": "Location (optional)",
     "durationPlaceholder": "Duration (e.g., 2h)",
-    "approxLocation": "Approximate location"
+    "approxLocation": "Approximate location",
+    "limitedResearch": "Limited live data — prices and availability may be less accurate"
   },
   "comparison": {
     "title": "Compare Plans",
@@ -241,7 +242,8 @@
     "daysDestination": "{count} days · {destination}",
     "recommended": "Recommended",
     "perDay": "{cost} per day",
-    "regenerateTier": "Try a different plan"
+    "regenerateTier": "Try a different plan",
+    "limitedResearch": "Limited live data — prices and availability may be less accurate"
   },
   "preferences": {
     "title": "Your Preferences",

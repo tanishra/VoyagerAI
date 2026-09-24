@@ -567,3 +567,137 @@ class TestModelStreamPipelineWiring:
         assert progress  # at least the pipeline-start progress
         descs = [p["data"]["description"] for p in progress]
         assert any("Searching" in d or "plan" in d.lower() for d in descs)
+
+
+class TestResearchLimitedFlag:
+    """R5 — specialist failures must flag the payload, not ship silently."""
+
+    def setup_method(self):
+        pipeline_module._reset_for_tests()
+        pipeline_tools_module._reset_for_tests()
+
+    def test_failed_specialist_flags_comparison(self, monkeypatch):
+        async def _partial(name, prompt, task, tools=None):
+            if name == "researcher":
+                return f"[{name} unavailable — proceed with remaining context]", {
+                    "input_tokens": 0, "output_tokens": 0, "model": ""}
+            return f"[{name} brief]", {"input_tokens": 0, "output_tokens": 0, "model": ""}
+        monkeypatch.setattr(pipeline_module, "_run_specialist", _partial)
+
+        async def _fake_gen(schema, prompt, task, stage):
+            return _valid_comparison(), {"input_tokens": 0, "output_tokens": 0, "model": ""}
+        monkeypatch.setattr(pipeline_module, "_generate_structured", _fake_gen)
+
+        out = asyncio.run(pipeline_module.run_comparison_pipeline(_constraints()))
+        assert out is not None
+        assert out[0]["research_limited"] is True
+        assert out[0]["research_gaps"] == ["researcher"]
+
+    def test_all_specialists_ok_no_flag(self, monkeypatch):
+        async def _ok(name, prompt, task, tools=None):
+            return f"[{name} brief]", {"input_tokens": 0, "output_tokens": 0, "model": ""}
+        monkeypatch.setattr(pipeline_module, "_run_specialist", _ok)
+
+        async def _fake_gen(schema, prompt, task, stage):
+            return _valid_comparison(), {"input_tokens": 0, "output_tokens": 0, "model": ""}
+        monkeypatch.setattr(pipeline_module, "_generate_structured", _fake_gen)
+
+        out = asyncio.run(pipeline_module.run_comparison_pipeline(_constraints()))
+        assert out is not None
+        assert "research_limited" not in out[0]
+
+    def test_flag_propagates_to_itinerary(self, monkeypatch):
+        async def _fake_latest(tid):
+            return {"research_limited": True, "research_gaps": ["researcher"], "plans": []}
+        monkeypatch.setattr(pipeline_module, "get_latest_comparison", _fake_latest)
+
+        async def _fake_gen(schema, prompt, task, stage):
+            return _valid_itinerary(), {"input_tokens": 0, "output_tokens": 0, "model": ""}
+        monkeypatch.setattr(pipeline_module, "_generate_structured", _fake_gen)
+
+        async def _fake_enrich(it):
+            return it
+        monkeypatch.setattr(
+            deep_agent_module, "_enrich_itinerary_with_coordinates", _fake_enrich
+        )
+
+        out = asyncio.run(
+            pipeline_module.run_refinement_pipeline(_constraints(), "balanced")
+        )
+        assert out is not None
+        assert out[0]["research_limited"] is True
+        assert out[0]["research_gaps"] == ["researcher"]
+
+
+class TestRetryAttempts:
+    """R3 — retries accumulate token usage and expose an attempts count."""
+
+    def setup_method(self):
+        pipeline_module._reset_for_tests()
+        pipeline_tools_module._reset_for_tests()
+
+    def test_attempts_and_tokens_accumulate(self, monkeypatch):
+        async def _ok(name, prompt, task, tools=None):
+            return f"[{name} brief]", {"input_tokens": 0, "output_tokens": 0, "model": ""}
+        monkeypatch.setattr(pipeline_module, "_run_specialist", _ok)
+
+        good = _valid_comparison()
+        calls = []
+
+        async def _fake_gen(schema, prompt, task, stage):
+            calls.append(task)
+            # First call returns None (generation failure) but still cost
+            # tokens — must not be dropped from stage usage.
+            return (None if len(calls) == 1 else good), {
+                "input_tokens": 100, "output_tokens": 50, "model": "m"}
+        monkeypatch.setattr(pipeline_module, "_generate_structured", _fake_gen)
+
+        out = asyncio.run(pipeline_module.run_comparison_pipeline(_constraints()))
+        assert out is not None
+        usage = out[1]["multi_plan_generator"]
+        assert usage["attempts"] == 2
+        assert usage["input_tokens"] == 200
+        assert usage["output_tokens"] == 100
+
+    def test_single_attempt_reports_one(self, monkeypatch):
+        async def _ok(name, prompt, task, tools=None):
+            return f"[{name} brief]", {"input_tokens": 0, "output_tokens": 0, "model": ""}
+        monkeypatch.setattr(pipeline_module, "_run_specialist", _ok)
+
+        async def _fake_gen(schema, prompt, task, stage):
+            return _valid_comparison(), {"input_tokens": 0, "output_tokens": 0, "model": ""}
+        monkeypatch.setattr(pipeline_module, "_generate_structured", _fake_gen)
+
+        out = asyncio.run(pipeline_module.run_comparison_pipeline(_constraints()))
+        assert out[1]["multi_plan_generator"]["attempts"] == 1
+
+    def test_record_retries_fires_on_retry(self, monkeypatch):
+        import agents.tools.pipeline_tools as pt
+        events = []
+
+        async def _fake_record(tid, event_type, **kw):
+            events.append((tid, event_type, kw.get("output")))
+        monkeypatch.setattr(
+            "observability_store.observability_store.record_event", _fake_record
+        )
+
+        asyncio.run(pt._record_retries(
+            "t1", {"multi_plan_generator": {"attempts": 3, "input_tokens": 5,
+                                          "output_tokens": 5, "model": "m"}}
+        ))
+        assert events and events[0][1] == "pipeline_retries"
+
+    def test_record_retries_silent_on_single_attempt(self, monkeypatch):
+        import agents.tools.pipeline_tools as pt
+        events = []
+
+        async def _fake_record(tid, event_type, **kw):
+            events.append(event_type)
+        monkeypatch.setattr(
+            "observability_store.observability_store.record_event", _fake_record
+        )
+
+        asyncio.run(pt._record_retries(
+            "t1", {"multi_plan_generator": {"attempts": 1}}
+        ))
+        assert events == []

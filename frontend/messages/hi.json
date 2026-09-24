@@ -225,7 +225,8 @@
     "dropHere": "गतिविधि यहां छोड़ें",
     "locationPlaceholder": "स्थान (वैकल्पिक)",
     "durationPlaceholder": "अवधि (जैसे 2h)",
-    "approxLocation": "अनुमानित स्थान"
+    "approxLocation": "अनुमानित स्थान",
+    "limitedResearch": "सीमित लाइव डेटा — कीमतें और उपलब्धता कम सटीक हो सकती हैं"
   },
   "comparison": {
     "title": "योजनाएँ तुलना करें",
@@ -241,7 +242,8 @@
     "daysDestination": "{count} दिन · {destination}",
     "recommended": "अनुशंसित",
     "perDay": "{cost} प्रति दिन",
-    "regenerateTier": "दूसरी योजना आज़माएँ"
+    "regenerateTier": "दूसरी योजना आज़माएँ",
+    "limitedResearch": "सीमित लाइव डेटा — कीमतें और उपलब्धता कम सटीक हो सकती हैं"
   },
   "preferences": {
     "title": "आपकी प्राथमिकताएँ",
