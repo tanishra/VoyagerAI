@@ -139,17 +139,11 @@ Search outage → briefs become `[unavailable]` markers and plans still generate
 
 ## UX upgrades
 
-### U1. Per-stage progress labels — OPEN (quick win, events already exist)
-`subagent_progress` events fire for `researcher`/`multi_plan_generator`/`refinement` and inner tool calls ("Searching: hotels in Delhi…"). Frontend shows generic text only.
+### U1. Per-stage progress labels — FIXED
+`lib/stage.ts` derives the running stage from top-level `tool_calls` (`generate_trip_plans`/`refine_itinerary`/researcher/subagents → `status.*` keys) and the detail line from `progressMap`. `GenerationStatus.tsx` renders the localized label + rotating backend descriptions ("Searching: hotels in Delhi…") under the streaming bubble — visible even while text streams. New `status.buildingItinerary` key in all 6 locales.
 
-**Do:** map stage names → friendly labels ("Researching Delhi…", "Comparing budget options…", "Building day-by-day…"), show as animated status line under the streaming bubble.
-**Files:** `frontend/` chat stream handler + status component; events already flow through `main.py::_parse_chat_event`.
-
-### U2. Skeleton cards during generation — OPEN
-Pipeline takes ~20-60s (research + structured gen). Currently the user sees tokens then a card appears — the gap feels dead.
-
-**Do:** when `generate_trip_plans` tool_start arrives, render 3 shimmer skeleton cards in the comparison slot until the `comparison` event lands.
-**Files:** `ComparisonView.tsx` / message list renderer.
+### U2. Skeleton cards during generation — FIXED
+`ComparisonSkeleton` (banner + matrix strip + 3 tier cards) renders between `generate_trip_plans` tool_start and the `comparison` event; `ItinerarySkeleton` (header + day rows) between `refine_itinerary` start and `itinerary`. Run-ids are tracked so `tool_end`/`tool_error` clears exactly; `onComparison`/`onItinerary`/`done`/`error`/`cancelled`/`reconnect` all reset — skeletons cannot stick. Uses `.shimmer` + DESIGN.md tokens, reduced-motion safe.
 
 ### U3. "Why this tier" explainer on cards — OPEN
 `tradeoffs`/`highlights` already in payload, partially shown; surface as a hover chip ("Why balanced?") summarizing tradeoffs in one line.
@@ -189,7 +183,7 @@ Pipeline enriches coordinates, but activities the geocoder misses get no pin —
 ## Suggested order
 
 1. ~~**R1** — decide Redis path~~ FIXED — Postgres durable tier (needs `DATABASE_URL` set to go live)
-2. **U1 + U2** — cheap UX wins, pipeline already emits the events
+2. ~~**U1 + U2**~~ FIXED — stage status line + comparison/itinerary skeletons
 3. **M3** — verify pins on a real itinerary
 4. **U6** — single-tier regenerate (cost saver)
 5. **R2–R5, U3–U5, U7** — batch when touching those files

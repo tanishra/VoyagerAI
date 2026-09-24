@@ -152,7 +152,8 @@
     "addingTips": "Lokale Tipps hinzufügen",
     "optimizingBudget": "Budget optimieren",
     "generatingPlans": "Pläne generieren",
-    "scoringQuality": "Qualität bewerten"
+    "scoringQuality": "Qualität bewerten",
+    "buildingItinerary": "Ihre Reiseroute wird erstellt"
   },
   "itinerary": {
     "duration": "Dauer",

@@ -152,7 +152,8 @@
     "addingTips": "現地のヒントを追加中",
     "optimizingBudget": "予算を最適化中",
     "generatingPlans": "プラン生成中",
-    "scoringQuality": "品質評価中"
+    "scoringQuality": "品質評価中",
+    "buildingItinerary": "旅程を作成しています"
   },
   "itinerary": {
     "duration": "期間",

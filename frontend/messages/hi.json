@@ -152,7 +152,8 @@
     "addingTips": "स्थानीय सुझाव जोड़ रहे हैं",
     "optimizingBudget": "बजट अनुकूलन",
     "generatingPlans": "योजनाएँ बना रहे हैं",
-    "scoringQuality": "गुणवत्ता आकलन"
+    "scoringQuality": "गुणवत्ता आकलन",
+    "buildingItinerary": "आपकी यात्रा-योजना बन रही है"
   },
   "itinerary": {
     "duration": "अवधि",

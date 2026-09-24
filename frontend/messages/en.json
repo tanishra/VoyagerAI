@@ -152,7 +152,8 @@
     "addingTips": "Adding local tips",
     "optimizingBudget": "Optimizing budget",
     "generatingPlans": "Generating plans",
-    "scoringQuality": "Scoring quality"
+    "scoringQuality": "Scoring quality",
+    "buildingItinerary": "Building your itinerary"
   },
   "itinerary": {
     "duration": "Duration",

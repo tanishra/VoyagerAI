@@ -21,13 +21,17 @@ import GeneratedImageCard from '@/components/GeneratedImageCard';
 import GeneratedChartCard from '@/components/GeneratedChartCard';
 import OfflineBanner from '@/components/OfflineBanner';
 import ActivityPanel from '@/components/ActivityPanel';
+import GenerationStatus from '@/components/GenerationStatus';
 import ComparisonView from './ComparisonView';
+import ComparisonSkeleton from './ComparisonSkeleton';
+import ItinerarySkeleton from './ItinerarySkeleton';
 import FeedbackButtons from '@/components/FeedbackButtons';
 import ThreadSidebar from './ThreadSidebar';
 import FilePreview from '@/components/FilePreview';
 import CurrencySwitcher from '@/components/CurrencySwitcher';
 import { useCurrency } from '@/lib/useCurrency';
 import { stripStructuredTags } from '@/lib/utils';
+import { deriveStage, deriveStageDetail, STAGE_LABEL_KEYS } from '@/lib/stage';
 import { uploadFile, type UploadedFile } from '@/lib/upload-api';
 import type { ChatMessage, ComparisonData, Itinerary, ActivityData, BranchInfo, GeneratedImage, GeneratedChart } from '@/lib/types';
 
@@ -87,6 +91,10 @@ export default function ChatPage() {
   const [streamingActivity, setStreamingActivity] = useState<ActivityData | null>(null);
   const [activeWorkers, setActiveWorkers] = useState<string[]>([]);
   const [progressMap, setProgressMap] = useState<Record<string, string>>({});
+  const [generatingPlans, setGeneratingPlans] = useState(false);
+  const [buildingItinerary, setBuildingItinerary] = useState(false);
+  const plansRunIdRef = useRef<string | null>(null);
+  const itinRunIdRef = useRef<string | null>(null);
   const [threadId, setThreadId] = useState<string | null>(() => {
     if (typeof window !== 'undefined') {
       return localStorage.getItem(THREAD_STORAGE_KEY);
@@ -225,6 +233,36 @@ export default function ChatPage() {
     streamingActivityRef.current = null;
     setActiveWorkers([]);
     setProgressMap({});
+    resetGenerationUI();
+  };
+
+  const trackPipelineToolStart = (tool: { name: string; run_id: string; parent_run_id?: string }) => {
+    if (tool.parent_run_id) return;
+    if (tool.name === 'generate_trip_plans') {
+      plansRunIdRef.current = tool.run_id;
+      setGeneratingPlans(true);
+    } else if (tool.name === 'refine_itinerary') {
+      itinRunIdRef.current = tool.run_id;
+      setBuildingItinerary(true);
+    }
+  };
+
+  const trackPipelineToolEnd = (tool: { run_id: string }) => {
+    if (tool.run_id === plansRunIdRef.current) {
+      plansRunIdRef.current = null;
+      setGeneratingPlans(false);
+    }
+    if (tool.run_id === itinRunIdRef.current) {
+      itinRunIdRef.current = null;
+      setBuildingItinerary(false);
+    }
+  };
+
+  const resetGenerationUI = () => {
+    plansRunIdRef.current = null;
+    itinRunIdRef.current = null;
+    setGeneratingPlans(false);
+    setBuildingItinerary(false);
   };
 
   const handleSelectThread = async (selectedThreadId: string) => {
@@ -409,10 +447,12 @@ export default function ChatPage() {
           },
           onItinerary: (itinerary) => {
             accumulatedItinerary = itinerary;
+            setBuildingItinerary(false);
             setStreamingItinerary(itinerary);
           },
           onComparison: (data) => {
             accumulatedComparison = data;
+            setGeneratingPlans(false);
             setStreamingComparison(data);
           },
           onImage: (image) => {
@@ -456,6 +496,7 @@ export default function ChatPage() {
             }));
           },
           onToolStart: (tool) => {
+            trackPipelineToolStart(tool);
             updateActivity((prev) => ({
               thinking: prev?.thinking ?? [],
               tool_calls: [...(prev?.tool_calls ?? []), {
@@ -472,6 +513,7 @@ export default function ChatPage() {
             }));
           },
           onToolEnd: (tool) => {
+            trackPipelineToolEnd(tool);
             updateActivity((prev) => ({
               thinking: prev?.thinking ?? [],
               tool_calls: (prev?.tool_calls ?? []).map((tc) =>
@@ -485,6 +527,7 @@ export default function ChatPage() {
             }));
           },
           onToolError: (tool) => {
+            trackPipelineToolEnd(tool);
             updateActivity((prev) => ({
               thinking: prev?.thinking ?? [],
               tool_calls: (prev?.tool_calls ?? []).map((tc) =>
@@ -510,6 +553,7 @@ export default function ChatPage() {
             setProgressMap((prev) => ({ ...prev, [data.run_id]: data.description }));
           },
           onReconnecting: (attempt, max) => {
+            resetGenerationUI();
             setReconnecting({ attempt, max });
             accumulatedText = '';
             accumulatedItinerary = null;
@@ -527,6 +571,7 @@ export default function ChatPage() {
             setProgressMap({});
           },
           onError: (msg) => {
+            resetGenerationUI();
             streamFailed = true;
             errorMessage = msg;
             setError(msg);
@@ -537,10 +582,12 @@ export default function ChatPage() {
             setReconnecting(null);
           },
           onCancelled: () => {
+            resetGenerationUI();
             aborted = true;
             setReconnecting(null);
           },
           onDone: (doneData) => {
+            resetGenerationUI();
             setPartialResearch(doneData?.budget_reached ?? false);
           },
           errorMessages: {
@@ -650,6 +697,7 @@ export default function ChatPage() {
     let accumulatedText = '';
     let accumulatedItinerary: Itinerary | null = null;
 
+    setBuildingItinerary(true);
     try {
       await editItinerary(
         {
@@ -667,9 +715,11 @@ export default function ChatPage() {
           },
           onItinerary: (itinerary) => {
             accumulatedItinerary = itinerary;
+            setBuildingItinerary(false);
             setStreamingItinerary(itinerary);
           },
           onDone: (doneData) => {
+            resetGenerationUI();
             setPartialResearch(doneData?.budget_reached ?? false);
             setMessages((prev) => {
               const updated = [...prev];
@@ -686,7 +736,11 @@ export default function ChatPage() {
             setStreamingText('');
             setStreamingItinerary(null);
           },
+          onSubagentProgress: (data) => {
+            setProgressMap((prev) => ({ ...prev, [data.run_id]: data.description }));
+          },
           onError: (err) => {
+            resetGenerationUI();
             setError(err);
           },
         },
@@ -694,6 +748,7 @@ export default function ChatPage() {
     } catch {
       setError(t('validateFailed'));
     } finally {
+      resetGenerationUI();
       setLoading(false);
       abortRef.current = null;
       setActiveWorkers([]);
@@ -740,10 +795,12 @@ export default function ChatPage() {
           },
           onItinerary: (itinerary) => {
             accumulatedItinerary = itinerary;
+            setBuildingItinerary(false);
             setStreamingItinerary(itinerary);
           },
           onComparison: (data) => {
             accumulatedComparison = data;
+            setGeneratingPlans(false);
             setStreamingComparison(data);
           },
           onImage: (image) => {
@@ -778,6 +835,7 @@ export default function ChatPage() {
             setStreamingActivity(next);
           },
           onToolStart: (tool) => {
+            trackPipelineToolStart(tool);
             const next = {
               thinking: streamingActivityRef.current?.thinking ?? [],
               tool_calls: [...(streamingActivityRef.current?.tool_calls ?? []), {
@@ -796,6 +854,7 @@ export default function ChatPage() {
             setStreamingActivity(next);
           },
           onToolEnd: (tool) => {
+            trackPipelineToolEnd(tool);
             const next = {
               thinking: streamingActivityRef.current?.thinking ?? [],
               tool_calls: (streamingActivityRef.current?.tool_calls ?? []).map((tc) =>
@@ -811,6 +870,7 @@ export default function ChatPage() {
             setStreamingActivity(next);
           },
           onToolError: (tool) => {
+            trackPipelineToolEnd(tool);
             const next = {
               thinking: streamingActivityRef.current?.thinking ?? [],
               tool_calls: (streamingActivityRef.current?.tool_calls ?? []).map((tc) =>
@@ -840,6 +900,7 @@ export default function ChatPage() {
             setProgressMap((prev) => ({ ...prev, [data.run_id]: data.description }));
           },
           onReconnecting: (attempt, max) => {
+            resetGenerationUI();
             setReconnecting({ attempt, max });
             accumulatedText = '';
             accumulatedItinerary = null;
@@ -857,6 +918,7 @@ export default function ChatPage() {
             setProgressMap({});
           },
           onError: (msg) => {
+            resetGenerationUI();
             streamFailed = true;
             errorMessage = msg;
             setError(msg);
@@ -867,10 +929,11 @@ export default function ChatPage() {
             setReconnecting(null);
           },
           onCancelled: () => {
+            resetGenerationUI();
             aborted = true;
             setReconnecting(null);
           },
-          onDone: (doneData) => { setPartialResearch(doneData?.budget_reached ?? false); },
+          onDone: (doneData) => { resetGenerationUI(); setPartialResearch(doneData?.budget_reached ?? false); },
         },
       );
     } finally {
@@ -1010,10 +1073,12 @@ export default function ChatPage() {
           },
           onItinerary: (itinerary) => {
             accumulatedItinerary = itinerary;
+            setBuildingItinerary(false);
             setStreamingItinerary(itinerary);
           },
           onComparison: (data) => {
             accumulatedComparison = data;
+            setGeneratingPlans(false);
             setStreamingComparison(data);
           },
           onImage: (image) => {
@@ -1044,6 +1109,7 @@ export default function ChatPage() {
             }));
           },
           onToolStart: (tool) => {
+            trackPipelineToolStart(tool);
             updateActivity((prev) => ({
               thinking: prev?.thinking ?? [],
               tool_calls: [...(prev?.tool_calls ?? []), {
@@ -1060,6 +1126,7 @@ export default function ChatPage() {
             }));
           },
           onToolEnd: (tool) => {
+            trackPipelineToolEnd(tool);
             updateActivity((prev) => ({
               thinking: prev?.thinking ?? [],
               tool_calls: (prev?.tool_calls ?? []).map((tc) =>
@@ -1073,6 +1140,7 @@ export default function ChatPage() {
             }));
           },
           onToolError: (tool) => {
+            trackPipelineToolEnd(tool);
             updateActivity((prev) => ({
               thinking: prev?.thinking ?? [],
               tool_calls: (prev?.tool_calls ?? []).map((tc) =>
@@ -1098,6 +1166,7 @@ export default function ChatPage() {
             setProgressMap((prev) => ({ ...prev, [data.run_id]: data.description }));
           },
           onReconnecting: (attempt, max) => {
+            resetGenerationUI();
             setReconnecting({ attempt, max });
             accumulatedText = '';
             accumulatedItinerary = null;
@@ -1115,14 +1184,16 @@ export default function ChatPage() {
             setProgressMap({});
           },
           onError: (msg) => {
+            resetGenerationUI();
             streamFailed = true;
             errorMessage = msg;
             setError(msg);
             setReconnecting(null);
           },
           onAbort: () => { aborted = true; setReconnecting(null); },
-          onCancelled: () => { aborted = true; setReconnecting(null); },
-          onDone: (doneData) => { setPartialResearch(doneData?.budget_reached ?? false); },
+          onCancelled: () => {
+            resetGenerationUI(); aborted = true; setReconnecting(null); },
+          onDone: (doneData) => { resetGenerationUI(); setPartialResearch(doneData?.budget_reached ?? false); },
         },
       );
     } finally {
@@ -1244,10 +1315,12 @@ export default function ChatPage() {
               },
               onItinerary: (itinerary) => {
                 accumulatedItinerary = itinerary;
+                setBuildingItinerary(false);
                 setStreamingItinerary(itinerary);
               },
               onComparison: (data) => {
                 accumulatedComparison = data;
+                setGeneratingPlans(false);
                 setStreamingComparison(data);
               },
               onImage: (image) => {
@@ -1288,18 +1361,21 @@ export default function ChatPage() {
                 setStreamingActivity(next);
               },
               onToolStart: (tool) => {
+            trackPipelineToolStart(tool);
                 const prev = streamingActivityRef.current;
                 const next = { thinking: prev?.thinking ?? [], tool_calls: [...(prev?.tool_calls ?? []), { run_id: tool.run_id, name: tool.name, input: tool.input, status: 'running' as const, started_at: Date.now(), parent_run_id: tool.parent_run_id }], usage: prev?.usage ?? [], total_input_tokens: prev?.total_input_tokens ?? 0, total_output_tokens: prev?.total_output_tokens ?? 0 };
                 streamingActivityRef.current = next;
                 setStreamingActivity(next);
               },
               onToolEnd: (tool) => {
+            trackPipelineToolEnd(tool);
                 const prev = streamingActivityRef.current;
                 const next = { thinking: prev?.thinking ?? [], tool_calls: (prev?.tool_calls ?? []).map((tc) => tc.run_id === tool.run_id ? { ...tc, output: tool.output, status: 'done' as const, ended_at: Date.now() } : tc), usage: prev?.usage ?? [], total_input_tokens: prev?.total_input_tokens ?? 0, total_output_tokens: prev?.total_output_tokens ?? 0 };
                 streamingActivityRef.current = next;
                 setStreamingActivity(next);
               },
               onToolError: (tool) => {
+            trackPipelineToolEnd(tool);
                 const prev = streamingActivityRef.current;
                 const next = { thinking: prev?.thinking ?? [], tool_calls: (prev?.tool_calls ?? []).map((tc) => tc.run_id === tool.run_id ? { ...tc, error: sanitizeError(tool.error ?? '', t('toolUnavailable')), status: 'error' as const, ended_at: Date.now() } : tc), usage: prev?.usage ?? [], total_input_tokens: prev?.total_input_tokens ?? 0, total_output_tokens: prev?.total_output_tokens ?? 0 };
                 streamingActivityRef.current = next;
@@ -1315,6 +1391,7 @@ export default function ChatPage() {
                 setProgressMap((prev) => ({ ...prev, [data.run_id]: data.description }));
               },
               onReconnecting: (attempt, max) => {
+                resetGenerationUI();
                 setReconnecting({ attempt, max });
                 accumulatedText = '';
                 accumulatedItinerary = null;
@@ -1332,6 +1409,7 @@ export default function ChatPage() {
                 setProgressMap({});
               },
               onError: (msg) => {
+                resetGenerationUI();
                 streamFailed = true;
                 errorMessage = msg;
                 setError(msg);
@@ -1380,12 +1458,14 @@ export default function ChatPage() {
           streamingActivityRef.current = null;
           setLoading(false);
           setActiveWorkers([]);
-    setProgressMap({});
+          setProgressMap({});
+          resetGenerationUI();
           return true;
         } catch {
           setLoading(false);
           setActiveWorkers([]);
-    setProgressMap({});
+          setProgressMap({});
+          resetGenerationUI();
           return false;
         }
       });
@@ -1851,6 +1931,17 @@ export default function ChatPage() {
                     Object.entries(TOOL_LABEL_KEYS).map(([k, v]) => [k, tStatus(v)]),
                   )}
                 />
+                {(() => {
+                  const stage = deriveStage(streamingActivity?.tool_calls ?? []);
+                  const detail = deriveStageDetail(progressMap, stage?.runId);
+                  if (!stage && !detail) return null;
+                  return (
+                    <GenerationStatus
+                      label={stage ? tStatus(STAGE_LABEL_KEYS[stage.labelKey]) : (detail ?? '')}
+                      detail={stage ? detail : null}
+                    />
+                  );
+                })()}
                 {throttledStreamingText ? (
                   <>
                     <MarkdownRenderer content={throttledStreamingText} streaming={true} />
@@ -1868,7 +1959,9 @@ export default function ChatPage() {
                     </span>
                   </div>
                 )}
+                {generatingPlans && !streamingComparison && <ComparisonSkeleton />}
                 {streamingComparison && <ComparisonView data={streamingComparison} onSelect={handleSelectPlan} />}
+                {buildingItinerary && !streamingItinerary && <ItinerarySkeleton />}
                 {streamingItinerary && <ItineraryCard itinerary={streamingItinerary} threadId={threadId ?? undefined} onEditItinerary={(modified) => handleEditItinerary(modified, undefined)} />}
                 {streamingImages.map((img, i) => (
                   <GeneratedImageCard key={i} image={img} />

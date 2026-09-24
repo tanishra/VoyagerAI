@@ -152,7 +152,8 @@
     "addingTips": "Ajout de conseils locaux",
     "optimizingBudget": "Optimisation du budget",
     "generatingPlans": "Génération de plans",
-    "scoringQuality": "Évaluation de la qualité"
+    "scoringQuality": "Évaluation de la qualité",
+    "buildingItinerary": "Création de votre itinéraire"
   },
   "itinerary": {
     "duration": "Durée",
