@@ -100,8 +100,12 @@ class PlanItineraryStub(BaseModel):
 
     destination: str
     total_days: int
-    currency: str
-    estimated_total_cost_usd: float
+    currency: str = Field(
+        description="ISO 4217 code — every *_usd cost field is expressed in THIS currency"
+    )
+    estimated_total_cost_usd: float = Field(
+        description="Trip total in this itinerary's `currency` — the `_usd` suffix is a legacy field name, NOT the unit"
+    )
     budget_status: Literal["within", "over", "under"] | None = None
 
 
@@ -121,7 +125,10 @@ class ComparisonSummary(BaseModel):
 class DaySlot(BaseModel):
     activity: str
     location: str | None = None
-    cost_usd: float | None = None
+    cost_usd: float | None = Field(
+        default=None,
+        description="Activity cost in the itinerary's `currency`, not USD — legacy field name",
+    )
     duration: str | None = None
 
 
@@ -133,15 +140,22 @@ class ItineraryDay(BaseModel):
     evening: DaySlot | None = None
     transport: str | None = None
     accommodation: str | None = None
-    daily_cost_usd: float | None = None
+    daily_cost_usd: float | None = Field(
+        default=None,
+        description="Day total in the itinerary's `currency`, not USD — legacy field name",
+    )
     tips: list[str] = Field(default_factory=list)
 
 
 class ItineraryPlan(BaseModel):
     destination: str
     total_days: int
-    currency: str
-    estimated_total_cost_usd: float
+    currency: str = Field(
+        description="ISO 4217 code — every *_usd cost field is expressed in THIS currency"
+    )
+    estimated_total_cost_usd: float = Field(
+        description="Trip total in this itinerary's `currency` — the `_usd` suffix is a legacy field name, NOT the unit"
+    )
     budget_status: Literal["within", "over", "under"] | None = None
     visa_note: str | None = None
     best_season_note: str | None = None

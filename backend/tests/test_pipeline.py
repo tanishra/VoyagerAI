@@ -790,3 +790,21 @@ class TestEditDiff:
         out = asyncio.run(pipeline_module.run_edit_validation_pipeline(_valid_itinerary()))
         assert out is not None
         assert "edit_changes" not in out[0]
+
+
+class TestCurrencyFieldDocs:
+    """R2 — the *_usd field names lie; the schema must say so."""
+
+    def test_cost_fields_document_currency(self):
+        schema = pipeline_module.ItineraryPlan.model_json_schema()
+        props = schema["properties"]
+        assert "currency" in props["estimated_total_cost_usd"]["description"]
+        assert "THIS currency" in props["currency"]["description"]
+        day_props = schema["$defs"]["ItineraryDay"]["properties"]
+        assert "not USD" in day_props["daily_cost_usd"]["description"]
+        slot_props = schema["$defs"]["DaySlot"]["properties"]
+        assert "not USD" in slot_props["cost_usd"]["description"]
+
+    def test_stub_schema_documents_currency(self):
+        schema = pipeline_module.PlanItineraryStub.model_json_schema()
+        assert "currency" in schema["properties"]["estimated_total_cost_usd"]["description"]

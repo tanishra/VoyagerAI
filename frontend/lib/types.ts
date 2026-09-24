@@ -1,6 +1,7 @@
 export interface TimeSlot {
   activity: string;
   location: string;
+  // Legacy name — the actual unit is the itinerary's `currency`, not USD.
   cost_usd: number;
   duration: string;
   lat?: number;
@@ -19,6 +20,7 @@ export interface DayPlan {
   evening: TimeSlot;
   transport: string;
   accommodation: string;
+  // Legacy name — the actual unit is the itinerary's `currency`, not USD.
   daily_cost_usd: number;
   tips: string[];
 }
@@ -26,6 +28,7 @@ export interface DayPlan {
 export interface Itinerary {
   destination: string;
   total_days: number;
+  // Legacy name — the actual unit is the itinerary's `currency`, not USD.
   estimated_total_cost_usd: number | null;
   // The 3-letter ISO code the cost fields are actually expressed in — may
   // differ from the app's currency preference (e.g. the user typed "₹" in
