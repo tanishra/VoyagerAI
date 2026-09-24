@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronDown, ChevronUp, Wallet, Scale, Sparkles, TrendingUp, TrendingDown, BadgeCheck, RotateCcw, AlertTriangle, CircleHelp } from 'lucide-react';
+import { ChevronDown, ChevronUp, Wallet, Scale, Sparkles, TrendingUp, TrendingDown, BadgeCheck, AlertTriangle } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import useSWR from 'swr';
 import type { ComparisonData, PlanTier } from '@/lib/types';
@@ -38,15 +38,11 @@ function PlanCard({
   index,
   currency,
   onSelect,
-  onRegenerateTier,
-  regeneratingTier,
 }: {
   plan: PlanTier;
   index: number;
   currency: Currency;
   onSelect: (tier: string) => void;
-  onRegenerateTier?: (tier: string) => void;
-  regeneratingTier?: string | null;
 }) {
   const t = useTranslations('comparison');
   const tItin = useTranslations('itinerary');
@@ -70,32 +66,9 @@ function PlanCard({
   const total = planTotal(plan);
   const isRecommended = plan.tier === RECOMMENDED_TIER;
   const animatedTotal = useCountUp(total ?? 0);
-  const isRegenerating = regeneratingTier === plan.tier;
   // dayCount falls back to total_days so summary-only stubs (no days array)
   // still show a per-day figure.
   const perDay = total != null && dayCount > 0 ? total / dayCount : null;
-
-  // "Why this tier?" explainer — the payload's highlights are never shown
-  // inline; the chip opens a popover combining them with the full tradeoffs.
-  const [whyOpen, setWhyOpen] = useState(false);
-  const whyRef = useRef<HTMLDivElement>(null);
-  const hasWhy = (plan.highlights?.length ?? 0) > 0 || (plan.tradeoffs?.length ?? 0) > 0;
-
-  useEffect(() => {
-    if (!whyOpen) return;
-    const onDown = (e: MouseEvent) => {
-      if (whyRef.current && !whyRef.current.contains(e.target as Node)) setWhyOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setWhyOpen(false);
-    };
-    document.addEventListener('mousedown', onDown);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('mousedown', onDown);
-      document.removeEventListener('keydown', onKey);
-    };
-  }, [whyOpen]);
 
   return (
     <motion.div
@@ -118,74 +91,13 @@ function PlanCard({
           isRecommended
             ? 'border-primary/40 ring-1 ring-primary/20 shadow-lg shadow-primary/10 md:-translate-y-1'
             : 'border-border hover:border-primary/30'
-        } ${isRegenerating ? 'pointer-events-none' : ''}`}
+        }`}
       >
-        {onRegenerateTier && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onRegenerateTier(plan.tier);
-            }}
-            disabled={isRegenerating}
-            aria-label={t('regenerateTier')}
-            title={t('regenerateTier')}
-            className="absolute top-2.5 right-2.5 z-20 p-1.5 rounded-md text-muted-foreground/60 hover:text-foreground hover:bg-muted transition-colors cursor-pointer disabled:cursor-default"
-          >
-            <RotateCcw className={`w-3.5 h-3.5 ${isRegenerating ? 'animate-spin' : ''}`} />
-          </button>
-        )}
-        {isRegenerating && (
-          <div className="absolute inset-0 z-10 shimmer bg-muted/50" aria-hidden="true" />
-        )}
         {/* Tier header + hero price */}
         <div className="px-4 pt-4 pb-3 border-b border-border/60">
           <div className="flex items-center gap-2 mb-2">
             <Icon className={`w-4 h-4 ${cfg.color}`} />
             <span className={`font-semibold text-sm capitalize ${cfg.color}`}>{t(tierKey)}</span>
-            {hasWhy && !isRegenerating && (
-              <div ref={whyRef} className="relative ml-auto">
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setWhyOpen((v) => !v);
-                  }}
-                  aria-expanded={whyOpen}
-                  className="inline-flex items-center gap-1 rounded-full border border-border/60 px-2 py-0.5 text-[10px] text-muted-foreground hover:text-foreground hover:border-primary/40 transition-colors cursor-pointer"
-                >
-                  <CircleHelp className="w-3 h-3" />
-                  {t('whyTier')}
-                </button>
-                {whyOpen && (
-                  <div
-                    onClick={(e) => e.stopPropagation()}
-                    className="absolute right-0 top-full mt-1 z-30 w-60 rounded-lg border border-border bg-popover p-3 shadow-lg text-left"
-                  >
-                    {(plan.highlights?.length ?? 0) > 0 && (
-                      <ul className="space-y-1 mb-2">
-                        {plan.highlights!.slice(0, 3).map((h, i) => (
-                          <li key={i} className="text-xs text-foreground flex items-start gap-1.5">
-                            <Sparkles className="w-3 h-3 mt-0.5 shrink-0 text-primary" />
-                            <span>{h}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                    <ul className="space-y-1">
-                      {plan.tradeoffs.map((tradeoff, i) => {
-                        const sacrifice = SACRIFICE_RE.test(tradeoff);
-                        const TIcon = sacrifice ? TrendingDown : TrendingUp;
-                        return (
-                          <li key={i} className="text-xs text-muted-foreground flex items-start gap-1.5">
-                            <TIcon className={`w-3 h-3 mt-0.5 shrink-0 ${sacrifice ? 'text-destructive/70' : 'text-chart-2'}`} />
-                            <span>{tradeoff}</span>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  </div>
-                )}
-              </div>
-            )}
           </div>
           <div className="flex items-baseline gap-2">
             <span className="text-3xl font-mono font-semibold tracking-tight text-foreground tabular-nums">
@@ -315,13 +227,9 @@ function PlanCard({
 export default function ComparisonView({
   data,
   onSelect,
-  onRegenerateTier,
-  regeneratingTier,
 }: {
   data: ComparisonData;
   onSelect: (tier: string) => void;
-  onRegenerateTier?: (tier: string) => void;
-  regeneratingTier?: string | null;
 }) {
   const t = useTranslations('comparison');
   const locale = useLocale();
@@ -420,8 +328,6 @@ export default function ComparisonView({
             index={i}
             currency={currency}
             onSelect={onSelect}
-            onRegenerateTier={onRegenerateTier}
-            regeneratingTier={regeneratingTier}
           />
         ))}
       </div>

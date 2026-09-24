@@ -142,9 +142,7 @@
     "feedbackCommentPlaceholder": "何が悪かったか教えてください...",
     "feedbackSubmit": "フィードバックを送信",
     "feedbackThanks": "フィードバックありがとうございます！",
-    "feedbackError": "フィードバックの送信に失敗しました",
-    "regenTierFailed": "そのプランを再生成できませんでした — 元のプランはそのままです。",
-    "regenTierExpired": "この比較は更新できなくなりました — 新しいプランをリクエストしてください。"
+    "feedbackError": "フィードバックの送信に失敗しました"
   },
   "status": {
     "researching": "調査中",
@@ -250,9 +248,7 @@
     "daysDestination": "{count}日 · {destination}",
     "recommended": "おすすめ",
     "perDay": "{cost}/日",
-    "regenerateTier": "別のプランを試す",
-    "limitedResearch": "ライブデータが限定的 — 価格や空き状況の精度が低い可能性があります",
-    "whyTier": "このティアを選ぶ理由"
+    "limitedResearch": "ライブデータが限定的 — 価格や空き状況の精度が低い可能性があります"
   },
   "preferences": {
     "title": "あなたの設定",
@@ -547,7 +543,9 @@
     "other": "その他",
     "otherPlaceholder": "回答を入力...",
     "pickOne": "1つ選択",
-    "pickMany": "複数選択可"
+    "pickMany": "複数選択可",
+    "prev": "前の質問",
+    "next": "次の質問"
   },
   "clarifyOptions": {
     "travel_style": {

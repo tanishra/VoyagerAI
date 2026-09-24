@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { cancelStream, streamChat, regenerateTier, TierRegenError } from '@/lib/chat-api';
+import { cancelStream, streamChat } from '@/lib/chat-api';
 
 function makeStreamResponse(chunks: string[] = []): Response {
   const encoder = new TextEncoder();
@@ -417,37 +417,3 @@ describe('regenerate/edit streams — sawDone truncation guard (Improvement I3)'
   });
 });
 
-describe('regenerateTier (U6)', () => {
-  beforeEach(() => vi.useRealTimers());
-
-  it('POSTs thread_id + tier and returns the comparison', async () => {
-    const comparison = { plans: [], comparison_matrix: { total_cost: {} } };
-    const mockFetch = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ comparison }), { status: 200 })
-    );
-    vi.stubGlobal('fetch', mockFetch);
-
-    const result = await regenerateTier({ thread_id: 't1', tier: 'premium', locale: 'en' });
-    expect(result).toEqual(comparison);
-    const [url, init] = mockFetch.mock.calls[0];
-    expect(String(url)).toContain('/chat/regenerate-tier');
-    expect(JSON.parse(init.body)).toMatchObject({ thread_id: 't1', tier: 'premium' });
-    expect(init.credentials).toBe('include');
-  });
-
-  it('throws TierRegenError with status+detail on 409', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ detail: 'constraints_expired' }), { status: 409 })
-    ));
-    await expect(regenerateTier({ thread_id: 't1', tier: 'budget' }))
-      .rejects.toMatchObject({ status: 409, detail: 'constraints_expired' });
-  });
-
-  it('throws TierRegenError on 502', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ detail: 'failed' }), { status: 502 })
-    ));
-    await expect(regenerateTier({ thread_id: 't1', tier: 'balanced' }))
-      .rejects.toBeInstanceOf(TierRegenError);
-  });
-});

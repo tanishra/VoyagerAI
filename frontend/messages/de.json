@@ -142,9 +142,7 @@
     "feedbackCommentPlaceholder": "Sagen Sie uns, was schiefgelaufen ist...",
     "feedbackSubmit": "Feedback senden",
     "feedbackThanks": "Danke für Ihr Feedback!",
-    "feedbackError": "Feedback konnte nicht gesendet werden",
-    "regenTierFailed": "Der Plan konnte nicht neu erstellt werden — Ihr Original bleibt unverändert.",
-    "regenTierExpired": "Dieser Vergleich kann nicht mehr aktualisiert werden — fordern Sie neue Pläne an."
+    "feedbackError": "Feedback konnte nicht gesendet werden"
   },
   "status": {
     "researching": "Recherchieren",
@@ -250,9 +248,7 @@
     "daysDestination": "{count} Tage · {destination}",
     "recommended": "Empfohlen",
     "perDay": "{cost} pro Tag",
-    "regenerateTier": "Anderen Plan versuchen",
-    "limitedResearch": "Begrenzte Live-Daten — Preise und Verfügbarkeit können ungenau sein",
-    "whyTier": "Warum diese Stufe?"
+    "limitedResearch": "Begrenzte Live-Daten — Preise und Verfügbarkeit können ungenau sein"
   },
   "preferences": {
     "title": "Ihre Einstellungen",
@@ -547,7 +543,9 @@
     "other": "Andere",
     "otherPlaceholder": "Eigene Antwort eingeben...",
     "pickOne": "eine wählen",
-    "pickMany": "mehrere wählbar"
+    "pickMany": "mehrere wählbar",
+    "prev": "Vorherige Frage",
+    "next": "Nächste Frage"
   },
   "clarifyOptions": {
     "travel_style": {

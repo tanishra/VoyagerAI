@@ -142,9 +142,7 @@
     "feedbackCommentPlaceholder": "Tell us what went wrong...",
     "feedbackSubmit": "Submit feedback",
     "feedbackThanks": "Thanks for your feedback!",
-    "feedbackError": "Failed to submit feedback",
-    "regenTierFailed": "Couldn't regenerate that plan — your original is unchanged.",
-    "regenTierExpired": "This comparison can no longer be updated — ask for fresh plans."
+    "feedbackError": "Failed to submit feedback"
   },
   "status": {
     "researching": "Researching",
@@ -250,9 +248,7 @@
     "daysDestination": "{count} days · {destination}",
     "recommended": "Recommended",
     "perDay": "{cost} per day",
-    "regenerateTier": "Try a different plan",
-    "limitedResearch": "Limited live data — prices and availability may be less accurate",
-    "whyTier": "Why this tier?"
+    "limitedResearch": "Limited live data — prices and availability may be less accurate"
   },
   "preferences": {
     "title": "Your Preferences",
@@ -547,7 +543,9 @@
     "other": "Other",
     "otherPlaceholder": "Type your own answer...",
     "pickOne": "pick one",
-    "pickMany": "pick any"
+    "pickMany": "pick any",
+    "prev": "Previous question",
+    "next": "Next question"
   },
   "clarifyOptions": {
     "travel_style": {

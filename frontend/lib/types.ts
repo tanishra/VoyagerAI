@@ -86,7 +86,7 @@ export interface PlanTier {
   cost_breakdown: CostBreakdown;
   tradeoffs: string[];
   // Model-generated "what makes this tier great" — powers the why-tier chip.
-  highlights?: string[];
+
 }
 
 export interface ComparisonMatrix {

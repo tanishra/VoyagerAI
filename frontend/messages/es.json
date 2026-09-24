@@ -142,9 +142,7 @@
     "feedbackCommentPlaceholder": "Cuéntanos qué salió mal...",
     "feedbackSubmit": "Enviar comentario",
     "feedbackThanks": "¡Gracias por tu comentario!",
-    "feedbackError": "Error al enviar comentario",
-    "regenTierFailed": "No se pudo regenerar ese plan — el original no cambió.",
-    "regenTierExpired": "Esta comparación ya no se puede actualizar — pide planes nuevos."
+    "feedbackError": "Error al enviar comentario"
   },
   "status": {
     "researching": "Investigando",
@@ -250,9 +248,7 @@
     "daysDestination": "{count} días · {destination}",
     "recommended": "Recomendado",
     "perDay": "{cost} por día",
-    "regenerateTier": "Probar otro plan",
-    "limitedResearch": "Datos en vivo limitados — los precios y la disponibilidad pueden ser menos precisos",
-    "whyTier": "¿Por qué este nivel?"
+    "limitedResearch": "Datos en vivo limitados — los precios y la disponibilidad pueden ser menos precisos"
   },
   "preferences": {
     "title": "Tus Preferencias",
@@ -547,7 +543,9 @@
     "other": "Otro",
     "otherPlaceholder": "Escribe tu respuesta...",
     "pickOne": "elige una",
-    "pickMany": "elige varias"
+    "pickMany": "elige varias",
+    "prev": "Pregunta anterior",
+    "next": "Siguiente pregunta"
   },
   "clarifyOptions": {
     "travel_style": {

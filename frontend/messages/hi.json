@@ -142,9 +142,7 @@
     "feedbackCommentPlaceholder": "बताएं क्या गलत हुआ...",
     "feedbackSubmit": "प्रतिक्रिया भेजें",
     "feedbackThanks": "आपकी प्रतिक्रिया के लिए धन्यवाद!",
-    "feedbackError": "प्रतिक्रिया भेजने में विफल",
-    "regenTierFailed": "वह योजना फिर से बनाई नहीं जा सकी — आपकी मूल योजना अपरिवर्तित है।",
-    "regenTierExpired": "यह तुलना अब अपडेट नहीं की जा सकती — नई योजनाएँ माँगें।"
+    "feedbackError": "प्रतिक्रिया भेजने में विफल"
   },
   "status": {
     "researching": "शोध कर रहे हैं",
@@ -250,9 +248,7 @@
     "daysDestination": "{count} दिन · {destination}",
     "recommended": "अनुशंसित",
     "perDay": "{cost} प्रति दिन",
-    "regenerateTier": "दूसरी योजना आज़माएँ",
-    "limitedResearch": "सीमित लाइव डेटा — कीमतें और उपलब्धता कम सटीक हो सकती हैं",
-    "whyTier": "यह टियर क्यों?"
+    "limitedResearch": "सीमित लाइव डेटा — कीमतें और उपलब्धता कम सटीक हो सकती हैं"
   },
   "preferences": {
     "title": "आपकी प्राथमिकताएँ",
@@ -547,7 +543,9 @@
     "other": "अन्य",
     "otherPlaceholder": "अपना उत्तर लिखें...",
     "pickOne": "एक चुनें",
-    "pickMany": "कई चुनें"
+    "pickMany": "कई चुनें",
+    "prev": "पिछला प्रश्न",
+    "next": "अगला प्रश्न"
   },
   "clarifyOptions": {
     "travel_style": {

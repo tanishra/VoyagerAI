@@ -1785,56 +1785,6 @@
         }
       }
     },
-    "/chat/regenerate-tier": {
-      "post": {
-        "tags": [
-          "chat"
-        ],
-        "summary": "Regenerate a single tier card in the latest comparison",
-        "description": "Regenerate one plan card (budget/balanced/premium) in the thread's latest comparison.\n\nCheap alternative to `/chat/regenerate`: reuses stored trip constraints and\nregenerates only the requested tier via a single structured generation.\nThe other two plans and the comparison matrix stay untouched.\n\n**Request body:** `{\"thread_id\": \"...\", \"tier\": \"premium\", \"locale\": \"en\", \"currency\": \"INR\"}`",
-        "operationId": "chat_regenerate_tier_chat_regenerate_tier_post",
-        "parameters": [
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "The updated comparison with the regenerated plan patched in place",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "404": {
-            "description": "No comparison on record for this thread"
-          },
-          "409": {
-            "description": "Trip constraints expired \u2014 generate fresh plans"
-          },
-          "422": {
-            "description": "Invalid tier"
-          },
-          "502": {
-            "description": "Tier regeneration failed \u2014 existing card unchanged"
-          }
-        }
-      }
-    },
     "/chat/edit": {
       "post": {
         "tags": [

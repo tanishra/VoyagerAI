@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent, act } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import ComparisonView from '@/app/[locale]/chat/ComparisonView';
 import type { ComparisonData } from '@/lib/types';
 
@@ -221,7 +221,7 @@ describe('ComparisonView', () => {
 
   it('clicking a card body calls onSelect with that tier', () => {
     const onSelect = vi.fn();
-    const { container } = render(<ComparisonView data={mockData} onSelect={onSelect} />);
+    render(<ComparisonView data={mockData} onSelect={onSelect} />);
     // Click the tradeoff text inside the premium card (not the button)
     fireEvent.click(screen.getByText('Premium: 4-star hotels'));
     expect(onSelect).toHaveBeenCalledWith('premium');
@@ -240,43 +240,6 @@ describe('ComparisonView', () => {
     const img = document.querySelector('img[alt="Tokyo"]');
     expect(img).toBeInTheDocument();
     delete mockSwrData['wikimedia:Tokyo'];
-  });
-});
-
-describe('ComparisonView — single-tier regenerate (U6)', () => {
-  it('shows no refresh buttons without a handler (legacy callers)', () => {
-    render(<ComparisonView data={mockData} onSelect={() => {}} />);
-    expect(screen.queryAllByRole('button', { name: /try a different plan/i })).toHaveLength(0);
-  });
-
-  it('renders one refresh button per card when handler provided', () => {
-    render(<ComparisonView data={mockData} onSelect={() => {}} onRegenerateTier={() => {}} />);
-    expect(screen.getAllByRole('button', { name: /try a different plan/i })).toHaveLength(3);
-  });
-
-  it('calls onRegenerateTier with the tier and does NOT trigger select', () => {
-    const onRegen = vi.fn();
-    const onSelect = vi.fn();
-    render(<ComparisonView data={mockData} onSelect={onSelect} onRegenerateTier={onRegen} />);
-    fireEvent.click(screen.getAllByRole('button', { name: /try a different plan/i })[2]);
-    expect(onRegen).toHaveBeenCalledWith('premium');
-    expect(onSelect).not.toHaveBeenCalled();
-  });
-
-  it('disables only the regenerating card button and spins its icon', () => {
-    render(
-      <ComparisonView
-        data={mockData}
-        onSelect={() => {}}
-        onRegenerateTier={() => {}}
-        regeneratingTier="balanced"
-      />
-    );
-    const buttons = screen.getAllByRole('button', { name: /try a different plan/i });
-    expect(buttons[0]).not.toBeDisabled();
-    expect(buttons[1]).toBeDisabled();
-    expect(buttons[2]).not.toBeDisabled();
-    expect(buttons[1].querySelector('svg')?.className.baseVal).toContain('animate-spin');
   });
 });
 
@@ -308,35 +271,3 @@ describe('currency source (U4)', () => {
   });
 });
 
-describe('why-tier explainer (U3)', () => {
-  const withHighlights = {
-    ...mockData,
-    plans: mockData.plans.map((p) => ({
-      ...p,
-      highlights: [`Best for ${p.tier} travelers`],
-    })),
-  };
-
-  it('shows the chip when highlights or tradeoffs exist', () => {
-    render(<ComparisonView data={withHighlights} onSelect={() => {}} />);
-    expect(screen.getAllByText(/Why this tier/i).length).toBe(3);
-  });
-
-  it('opens the popover with highlights and closes on second click', () => {
-    render(<ComparisonView data={withHighlights} onSelect={() => {}} />);
-    const chip = screen.getAllByText(/Why this tier/i)[0];
-    act(() => fireEvent.click(chip));
-    expect(screen.getByText('Best for budget travelers')).toBeInTheDocument();
-    act(() => fireEvent.click(screen.getAllByText(/Why this tier/i)[0]));
-    expect(screen.queryByText('Best for budget travelers')).not.toBeInTheDocument();
-  });
-
-  it('hides the chip when a plan has neither highlights nor tradeoffs', () => {
-    const bare = {
-      ...mockData,
-      plans: mockData.plans.map((p) => ({ ...p, tradeoffs: [], highlights: undefined })),
-    };
-    render(<ComparisonView data={bare} onSelect={() => {}} />);
-    expect(screen.queryByText(/Why this tier/i)).not.toBeInTheDocument();
-  });
-});
