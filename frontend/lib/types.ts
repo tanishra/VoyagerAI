@@ -77,6 +77,26 @@ export interface ComparisonData {
   comparison_matrix: ComparisonMatrix;
 }
 
+// Clarify cards — the model asks for missing fields via
+// ask_clarifying_questions; the payload delivers selectable options.
+export interface ClarifyOption {
+  label: string;
+  value?: string;
+  description?: string;
+}
+
+export interface ClarifyQuestion {
+  field: string;
+  header: string;
+  question: string;
+  options: ClarifyOption[];
+  multi_select: boolean;
+}
+
+export interface ClarifyData {
+  questions: ClarifyQuestion[];
+}
+
 export interface ThinkingBlock {
   text: string;
 }
@@ -138,6 +158,7 @@ export interface ChatMessage {
   content: string;
   itinerary?: Itinerary;
   comparison?: ComparisonData;
+  clarify?: ClarifyData;
   activity?: ActivityData;
   wasStopped?: boolean;
   editing?: boolean;
@@ -154,6 +175,7 @@ export interface ChatStreamCallbacks {
   onToken?: (text: string) => void;
   onItinerary?: (itinerary: Itinerary) => void;
   onComparison?: (data: ComparisonData) => void;
+  onClarify?: (data: ClarifyData) => void;
   onImage?: (image: GeneratedImage) => void;
   onChart?: (chart: GeneratedChart) => void;
   onStatus?: (status: { tool: string; status: string }) => void;

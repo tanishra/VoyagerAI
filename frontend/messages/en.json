@@ -530,5 +530,33 @@
     "activeCooldowns": "Active Cooldowns",
     "noFlags": "No security flags recorded",
     "noCooldowns": "No active cooldowns"
+  },
+  "clarify": {
+    "send": "Send answers",
+    "other": "Other",
+    "otherPlaceholder": "Type your own answer...",
+    "pickOne": "pick one",
+    "pickMany": "pick any"
+  },
+  "clarifyOptions": {
+    "travel_style": {
+      "relaxed": "Relaxed pace",
+      "balanced": "Balanced pace",
+      "adventurous": "Adventurous"
+    },
+    "group_type": {
+      "solo": "Solo",
+      "couple": "Couple",
+      "family": "Family",
+      "friends": "Friends"
+    },
+    "budget_currency": {
+      "usd": "USD $",
+      "inr": "INR ₹",
+      "eur": "EUR €",
+      "jpy": "JPY ¥",
+      "gbp": "GBP £",
+      "aud": "AUD $"
+    }
   }
 }

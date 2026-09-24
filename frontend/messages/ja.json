@@ -530,5 +530,33 @@
     "activeCooldowns": "Active Cooldowns",
     "noFlags": "No security flags recorded",
     "noCooldowns": "No active cooldowns"
+  },
+  "clarify": {
+    "send": "回答を送信",
+    "other": "その他",
+    "otherPlaceholder": "回答を入力...",
+    "pickOne": "1つ選択",
+    "pickMany": "複数選択可"
+  },
+  "clarifyOptions": {
+    "travel_style": {
+      "relaxed": "ゆったり",
+      "balanced": "バランス",
+      "adventurous": "アクティブ"
+    },
+    "group_type": {
+      "solo": "一人",
+      "couple": "カップル",
+      "family": "家族",
+      "friends": "友人"
+    },
+    "budget_currency": {
+      "usd": "USD $",
+      "inr": "INR ₹",
+      "eur": "EUR €",
+      "jpy": "JPY ¥",
+      "gbp": "GBP £",
+      "aud": "AUD $"
+    }
   }
 }

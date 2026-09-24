@@ -19,6 +19,7 @@ import logging
 from typing import Callable, Literal
 
 from langchain_core.tools import tool
+from pydantic import BaseModel, Field
 
 from agents.constraints import TripConstraints
 from agents.pipeline import (
@@ -88,7 +89,57 @@ def set_pipeline_context(
 
 
 def get_pipeline_tools() -> list:
-    return [generate_trip_plans, refine_itinerary]
+    return [generate_trip_plans, refine_itinerary, ask_clarifying_questions]
+
+
+class ClarifyOption(BaseModel):
+    """One selectable answer on a clarify card."""
+
+    label: str = Field(min_length=1, description="Short human-facing option text, e.g. 'Relaxed pace'")
+    value: str | None = Field(default=None, description="Machine value if it differs from the label, e.g. 'relaxed'")
+    description: str | None = Field(default=None, description="One-line explanation shown under the label")
+
+
+class ClarifyQuestion(BaseModel):
+    """One question on a clarify card."""
+
+    field: str = Field(min_length=1, description="Which trip field this answers, e.g. 'destination', 'travel_style'")
+    header: str = Field(min_length=1, description="2-3 word chip label, e.g. 'Travel style'")
+    question: str = Field(min_length=1, description="The full question shown to the user")
+    options: list[ClarifyOption] = Field(default_factory=list, description="Up to 4 quick-pick options; empty for free-text fields")
+    multi_select: bool = Field(default=False, description="True when several options may apply (e.g. dietary)")
+
+
+@tool
+async def ask_clarifying_questions(questions: list[ClarifyQuestion]) -> str:
+    """Ask the user for missing trip requirements as selectable question cards.
+
+    Call this when required fields for generate_trip_plans are missing instead
+    of writing prose questions — the cards render as tappable options so the
+    user answers in one tap. Provide concrete options for enum-like fields;
+    leave options empty for free-text fields (destination, days, budget) — the
+    UI adds an "Other" free-text input automatically.
+
+    Args:
+        questions: 1-4 questions, each with up to 4 options.
+    """
+    thread_id = get_current_thread_id()
+    if not questions:
+        return "No questions supplied — ask in plain text instead."
+
+    clipped = [q.model_dump() for q in questions[:4]]
+    for q in clipped:
+        q["options"] = q["options"][:4]
+
+    payload_id = await store_payload(thread_id, "clarify", {"questions": clipped})
+    return json.dumps({
+        "_pipeline_payload_id": payload_id,
+        "message": (
+            "Your questions are displayed to the user as selectable cards. "
+            "Wait for their reply — do NOT answer on their behalf or call "
+            "generate_trip_plans until the required fields are known."
+        ),
+    })
 
 
 def _budget_reached_msg() -> str:

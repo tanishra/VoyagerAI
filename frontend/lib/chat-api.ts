@@ -1,4 +1,4 @@
-import type { BranchInfo, ChatStreamCallbacks, ComparisonData, GeneratedChart, GeneratedImage, Itinerary, UsageEntry } from './types';
+import type { BranchInfo, ChatStreamCallbacks, ClarifyData, ComparisonData, GeneratedChart, GeneratedImage, Itinerary, UsageEntry } from './types';
 import { withAuthParams } from './api-headers';
 import { friendlyHttpError, sanitizeError } from './errors';
 
@@ -41,7 +41,7 @@ export async function streamChat(
   body: { message: string; thread_id?: string; locale?: string; timezone?: string; currency?: string; attachments?: import('./upload-api').UploadedFile[]; client_message_id?: string },
   callbacks: ChatStreamCallbacks,
 ): Promise<string | undefined> {
-  const { onToken, onItinerary, onComparison, onImage, onChart, onStatus, onThreadId, onDone, onError, onAbort, onCancelled, signal, errorMessages, onThinking, onToolStart, onToolEnd, onToolError, onUsage, onSubagentProgress, onReconnecting } = callbacks;
+  const { onToken, onItinerary, onComparison, onClarify, onImage, onChart, onStatus, onThreadId, onDone, onError, onAbort, onCancelled, signal, errorMessages, onThinking, onToolStart, onToolEnd, onToolError, onUsage, onSubagentProgress, onReconnecting } = callbacks;
   let resolvedThreadId: string | undefined;
 
   const url = withAuthParams(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/chat/stream`);
@@ -112,7 +112,7 @@ export async function streamChat(
               {
                 onToken,
                 onItinerary,
-                onComparison,
+                onComparison, onClarify,
                 onImage,
                 onChart,
                 onStatus,
@@ -226,6 +226,7 @@ function handleChatEvent(
     onToken?: (text: string) => void;
     onItinerary?: (itinerary: Itinerary) => void;
     onComparison?: (data: ComparisonData) => void;
+    onClarify?: (data: ClarifyData) => void;
     onImage?: (image: GeneratedImage) => void;
     onChart?: (chart: GeneratedChart) => void;
     onStatus?: (status: { tool: string; status: string }) => void;
@@ -241,7 +242,7 @@ function handleChatEvent(
     onSubagentProgress?: (data: { run_id: string; description: string }) => void;
   },
 ) {
-  const { onToken, onItinerary, onComparison, onImage, onChart, onStatus, onThreadId, onError, onDone, onCancelled, onThinking, onToolStart, onToolEnd, onToolError, onUsage, onSubagentProgress } = callbacks;
+  const { onToken, onItinerary, onComparison, onClarify, onImage, onChart, onStatus, onThreadId, onError, onDone, onCancelled, onThinking, onToolStart, onToolEnd, onToolError, onUsage, onSubagentProgress } = callbacks;
 
   switch (event) {
     case 'token': {
@@ -257,6 +258,11 @@ function handleChatEvent(
     case 'comparison': {
       const data = parsed.data as ComparisonData;
       onComparison?.(data);
+      break;
+    }
+    case 'clarify': {
+      const data = parsed.data as ClarifyData;
+      onClarify?.(data);
       break;
     }
     case 'image': {
@@ -329,7 +335,7 @@ export async function regenerateStream(
   body: { thread_id: string; locale?: string; timezone?: string; currency?: string },
   callbacks: ChatStreamCallbacks,
 ): Promise<string | undefined> {
-  const { onToken, onItinerary, onComparison, onImage, onChart, onStatus, onThreadId, onDone, onError, onAbort, onCancelled, signal, errorMessages, onThinking, onToolStart, onToolEnd, onToolError, onUsage, onSubagentProgress, onReconnecting } = callbacks;
+  const { onToken, onItinerary, onComparison, onClarify, onImage, onChart, onStatus, onThreadId, onDone, onError, onAbort, onCancelled, signal, errorMessages, onThinking, onToolStart, onToolEnd, onToolError, onUsage, onSubagentProgress, onReconnecting } = callbacks;
   let resolvedThreadId: string | undefined;
   let sawDone = false;
 
@@ -400,7 +406,7 @@ export async function regenerateStream(
               }
             } else {
               handleChatEvent(currentEvent, data, {
-                onToken, onItinerary, onComparison, onImage, onChart, onStatus, onThreadId, onDone: (d) => { sawDone = true; onDone?.(d); }, onError, onCancelled, onThinking, onToolStart, onToolEnd, onToolError, onUsage, onSubagentProgress,
+                onToken, onItinerary, onComparison, onClarify, onImage, onChart, onStatus, onThreadId, onDone: (d) => { sawDone = true; onDone?.(d); }, onError, onCancelled, onThinking, onToolStart, onToolEnd, onToolError, onUsage, onSubagentProgress,
               });
             }
           }
@@ -447,7 +453,7 @@ export async function editItinerary(
   body: { thread_id: string; itinerary: Itinerary; locale?: string; timezone?: string; currency?: string },
   callbacks: ChatStreamCallbacks,
 ): Promise<string | undefined> {
-  const { onToken, onItinerary, onComparison, onImage, onChart, onStatus, onThreadId, onDone, onError, onAbort, onCancelled, signal, errorMessages, onThinking, onToolStart, onToolEnd, onToolError, onUsage, onSubagentProgress, onReconnecting } = callbacks;
+  const { onToken, onItinerary, onComparison, onClarify, onImage, onChart, onStatus, onThreadId, onDone, onError, onAbort, onCancelled, signal, errorMessages, onThinking, onToolStart, onToolEnd, onToolError, onUsage, onSubagentProgress, onReconnecting } = callbacks;
   let resolvedThreadId: string | undefined;
   let sawDone = false;
 
@@ -518,7 +524,7 @@ export async function editItinerary(
               }
             } else {
               handleChatEvent(currentEvent, data, {
-                onToken, onItinerary, onComparison, onImage, onChart, onStatus, onThreadId, onDone: (d) => { sawDone = true; onDone?.(d); }, onError, onCancelled, onThinking, onToolStart, onToolEnd, onToolError, onUsage, onSubagentProgress,
+                onToken, onItinerary, onComparison, onClarify, onImage, onChart, onStatus, onThreadId, onDone: (d) => { sawDone = true; onDone?.(d); }, onError, onCancelled, onThinking, onToolStart, onToolEnd, onToolError, onUsage, onSubagentProgress,
               });
             }
           }
@@ -583,7 +589,7 @@ export async function editStream(
   body: { thread_id: string; message: string; locale?: string; timezone?: string; currency?: string; client_message_id?: string },
   callbacks: ChatStreamCallbacks,
 ): Promise<string | undefined> {
-  const { onToken, onItinerary, onComparison, onImage, onChart, onStatus, onThreadId, onDone, onError, onAbort, onCancelled, signal, errorMessages, onThinking, onToolStart, onToolEnd, onToolError, onUsage, onSubagentProgress, onReconnecting } = callbacks;
+  const { onToken, onItinerary, onComparison, onClarify, onImage, onChart, onStatus, onThreadId, onDone, onError, onAbort, onCancelled, signal, errorMessages, onThinking, onToolStart, onToolEnd, onToolError, onUsage, onSubagentProgress, onReconnecting } = callbacks;
   let resolvedThreadId: string | undefined;
   let sawDone = false;
 
@@ -654,7 +660,7 @@ export async function editStream(
               }
             } else {
               handleChatEvent(currentEvent, data, {
-                onToken, onItinerary, onComparison, onImage, onChart, onStatus, onThreadId, onDone: (d) => { sawDone = true; onDone?.(d); }, onError, onCancelled, onThinking, onToolStart, onToolEnd, onToolError, onUsage, onSubagentProgress,
+                onToken, onItinerary, onComparison, onClarify, onImage, onChart, onStatus, onThreadId, onDone: (d) => { sawDone = true; onDone?.(d); }, onError, onCancelled, onThinking, onToolStart, onToolEnd, onToolError, onUsage, onSubagentProgress,
               });
             }
           }

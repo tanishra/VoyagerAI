@@ -479,6 +479,8 @@ def _parse_chat_event(
         return [_sse("itinerary", event_data)]
     if event_type == "comparison" and event_data is not None:
         return [_sse("comparison", event_data)]
+    if event_type == "clarify" and event_data is not None:
+        return [_sse("clarify", event_data)]
     if event_type == "image" and event_data is not None:
         return [_sse("image", event_data)]
     if event_type == "chart" and event_data is not None:
@@ -2572,8 +2574,8 @@ async def get_thread_history(
                     kind = replay.get("kind")
                     if kind == "itinerary" and "itinerary" not in entry:
                         entry["itinerary"] = await _enrich_itinerary_with_coordinates(replay["data"])
-                    elif kind == "comparison" and "comparison" not in entry:
-                        entry["comparison"] = replay["data"]
+                    elif isinstance(kind, str) and kind not in entry:
+                        entry[kind] = replay["data"]
 
                 # Attach per-message activity
                 msg_activity = None

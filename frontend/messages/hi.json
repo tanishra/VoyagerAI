@@ -530,5 +530,33 @@
     "activeCooldowns": "Active Cooldowns",
     "noFlags": "No security flags recorded",
     "noCooldowns": "No active cooldowns"
+  },
+  "clarify": {
+    "send": "उत्तर भेजें",
+    "other": "अन्य",
+    "otherPlaceholder": "अपना उत्तर लिखें...",
+    "pickOne": "एक चुनें",
+    "pickMany": "कई चुनें"
+  },
+  "clarifyOptions": {
+    "travel_style": {
+      "relaxed": "आरामदायक गति",
+      "balanced": "संतुलित गति",
+      "adventurous": "साहसिक"
+    },
+    "group_type": {
+      "solo": "अकेले",
+      "couple": "जोड़ा",
+      "family": "परिवार",
+      "friends": "दोस्त"
+    },
+    "budget_currency": {
+      "usd": "USD $",
+      "inr": "INR ₹",
+      "eur": "EUR €",
+      "jpy": "JPY ¥",
+      "gbp": "GBP £",
+      "aud": "AUD $"
+    }
   }
 }

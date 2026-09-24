@@ -257,3 +257,66 @@ class TestHistoryReplay:
         assert resp.status_code == 200
         data = resp.json()
         assert len(data) == 2  # tool msg hidden, card absent
+
+
+def _clarify() -> dict:
+    return {"questions": [
+        {"field": "travel_style", "header": "Travel style", "question": "What pace do you prefer?",
+         "options": [{"label": "Relaxed"}, {"label": "Adventurous"}], "multi_select": False},
+    ]}
+
+
+class TestClarifyReplay:
+    def test_clarify_card_attached_on_reload(self, client, monkeypatch):
+        _wire(monkeypatch, [
+            _Msg("human", "Plan a trip"),
+            _tool_msg("pc"),
+            _Msg("ai", "A few quick questions:"),
+        ], {"pc": {"kind": "clarify", "data": _clarify()}})
+
+        resp = client.get(f"/threads/{_scoped('c1')}/history")
+        data = resp.json()
+        assert len(data) == 2
+        assert data[1]["clarify"]["questions"][0]["field"] == "travel_style"
+
+
+class TestClarifyTool:
+    def test_tool_stores_payload_and_clamps(self, monkeypatch):
+        import agents.tools.pipeline_tools as pt
+        from agents.tools.visuals import set_current_thread_id
+
+        stored = {}
+
+        async def fake_store(tid, kind, data):
+            stored["kind"] = kind
+            stored["data"] = data
+            return "pid1"
+
+        monkeypatch.setattr(pt, "store_payload", fake_store)
+        set_current_thread_id("t1")
+
+        qs = [
+            pt.ClarifyQuestion(
+                field="f", header="h", question="q?",
+                options=[pt.ClarifyOption(label=f"o{i}") for i in range(6)],
+            )
+            for _ in range(6)
+        ]
+        result = _run(pt.ask_clarifying_questions.ainvoke({"questions": [q.model_dump() for q in qs]}))
+
+        assert stored["kind"] == "clarify"
+        assert len(stored["data"]["questions"]) == 4  # clamped
+        assert len(stored["data"]["questions"][0]["options"]) == 4
+        assert "_pipeline_payload_id" in result
+
+    def test_empty_questions_returns_text_fallback(self, monkeypatch):
+        import agents.tools.pipeline_tools as pt
+        from agents.tools.visuals import set_current_thread_id
+        set_current_thread_id("t1")
+        result = _run(pt.ask_clarifying_questions.ainvoke({"questions": []}))
+        assert "plain text" in result
+
+    def test_clarify_is_pipeline_tool(self):
+        from agents.pipeline import is_pipeline_tool
+        assert is_pipeline_tool("ask_clarifying_questions")
+        assert is_pipeline_tool("generate_trip_plans")

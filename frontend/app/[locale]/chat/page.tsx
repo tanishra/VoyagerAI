@@ -23,6 +23,7 @@ import OfflineBanner from '@/components/OfflineBanner';
 import ActivityPanel from '@/components/ActivityPanel';
 import GenerationStatus from '@/components/GenerationStatus';
 import ComparisonView from './ComparisonView';
+import ClarifyCard from './ClarifyCard';
 import ComparisonSkeleton from './ComparisonSkeleton';
 import ItinerarySkeleton from './ItinerarySkeleton';
 import FeedbackButtons from '@/components/FeedbackButtons';
@@ -33,7 +34,7 @@ import { useCurrency } from '@/lib/useCurrency';
 import { stripStructuredTags } from '@/lib/utils';
 import { deriveStage, deriveStageDetail, STAGE_LABEL_KEYS } from '@/lib/stage';
 import { uploadFile, type UploadedFile } from '@/lib/upload-api';
-import type { ChatMessage, ComparisonData, Itinerary, ActivityData, BranchInfo, GeneratedImage, GeneratedChart } from '@/lib/types';
+import type { ChatMessage, ClarifyData, ComparisonData, Itinerary, ActivityData, BranchInfo, GeneratedImage, GeneratedChart } from '@/lib/types';
 
 const THREAD_STORAGE_KEY = 'voyagerai_chat_thread_id';
 
@@ -85,6 +86,7 @@ export default function ChatPage() {
   const [streamingText, setStreamingText] = useState('');
   const [streamingItinerary, setStreamingItinerary] = useState<Itinerary | null>(null);
   const [streamingComparison, setStreamingComparison] = useState<ComparisonData | null>(null);
+  const [streamingClarify, setStreamingClarify] = useState<ClarifyData | null>(null);
   const [streamingImages, setStreamingImages] = useState<GeneratedImage[]>([]);
   const [streamingCharts, setStreamingCharts] = useState<GeneratedChart[]>([]);
   const [partialResearch, setPartialResearch] = useState(false);
@@ -228,6 +230,7 @@ export default function ChatPage() {
     setStreamingText('');
     setStreamingItinerary(null);
     setStreamingComparison(null);
+            setStreamingClarify(null);
     setStreamingImages([]);
     setStreamingCharts([]);
     setStreamingActivity(null);
@@ -305,6 +308,7 @@ export default function ChatPage() {
     setStreamingText('');
     setStreamingItinerary(null);
     setStreamingComparison(null);
+            setStreamingClarify(null);
     setStreamingImages([]);
     setStreamingCharts([]);
     setStreamingActivity(null);
@@ -380,6 +384,7 @@ export default function ChatPage() {
     setStreamingText('');
     setStreamingItinerary(null);
     setStreamingComparison(null);
+            setStreamingClarify(null);
     setStreamingImages([]);
     setStreamingCharts([]);
     setPartialResearch(false);
@@ -425,6 +430,7 @@ export default function ChatPage() {
     let accumulatedText = '';
     let accumulatedItinerary: Itinerary | null = null;
     let accumulatedComparison: ComparisonData | null = null;
+    let accumulatedClarify: ClarifyData | null = null;
     let accumulatedImages: GeneratedImage[] = [];
     let accumulatedCharts: GeneratedChart[] = [];
     let streamFailed = false;
@@ -455,6 +461,10 @@ export default function ChatPage() {
             accumulatedComparison = data;
             setGeneratingPlans(false);
             setStreamingComparison(data);
+          },
+          onClarify: (data) => {
+            accumulatedClarify = data;
+            setStreamingClarify(data);
           },
           onImage: (image) => {
             accumulatedImages = [...accumulatedImages, image];
@@ -559,12 +569,14 @@ export default function ChatPage() {
             accumulatedText = '';
             accumulatedItinerary = null;
             accumulatedComparison = null;
+            accumulatedClarify = null;
             accumulatedImages = [];
             accumulatedCharts = [];
             streamingActivityRef.current = null;
             setStreamingText('');
             setStreamingItinerary(null);
             setStreamingComparison(null);
+            setStreamingClarify(null);
             setStreamingImages([]);
             setStreamingCharts([]);
             setStreamingActivity(null);
@@ -620,6 +632,7 @@ export default function ChatPage() {
               content: stripStructuredTags(accumulatedText),
               itinerary: accumulatedItinerary ?? undefined,
               comparison: accumulatedComparison ?? undefined,
+              clarify: accumulatedClarify ?? undefined,
               activity: finalActivity ?? undefined,
               images: accumulatedImages.length > 0 ? accumulatedImages : undefined,
               charts: accumulatedCharts.length > 0 ? accumulatedCharts : undefined,
@@ -633,6 +646,7 @@ export default function ChatPage() {
               content: stripStructuredTags(accumulatedText),
               itinerary: accumulatedItinerary ?? undefined,
               comparison: accumulatedComparison ?? undefined,
+              clarify: accumulatedClarify ?? undefined,
               activity: finalActivity ?? undefined,
               images: accumulatedImages.length > 0 ? accumulatedImages : undefined,
               charts: accumulatedCharts.length > 0 ? accumulatedCharts : undefined,
@@ -646,6 +660,7 @@ export default function ChatPage() {
       setStreamingText('');
       setStreamingItinerary(null);
       setStreamingComparison(null);
+            setStreamingClarify(null);
       setStreamingImages([]);
       setStreamingCharts([]);
       setStreamingActivity(null);
@@ -686,6 +701,7 @@ export default function ChatPage() {
     setStreamingText('');
     setStreamingItinerary(null);
     setStreamingComparison(null);
+            setStreamingClarify(null);
     setStreamingImages([]);
     setStreamingCharts([]);
     setStreamingActivity(null);
@@ -765,6 +781,7 @@ export default function ChatPage() {
     setStreamingText('');
     setStreamingItinerary(null);
     setStreamingComparison(null);
+            setStreamingClarify(null);
     setStreamingImages([]);
     setStreamingCharts([]);
     setPartialResearch(false);
@@ -779,6 +796,7 @@ export default function ChatPage() {
     let accumulatedText = '';
     let accumulatedItinerary: Itinerary | null = null;
     let accumulatedComparison: ComparisonData | null = null;
+    let accumulatedClarify: ClarifyData | null = null;
     let accumulatedImages: GeneratedImage[] = [];
     let accumulatedCharts: GeneratedChart[] = [];
     let streamFailed = false;
@@ -803,6 +821,10 @@ export default function ChatPage() {
             accumulatedComparison = data;
             setGeneratingPlans(false);
             setStreamingComparison(data);
+          },
+          onClarify: (data) => {
+            accumulatedClarify = data;
+            setStreamingClarify(data);
           },
           onImage: (image) => {
             accumulatedImages = [...accumulatedImages, image];
@@ -906,12 +928,14 @@ export default function ChatPage() {
             accumulatedText = '';
             accumulatedItinerary = null;
             accumulatedComparison = null;
+            accumulatedClarify = null;
             accumulatedImages = [];
             accumulatedCharts = [];
             streamingActivityRef.current = null;
             setStreamingText('');
             setStreamingItinerary(null);
             setStreamingComparison(null);
+            setStreamingClarify(null);
             setStreamingImages([]);
             setStreamingCharts([]);
             setStreamingActivity(null);
@@ -962,6 +986,7 @@ export default function ChatPage() {
                 content: stripStructuredTags(accumulatedText),
                 itinerary: accumulatedItinerary ?? undefined,
                 comparison: accumulatedComparison ?? undefined,
+              clarify: accumulatedClarify ?? undefined,
                 activity: finalActivity ?? undefined,
                 partialResearch: partialResearch || undefined,
               };
@@ -980,6 +1005,7 @@ export default function ChatPage() {
       setStreamingText('');
       setStreamingItinerary(null);
       setStreamingComparison(null);
+            setStreamingClarify(null);
       setStreamingImages([]);
       setStreamingCharts([]);
       setStreamingActivity(null);
@@ -1037,6 +1063,7 @@ export default function ChatPage() {
     setStreamingText('');
     setStreamingItinerary(null);
     setStreamingComparison(null);
+            setStreamingClarify(null);
     setStreamingImages([]);
     setStreamingCharts([]);
     setPartialResearch(false);
@@ -1051,6 +1078,7 @@ export default function ChatPage() {
     let accumulatedText = '';
     let accumulatedItinerary: Itinerary | null = null;
     let accumulatedComparison: ComparisonData | null = null;
+    let accumulatedClarify: ClarifyData | null = null;
     let accumulatedImages: GeneratedImage[] = [];
     let accumulatedCharts: GeneratedChart[] = [];
     let streamFailed = false;
@@ -1081,6 +1109,10 @@ export default function ChatPage() {
             accumulatedComparison = data;
             setGeneratingPlans(false);
             setStreamingComparison(data);
+          },
+          onClarify: (data) => {
+            accumulatedClarify = data;
+            setStreamingClarify(data);
           },
           onImage: (image) => {
             accumulatedImages = [...accumulatedImages, image];
@@ -1172,12 +1204,14 @@ export default function ChatPage() {
             accumulatedText = '';
             accumulatedItinerary = null;
             accumulatedComparison = null;
+            accumulatedClarify = null;
             accumulatedImages = [];
             accumulatedCharts = [];
             streamingActivityRef.current = null;
             setStreamingText('');
             setStreamingItinerary(null);
             setStreamingComparison(null);
+            setStreamingClarify(null);
             setStreamingImages([]);
             setStreamingCharts([]);
             setStreamingActivity(null);
@@ -1229,6 +1263,7 @@ export default function ChatPage() {
                 content: stripStructuredTags(accumulatedText),
                 itinerary: accumulatedItinerary ?? undefined,
                 comparison: accumulatedComparison ?? undefined,
+              clarify: accumulatedClarify ?? undefined,
                 activity: finalActivity ?? undefined,
                 partialResearch: partialResearch || undefined,
               };
@@ -1246,6 +1281,7 @@ export default function ChatPage() {
       setStreamingText('');
       setStreamingItinerary(null);
       setStreamingComparison(null);
+            setStreamingClarify(null);
       setStreamingImages([]);
       setStreamingCharts([]);
       setStreamingActivity(null);
@@ -1302,6 +1338,7 @@ export default function ChatPage() {
           let accumulatedText = '';
           let accumulatedItinerary: Itinerary | null = null;
           let accumulatedComparison: ComparisonData | null = null;
+    let accumulatedClarify: ClarifyData | null = null;
           let accumulatedImages: GeneratedImage[] = [];
           let accumulatedCharts: GeneratedChart[] = [];
           let streamFailed = false;
@@ -1323,6 +1360,10 @@ export default function ChatPage() {
                 accumulatedComparison = data;
                 setGeneratingPlans(false);
                 setStreamingComparison(data);
+              },
+              onClarify: (data) => {
+                accumulatedClarify = data;
+                setStreamingClarify(data);
               },
               onImage: (image) => {
                 accumulatedImages = [...accumulatedImages, image];
@@ -1397,12 +1438,14 @@ export default function ChatPage() {
                 accumulatedText = '';
                 accumulatedItinerary = null;
                 accumulatedComparison = null;
+            accumulatedClarify = null;
                 accumulatedImages = [];
                 accumulatedCharts = [];
                 streamingActivityRef.current = null;
                 setStreamingText('');
                 setStreamingItinerary(null);
                 setStreamingComparison(null);
+            setStreamingClarify(null);
                 setStreamingImages([]);
                 setStreamingCharts([]);
                 setStreamingActivity(null);
@@ -1441,6 +1484,7 @@ export default function ChatPage() {
                   content: stripStructuredTags(accumulatedText),
                   itinerary: accumulatedItinerary ?? undefined,
                   comparison: accumulatedComparison ?? undefined,
+              clarify: accumulatedClarify ?? undefined,
                   activity: finalActivity ?? undefined,
                   images: accumulatedImages.length > 0 ? accumulatedImages : undefined,
                   charts: accumulatedCharts.length > 0 ? accumulatedCharts : undefined,
@@ -1453,6 +1497,7 @@ export default function ChatPage() {
           setStreamingText('');
           setStreamingItinerary(null);
           setStreamingComparison(null);
+            setStreamingClarify(null);
           setStreamingImages([]);
           setStreamingCharts([]);
           setStreamingActivity(null);
@@ -1489,6 +1534,10 @@ export default function ChatPage() {
     setInput(t('selectPlan', { tier }));
     inputRef.current?.focus();
   }, [t]);
+
+  const handleClarifySend = useCallback((text: string) => {
+    handleSend(text);
+  }, [handleSend]);
 
   const handleRegenerateTier = useCallback(async (tier: string, msgId: string) => {
     if (!threadId || loading || regenerating || regeneratingTier) return;
@@ -1853,6 +1902,7 @@ export default function ChatPage() {
                       />
                     )}
                     {msg.itinerary && <ItineraryCard itinerary={msg.itinerary} threadId={threadId ?? undefined} onEditItinerary={(modified) => handleEditItinerary(modified, msg.id)} />}
+                    {msg.clarify && <ClarifyCard data={msg.clarify} onSend={handleClarifySend} disabled={loading || regenerating} />}
                     {msg.images && msg.images.map((img, i) => (
                       <GeneratedImageCard key={i} image={img} />
                     ))}
@@ -1994,6 +2044,7 @@ export default function ChatPage() {
                 )}
                 {generatingPlans && !streamingComparison && <ComparisonSkeleton />}
                 {streamingComparison && <ComparisonView data={streamingComparison} onSelect={handleSelectPlan} />}
+                {streamingClarify && <ClarifyCard data={streamingClarify} onSend={handleClarifySend} disabled={loading || regenerating} />}
                 {buildingItinerary && !streamingItinerary && <ItinerarySkeleton />}
                 {streamingItinerary && <ItineraryCard itinerary={streamingItinerary} threadId={threadId ?? undefined} onEditItinerary={(modified) => handleEditItinerary(modified, undefined)} />}
                 {streamingImages.map((img, i) => (

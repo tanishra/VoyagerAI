@@ -41,7 +41,7 @@ from agents.validation import Issue, validate_comparison, validate_itinerary
 
 logger = logging.getLogger("travel_agent.pipeline")
 
-PIPELINE_TOOL_NAMES = frozenset({"generate_trip_plans", "refine_itinerary"})
+PIPELINE_TOOL_NAMES = frozenset({"generate_trip_plans", "refine_itinerary", "ask_clarifying_questions"})
 
 # Per-stage ceilings — generous enough for real research, bounded so a hung
 # provider can't stall the whole stream forever.
