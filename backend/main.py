@@ -3473,7 +3473,7 @@ if settings.PROMETHEUS_ENABLED:
 
     # /metrics is auth-gated — request counts/latency/endpoints leak infra
     # shape to unauthenticated callers. Dev mode: verify_api_key is a no-op.
-    @app.get("/metrics", include_in_schema=False, dependencies=[Depends(verify_api_key)])
+    @app.get("/metrics", summary="Prometheus metrics", tags=["ops"], dependencies=[Depends(verify_api_key)])
     async def prometheus_metrics() -> PlainTextResponse:
         from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
         return PlainTextResponse(generate_latest(), media_type=CONTENT_TYPE_LATEST)
