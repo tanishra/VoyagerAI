@@ -93,6 +93,8 @@ def render_pdf_pages_as_images(data_url: str, max_pages: int = 10) -> list[str]:
 
 _checkpointer = None
 _sqlite_checkpointer = None
+_postgres_checkpointer = None
+_pg_checkpointer_broken = False
 _redis_checkpointer_broken = False
 _store = None
 _store_broken = False
@@ -169,6 +171,34 @@ async def create_redis_checkpointer() -> AsyncRedisSaver:
     return _checkpointer
 
 
+async def create_postgres_checkpointer():
+    """Build a Postgres-backed checkpointer (Supabase or any Postgres).
+
+    Uses ``AsyncPostgresSaver`` on its own connection — LangGraph requires
+    autocommit and manages its own tables via ``setup()``. The session-mode
+    connection string is required (transaction poolers break prepared
+    statements); ``pg_store._conninfo()`` normalises sslmode.
+    """
+    global _postgres_checkpointer
+    if _postgres_checkpointer is None:
+        import psycopg
+        from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+        from pg_store import _conninfo
+
+        conninfo = _conninfo()
+        if not conninfo:
+            raise RuntimeError("DATABASE_URL not configured")
+        conn = await psycopg.AsyncConnection.connect(
+            conninfo, autocommit=True, prepare_threshold=0,
+            connect_timeout=10,
+        )
+        saver = AsyncPostgresSaver(conn)
+        await saver.setup()
+        _postgres_checkpointer = saver
+        logger.info("pg durable tier: checkpointer CONNECTED (Postgres)")
+    return _postgres_checkpointer
+
+
 async def create_sqlite_checkpointer() -> AsyncSqliteSaver:
     """Build a file-backed checkpointer (persists across restarts, no
     external service required)."""
@@ -194,6 +224,20 @@ async def create_checkpointer():
         return await create_sqlite_checkpointer()
     if backend == "memory":
         return MemorySaver()
+    if backend == "postgres":
+        global _pg_checkpointer_broken
+        if not _pg_checkpointer_broken:
+            try:
+                return await create_postgres_checkpointer()
+            except Exception as exc:  # noqa: BLE001 (intentional fallback handler)
+                _pg_checkpointer_broken = True
+                logger.warning(
+                    "Postgres checkpointer unavailable (%s), falling back to SQLite", exc
+                )
+        try:
+            return await create_sqlite_checkpointer()
+        except Exception:  # noqa: BLE001 (intentional fallback handler)
+            return MemorySaver()
     global _redis_checkpointer_broken
     if not _redis_checkpointer_broken:
         try:
@@ -205,6 +249,48 @@ async def create_checkpointer():
         return await create_sqlite_checkpointer()
     except Exception:  # noqa: BLE001 (intentional fallback handler)
         return MemorySaver()
+
+
+def _pg_store_connection():
+    """Open a dedicated psycopg connection for a PostgresStore instance.
+
+    Sync on purpose — mirrors the existing sync ``RedisStore`` init pattern;
+    it runs once per process (one short connect) and every existing caller
+    already treats store setup as a blocking call.
+    """
+    import psycopg
+    from pg_store import _conninfo
+
+    conninfo = _conninfo()
+    if not conninfo:
+        raise RuntimeError("DATABASE_URL not configured")
+    return psycopg.Connection.connect(
+        conninfo, autocommit=True, prepare_threshold=0,
+        connect_timeout=10,
+    )
+
+
+def create_pg_semantic_store():
+    """Postgres-backed semantic memory store (pgvector index)."""
+    from langgraph.store.postgres import PostgresStore
+
+    conn = _pg_store_connection()
+    store = PostgresStore(
+        conn=conn,
+        index={"dims": 1536, "embed": "openai:text-embedding-3-small"},
+    )
+    store.setup()
+    return store
+
+
+def create_pg_file_store():
+    """Postgres-backed file/memory store (no vector index needed)."""
+    from langgraph.store.postgres import PostgresStore
+
+    conn = _pg_store_connection()
+    store = PostgresStore(conn=conn)
+    store.setup()
+    return store
 
 
 def create_redis_store() -> RedisStore:
@@ -242,19 +328,25 @@ def create_redis_store() -> RedisStore:
 def get_activity_store() -> InMemoryStore | RedisStore:
     """Store for activity/thinking persistence.
 
-    Returns the shared Redis store when healthy, else a SHARED in-memory
-    fallback (a fresh store per call would lose data across requests).
-    After the first Redis failure, stop retrying — same pattern as
-    create_checkpointer()'s _redis_checkpointer_broken.
+    Returns the durable store (Postgres, or Redis when configured) when
+    healthy, else a SHARED in-memory fallback (a fresh store per call would
+    lose data across requests). After the first backend failure, stop
+    retrying — same pattern as create_checkpointer()'s _pg_checkpointer_broken.
     """
-    global _store_broken, _store_memory_fallback
-    if settings.STORE_BACKEND != "redis" or _store_broken:
+    global _store, _store_broken, _store_memory_fallback
+    backend = settings.STORE_BACKEND
+    if backend not in ("postgres", "redis") or _store_broken:
         if _store_memory_fallback is None:
             _store_memory_fallback = InMemoryStore()
         return _store_memory_fallback
     try:
+        if backend == "postgres":
+            if _store is None:
+                _store = create_pg_semantic_store()
+            return _store
         return create_redis_store()
-    except Exception:  # noqa: BLE001 (intentional fallback handler)
+    except Exception as exc:  # noqa: BLE001 (intentional fallback handler)
+        logger.warning("%s activity store unavailable (%s) — in-memory fallback", backend, exc)
         _store_broken = True
         _store_memory_fallback = InMemoryStore()
         return _store_memory_fallback
@@ -263,7 +355,14 @@ def get_activity_store() -> InMemoryStore | RedisStore:
 def get_redis_file_store() -> InMemoryStore | RedisStore:
     global _file_store
     if _file_store is None:
-        if settings.STORE_BACKEND == "redis":
+        backend = settings.STORE_BACKEND
+        if backend == "postgres":
+            try:
+                _file_store = create_pg_file_store()
+            except Exception as exc:  # noqa: BLE001 (intentional fallback handler)
+                logger.warning("Postgres file store failed (%s) — in-memory fallback", exc)
+                _file_store = InMemoryStore()
+        elif backend == "redis":
             try:
                 conn = RedisConnectionFactory.get_redis_connection(settings.REDIS_URL)
                 _file_store = RedisStore(conn=conn)

@@ -58,7 +58,7 @@ class TestCostStore:
         import cost_store as cs_module
         async def _no_sqlite():
             return None
-        monkeypatch.setattr(cs_module, "get_sqlite_connection", _no_sqlite)
+        monkeypatch.setattr(cs_module, "get_durable_db", _no_sqlite)
         return s
 
     @pytest.mark.asyncio

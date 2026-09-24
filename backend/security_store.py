@@ -26,7 +26,7 @@ from redis.asyncio import Redis
 from redis.exceptions import RedisError
 
 from config import REDIS_URL, settings
-from sqlite_fallback import get_sqlite_connection
+from pg_store import get_durable_db
 
 logger = logging.getLogger("travel_agent.security_store")
 
@@ -127,7 +127,7 @@ class SecurityStore:
                 logger.warning("SecurityStore record_flag Redis error: %s", exc)
 
         # SQLite write-through (durable copy alongside Redis)
-        db = await get_sqlite_connection()
+        db = await get_durable_db()
         if db is not None:
             try:
                 await db.execute(
@@ -168,7 +168,7 @@ class SecurityStore:
             except (RedisError, RuntimeError) as exc:
                 logger.warning("SecurityStore record_strike Redis error: %s", exc)
 
-        db = await get_sqlite_connection()
+        db = await get_durable_db()
         if db is not None:
             try:
                 await db.execute(
@@ -205,7 +205,7 @@ class SecurityStore:
             except (RedisError, RuntimeError) as exc:
                 logger.warning("SecurityStore get_strike_count Redis error: %s", exc)
 
-        db = await get_sqlite_connection()
+        db = await get_durable_db()
         if db is not None:
             try:
                 await db.execute(
@@ -248,7 +248,7 @@ class SecurityStore:
             except (RedisError, RuntimeError) as exc:
                 logger.warning("SecurityStore is_in_cooldown Redis error: %s", exc)
 
-        db = await get_sqlite_connection()
+        db = await get_durable_db()
         if db is not None:
             try:
                 cur = await db.execute(
@@ -282,7 +282,7 @@ class SecurityStore:
             except (RedisError, RuntimeError) as exc:
                 logger.warning("SecurityStore apply_cooldown Redis error: %s", exc)
 
-        db = await get_sqlite_connection()
+        db = await get_durable_db()
         if db is not None:
             try:
                 await db.execute(
@@ -310,7 +310,7 @@ class SecurityStore:
             except (RedisError, RuntimeError) as exc:
                 logger.warning("SecurityStore remove_cooldown Redis error: %s", exc)
 
-        db = await get_sqlite_connection()
+        db = await get_durable_db()
         if db is not None:
             try:
                 cur = await db.execute(
@@ -353,7 +353,7 @@ class SecurityStore:
             except (RedisError, RuntimeError) as exc:
                 logger.warning("SecurityStore get_aggregate_stats Redis error: %s", exc)
 
-        db = await get_sqlite_connection()
+        db = await get_durable_db()
         if db is not None:
             try:
                 cur = await db.execute(
@@ -404,7 +404,7 @@ class SecurityStore:
             except (RedisError, RuntimeError) as exc:
                 logger.warning("SecurityStore get_active_cooldowns Redis error: %s", exc)
 
-        db = await get_sqlite_connection()
+        db = await get_durable_db()
         if db is not None:
             try:
                 cur = await db.execute(

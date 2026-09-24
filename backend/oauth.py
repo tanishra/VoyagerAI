@@ -20,7 +20,7 @@ from redis.asyncio import Redis
 from redis.exceptions import RedisError
 
 from config import settings
-from sqlite_fallback import get_sqlite_connection
+from pg_store import get_durable_db
 
 logger = logging.getLogger("travel_agent.oauth")
 
@@ -122,7 +122,7 @@ async def create_session(user_info: dict) -> str:
             logger.warning("Session Redis write failed: %s", exc)
 
     # SQLite fallback (also acts as the durable copy when Redis is up)
-    db = await get_sqlite_connection()
+    db = await get_durable_db()
     if db is not None:
         try:
             await db.execute(
@@ -164,7 +164,7 @@ async def get_session(session_id: str) -> dict | None:
             logger.warning("Failed to read session from Redis")
 
     # SQLite fallback
-    db = await get_sqlite_connection()
+    db = await get_durable_db()
     if db is not None:
         try:
             cur = await db.execute(
@@ -203,7 +203,7 @@ async def delete_session(session_id: str) -> None:
             logger.warning("Failed to delete session from Redis")
 
     # SQLite fallback
-    db = await get_sqlite_connection()
+    db = await get_durable_db()
     if db is not None:
         try:
             await db.execute("DELETE FROM sessions WHERE session_id = ?", (session_id,))

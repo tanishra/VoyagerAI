@@ -43,7 +43,7 @@ def fresh_share_store(monkeypatch):
     import share_store as ss_module
     async def _no_sqlite():
         return None
-    monkeypatch.setattr(ss_module, "get_sqlite_connection", _no_sqlite)
+    monkeypatch.setattr(ss_module, "get_durable_db", _no_sqlite)
     return store
 
 

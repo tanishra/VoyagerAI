@@ -19,7 +19,7 @@ from redis.asyncio import Redis
 from redis.exceptions import RedisError
 
 from config import REDIS_URL, settings
-from sqlite_fallback import get_sqlite_connection
+from pg_store import get_durable_db
 
 logger = logging.getLogger("travel_agent.feedback_store")
 
@@ -91,7 +91,7 @@ class FeedbackStore:
                 logger.warning("FeedbackStore submit_feedback Redis error: %s", exc)
 
         # SQLite write-through (durable copy alongside Redis)
-        db = await get_sqlite_connection()
+        db = await get_durable_db()
         if db is not None:
             try:
                 await db.execute(
@@ -129,7 +129,7 @@ class FeedbackStore:
                 logger.warning("FeedbackStore get_feedback Redis error: %s", exc)
 
         # SQLite — checked even when Redis is up but has no copy
-        db = await get_sqlite_connection()
+        db = await get_durable_db()
         if db is not None:
             try:
                 cur = await db.execute(
@@ -194,7 +194,7 @@ class FeedbackStore:
             except (RedisError, RuntimeError) as exc:
                 logger.warning("FeedbackStore get_aggregate_stats Redis error: %s", exc)
 
-        db = await get_sqlite_connection()
+        db = await get_durable_db()
         if db is not None:
             try:
                 cur = await db.execute("SELECT * FROM feedback")

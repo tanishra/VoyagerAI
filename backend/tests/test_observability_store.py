@@ -20,7 +20,7 @@ from observability_store import ObservabilityStore, _hash_user_id, _redact_tool_
 def store(monkeypatch):
     """Fresh ObservabilityStore with in-memory fallback (no Redis, no SQLite)."""
     # Force in-memory mode by making both Redis and SQLite unavailable
-    monkeypatch.setattr("observability_store.get_sqlite_connection", _async_none)
+    monkeypatch.setattr("observability_store.get_durable_db", _async_none)
     s = ObservabilityStore()
     s._redis = None
     return s

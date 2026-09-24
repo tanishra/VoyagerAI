@@ -20,7 +20,7 @@ class TestFeedbackStore:
         import feedback_store as fb_module
         async def _no_sqlite():
             return None
-        monkeypatch.setattr(fb_module, "get_sqlite_connection", _no_sqlite)
+        monkeypatch.setattr(fb_module, "get_durable_db", _no_sqlite)
         return s
 
     def test_submit_feedback_stores_rating(self, store: FeedbackStore):

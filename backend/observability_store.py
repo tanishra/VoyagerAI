@@ -22,7 +22,7 @@ from redis.asyncio import Redis
 from redis.exceptions import RedisError
 
 from config import REDIS_URL, settings
-from sqlite_fallback import get_sqlite_connection
+from pg_store import get_durable_db
 
 logger = logging.getLogger("travel_agent.observability_store")
 
@@ -187,7 +187,7 @@ class ObservabilityStore:
                 logger.warning("ObservabilityStore start_session Redis error: %s", exc)
 
         # SQLite write-through (durable copy alongside Redis)
-        db = await get_sqlite_connection()
+        db = await get_durable_db()
         if db is not None:
             try:
                 await db.execute(
@@ -263,7 +263,7 @@ class ObservabilityStore:
                 logger.warning("ObservabilityStore record_event Redis error: %s", exc)
 
         # SQLite write-through (durable copy alongside Redis)
-        db = await get_sqlite_connection()
+        db = await get_durable_db()
         if db is not None:
             try:
                 await db.execute(
@@ -341,7 +341,7 @@ class ObservabilityStore:
             except (RedisError, RuntimeError) as exc:
                 logger.warning("ObservabilityStore finalize_session Redis error: %s", exc)
 
-        db = await get_sqlite_connection()
+        db = await get_durable_db()
         if db is not None:
             try:
                 cur = await db.execute(
@@ -434,7 +434,7 @@ class ObservabilityStore:
             except (RedisError, RuntimeError) as exc:
                 logger.warning("ObservabilityStore get_sessions Redis error: %s", exc)
 
-        db = await get_sqlite_connection()
+        db = await get_durable_db()
         if db is not None:
             try:
                 cur = await db.execute(
@@ -516,7 +516,7 @@ class ObservabilityStore:
             except (RedisError, RuntimeError) as exc:
                 logger.warning("ObservabilityStore get_session_events Redis error: %s", exc)
 
-        db = await get_sqlite_connection()
+        db = await get_durable_db()
         if db is not None:
             try:
                 cur = await db.execute(
@@ -605,7 +605,7 @@ class ObservabilityStore:
             except (RedisError, RuntimeError) as exc:
                 logger.warning("ObservabilityStore get_errors Redis error: %s", exc)
 
-        db = await get_sqlite_connection()
+        db = await get_durable_db()
         if db is not None:
             try:
                 where_clauses = ["timestamp >= ?", "timestamp <= ?"]
@@ -778,7 +778,7 @@ class ObservabilityStore:
                 logger.warning("ObservabilityStore cleanup_expired error: %s", exc)
 
         # SQLite cleanup
-        db = await get_sqlite_connection()
+        db = await get_durable_db()
         if db is not None:
             try:
                 now = time.time()

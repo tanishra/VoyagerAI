@@ -27,7 +27,7 @@ from redis.asyncio import Redis
 from redis.exceptions import RedisError
 
 from config import REDIS_URL, settings
-from sqlite_fallback import get_sqlite_connection
+from pg_store import get_durable_db
 
 logger = logging.getLogger("travel_agent.threads")
 
@@ -123,7 +123,7 @@ class ThreadStore:
 
     async def _sqlite_threads(self, tag: str) -> dict[str, ThreadMeta] | None:
         """All thread metas from SQLite, keyed by thread_id. None if unavailable."""
-        db = await get_sqlite_connection()
+        db = await get_durable_db()
         if db is None:
             return None
         try:
@@ -190,7 +190,7 @@ class ThreadStore:
 
     async def _sqlite_get_thread(self, tag: str, thread_id: str) -> dict | None:
         """Raw row for one thread from SQLite. None on miss or error."""
-        db = await get_sqlite_connection()
+        db = await get_durable_db()
         if db is None:
             return None
         try:
@@ -298,7 +298,7 @@ class ThreadStore:
                 logger.warning("ThreadStore upsert_thread Redis error: %s", exc)
 
         # SQLite write-through (durable copy alongside Redis)
-        db = await get_sqlite_connection()
+        db = await get_durable_db()
         if db is not None:
             try:
                 await db.execute(
@@ -341,7 +341,7 @@ class ThreadStore:
             except (RedisError, RuntimeError) as exc:
                 logger.warning("ThreadStore delete_thread Redis error: %s", exc)
 
-        db = await get_sqlite_connection()
+        db = await get_durable_db()
         if db is not None:
             try:
                 cur = await db.execute(
@@ -380,7 +380,7 @@ class ThreadStore:
             except (RedisError, RuntimeError) as exc:
                 logger.warning("ThreadStore update_status Redis error: %s", exc)
 
-        db = await get_sqlite_connection()
+        db = await get_durable_db()
         if db is not None:
             try:
                 await db.execute(
@@ -419,7 +419,7 @@ class ThreadStore:
             except (RedisError, RuntimeError) as exc:
                 logger.warning("ThreadStore update_pin_status Redis error: %s", exc)
 
-        db = await get_sqlite_connection()
+        db = await get_durable_db()
         if db is not None:
             try:
                 cur = await db.execute(

@@ -41,9 +41,17 @@ class Settings(BaseSettings):
     REDIS_URL: str = "redis://localhost:6379/0"
     REQUEST_TIMEOUT_SECONDS: int = 300
 
-    CHECKPOINTER_BACKEND: str = "redis"  # "redis", "sqlite", or "memory"
+    CHECKPOINTER_BACKEND: str = "postgres"  # "postgres", "redis", "sqlite", or "memory"
     CHECKPOINTER_DB_PATH: str = "./data/checkpoints.sqlite"
-    STORE_BACKEND: str = "redis"
+    STORE_BACKEND: str = "postgres"  # "postgres", "redis", or "memory"
+
+    # Postgres (Supabase) — durable tier for LangGraph state AND the fallback
+    # tier of every app store. Empty string disables it entirely (stores then
+    # use SQLite -> memory exactly as before). Use the session-mode/direct
+    # connection string, NOT the transaction pooler (port 6543).
+    DATABASE_URL: str = ""
+    PG_POOL_MIN_SIZE: int = 1
+    PG_POOL_MAX_SIZE: int = 10
 
     # SQLite fallback for all Redis-backed stores (threads, shares, sessions, etc.)
     # Used when Redis is unavailable — data persists across restarts.

@@ -24,12 +24,21 @@ def _fast_redis_fail(monkeypatch):
 
     import agents.deep_agent as deep_agent_module
     monkeypatch.setattr(deep_agent_module.settings, "CHECKPOINTER_BACKEND", "memory")
+    monkeypatch.setattr(deep_agent_module.settings, "STORE_BACKEND", "memory")
     monkeypatch.setattr(deep_agent_module, "_checkpointer", None)
+    monkeypatch.setattr(deep_agent_module, "_postgres_checkpointer", None)
+    monkeypatch.setattr(deep_agent_module, "_pg_checkpointer_broken", False)
     monkeypatch.setattr(deep_agent_module, "_redis_checkpointer_broken", False)
     monkeypatch.setattr(deep_agent_module, "_store", None)
     monkeypatch.setattr(deep_agent_module, "_store_broken", False)
     monkeypatch.setattr(deep_agent_module, "_store_memory_fallback", None)
     monkeypatch.setattr(deep_agent_module, "_file_store", None)
+
+    # No Postgres in tests — durable tier resolves to SQLite/memory as before
+    import pg_store as pg_module
+    monkeypatch.setattr(pg_module, "_pool", None)
+    monkeypatch.setattr(pg_module, "_pool_loop", None)
+    monkeypatch.setattr(pg_module, "_pg_broken_until", float("inf"))
 
     # Reset rate limiter singleton state to prevent 429s between tests
     import rate_limiter as rl_module

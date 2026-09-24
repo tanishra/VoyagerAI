@@ -3129,6 +3129,13 @@ async def _start_thread_cleanup_task() -> None:
             except Exception:  # noqa: BLE001
                 logger.warning("SQLite fallback cleanup task error", exc_info=True)
             try:
+                from pg_store import cleanup_expired_pg
+                deleted = await cleanup_expired_pg()
+                if deleted:
+                    logger.info("Postgres cleanup: %d expired rows", deleted)
+            except Exception:  # noqa: BLE001
+                logger.warning("Postgres cleanup task error", exc_info=True)
+            try:
                 await cost_store.cleanup_expired()
                 await observability_store.cleanup_expired()
             except Exception:  # noqa: BLE001
@@ -3171,6 +3178,11 @@ async def _cancel_thread_cleanup_task() -> None:
             await task
         except asyncio.CancelledError:
             pass
+    try:
+        from pg_store import close_pg_pool
+        await close_pg_pool()
+    except Exception:  # noqa: BLE001, S110
+        pass
 
 
 # --- Prometheus metrics endpoint (Phase 7.4) ---

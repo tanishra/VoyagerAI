@@ -24,7 +24,7 @@ from redis.asyncio import Redis
 from redis.exceptions import RedisError
 
 from config import REDIS_URL, settings
-from sqlite_fallback import get_sqlite_connection
+from pg_store import get_durable_db
 
 logger = logging.getLogger("travel_agent.cost_store")
 
@@ -130,7 +130,7 @@ class CostStore:
                 logger.warning("CostStore record_subagent_cost Redis error: %s", exc)
 
         # SQLite write-through (durable copy alongside Redis)
-        db = await get_sqlite_connection()
+        db = await get_durable_db()
         if db is not None:
             try:
                 await db.execute(
@@ -199,7 +199,7 @@ class CostStore:
                 logger.warning("CostStore update_session_total Redis error: %s", exc)
 
         # SQLite write-through (durable copy alongside Redis)
-        db = await get_sqlite_connection()
+        db = await get_durable_db()
         if db is not None:
             try:
                 await db.execute(
@@ -237,7 +237,7 @@ class CostStore:
                 logger.warning("CostStore get_session_cost Redis error: %s", exc)
 
         # SQLite — checked even when Redis is up but has no copy
-        db = await get_sqlite_connection()
+        db = await get_durable_db()
         if db is not None:
             try:
                 cur = await db.execute(
@@ -300,7 +300,7 @@ class CostStore:
             except (RedisError, RuntimeError) as exc:
                 logger.warning("CostStore get_subagent_breakdown Redis error: %s", exc)
 
-        db = await get_sqlite_connection()
+        db = await get_durable_db()
         if db is not None:
             try:
                 cur = await db.execute(
@@ -357,7 +357,7 @@ class CostStore:
             except (RedisError, RuntimeError) as exc:
                 logger.warning("CostStore _all_sessions Redis error: %s", exc)
 
-        db = await get_sqlite_connection()
+        db = await get_durable_db()
         if db is not None:
             try:
                 cur = await db.execute("SELECT * FROM costs_session")
@@ -436,7 +436,7 @@ class CostStore:
             except (RedisError, RuntimeError) as exc:
                 logger.warning("CostStore _all_subagent_entries Redis error: %s", exc)
 
-        db = await get_sqlite_connection()
+        db = await get_durable_db()
         if db is not None:
             try:
                 cur = await db.execute("SELECT * FROM costs_subagent")

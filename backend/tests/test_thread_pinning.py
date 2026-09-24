@@ -37,7 +37,7 @@ def fresh_store(monkeypatch):
     async def _no_sqlite():
         return None
 
-    monkeypatch.setattr(threads_module, "get_sqlite_connection", _no_sqlite)
+    monkeypatch.setattr(threads_module, "get_durable_db", _no_sqlite)
 
     return store
 

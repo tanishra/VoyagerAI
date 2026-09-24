@@ -22,8 +22,18 @@ The scheduled OpenWiki GitHub Actions workflow refreshes the repository wiki. Do
 - `<itinerary>`/`<comparison>` tag extraction in `deep_agent.py` is kept only
   as the legacy reader so pre-pipeline saved conversations still render.
 - Only the `researcher` subagent is dispatchable via the task tool.
-- Upstash Redis lacks RediSearch (`FT.*`), so the LangGraph checkpointer
-  falls back to SQLite and semantic memory falls back to in-memory; payload
-  store uses plain Redis ops and works.
+- Storage split: **Postgres is the durable tier** (`DATABASE_URL`, Supabase),
+  **Upstash Redis is hot/TTL-only** (payloads, rate limits, research/geocode
+  caches). `backend/pg_store.py` owns the shared pool, schema DDL, and
+  `get_durable_db()` — a drop-in for `get_sqlite_connection()` that returns a
+  `PgCompat` (translates the stores' SQLite dialect) when PG is up and the
+  aiosqlite conn otherwise. Durable stores (threads, costs, shares, feedback,
+  security, observability, oauth sessions, files) write Redis-as-cache +
+  durable tier and merge on read; SQLite remains the disaster tier.
+- `CHECKPOINTER_BACKEND=postgres` uses `AsyncPostgresSaver`; `STORE_BACKEND=
+  postgres` uses LangGraph `PostgresStore` for activity/file memory. Empty
+  `DATABASE_URL` or a PG outage degrades to SQLite/memory with warnings —
+  nothing hard-fails. Upstash Redis lacks RediSearch, so `CHECKPOINTER_
+  BACKEND=redis` still falls back to SQLite.
 - Live verification: `cd backend && python tests/e2e_hybrid_live.py`
   (real OpenAI/Tavily/Redis calls — costs money, not part of pytest).

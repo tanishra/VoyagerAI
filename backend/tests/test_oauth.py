@@ -113,7 +113,7 @@ class TestSessionStoreUnavailable:
             return db
 
         monkeypatch.setattr(oauth, "_get_redis", _failing_redis)
-        monkeypatch.setattr(oauth, "get_sqlite_connection", _failing_db)
+        monkeypatch.setattr(oauth, "get_durable_db", _failing_db)
         monkeypatch.setattr(oauth, "_mem_sessions", {})
 
         with pytest.raises(oauth.SessionStoreUnavailable):
@@ -130,7 +130,7 @@ class TestSessionStoreUnavailable:
             return None
 
         monkeypatch.setattr(oauth, "_get_redis", _no_redis)
-        monkeypatch.setattr(oauth, "get_sqlite_connection", _no_db)
+        monkeypatch.setattr(oauth, "get_durable_db", _no_db)
         monkeypatch.setattr(oauth, "_mem_sessions", {})
 
         assert await oauth.get_session("nonexistent") is None
@@ -215,7 +215,7 @@ class TestRedisPooling:
                 pass
 
         monkeypatch.setattr(oauth, "_redis_client", _FlakyRedis())
-        monkeypatch.setattr(oauth, "get_sqlite_connection", lambda: _none())
+        monkeypatch.setattr(oauth, "get_durable_db", lambda: _none())
         monkeypatch.setattr(oauth, "_mem_sessions", {})
 
         with pytest.raises(oauth.SessionStoreUnavailable):
@@ -237,7 +237,7 @@ class TestMemSessionTTL:
 
         monkeypatch.setattr(oauth, "_redis_client", None)
         monkeypatch.setattr(oauth.Redis, "from_url", lambda *a, **k: _no_redis_obj())
-        monkeypatch.setattr(oauth, "get_sqlite_connection", lambda: _none())
+        monkeypatch.setattr(oauth, "get_durable_db", lambda: _none())
         monkeypatch.setattr(oauth, "_mem_sessions", {
             "sid-old": {"user_id": "u", "exp": time.time() - 1},
         })
@@ -253,7 +253,7 @@ class TestMemSessionTTL:
         payload = {"user_id": "u", "exp": time.time() + 60}
         monkeypatch.setattr(oauth, "_redis_client", None)
         monkeypatch.setattr(oauth.Redis, "from_url", lambda *a, **k: _no_redis_obj())
-        monkeypatch.setattr(oauth, "get_sqlite_connection", lambda: _none())
+        monkeypatch.setattr(oauth, "get_durable_db", lambda: _none())
         monkeypatch.setattr(oauth, "_mem_sessions", {"sid-ok": payload})
 
         assert await oauth.get_session("sid-ok") == payload
