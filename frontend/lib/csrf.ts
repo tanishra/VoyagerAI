@@ -1,9 +1,14 @@
 const CSRF_COOKIE_NAME = "voyager_csrf";
 
-export function getCsrfHeaders(): Record<string, string> {
-  if (typeof document === "undefined") return {};
+export function getCsrfToken(): string | null {
+  if (typeof document === "undefined") return null;
   const match = document.cookie.match(
     new RegExp(`${CSRF_COOKIE_NAME}=([^;]+)`),
   );
-  return match ? { "X-CSRF-Token": match[1] } : {};
+  return match ? match[1] : null;
+}
+
+export function getCsrfHeaders(): Record<string, string> {
+  const token = getCsrfToken();
+  return token ? { "X-CSRF-Token": token } : {};
 }

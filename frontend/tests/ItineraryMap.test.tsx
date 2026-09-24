@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 
 vi.mock('swr', () => ({
@@ -8,78 +8,72 @@ vi.mock('swr', () => ({
   },
 }));
 
-// Mock maplibre-gl — jsdom has no WebGL/canvas support
-const mockMarker = {
-  setLngLat: vi.fn().mockReturnThis(),
-  setPopup: vi.fn().mockReturnThis(),
-  addTo: vi.fn().mockReturnThis(),
-  remove: vi.fn(),
-};
-const mockPopup = {
-  setHTML: vi.fn().mockReturnThis(),
-};
+// Mock the Google Maps JS API — jsdom can't load the real loader/API.
+const mockMarker = { setMap: vi.fn(), addListener: vi.fn() };
+const mockPolyline = { setMap: vi.fn() };
+const mockInfoWindow = { setContent: vi.fn(), open: vi.fn(), close: vi.fn() };
 const mockMap = {
-  on: vi.fn((event: string, cb: () => void) => {
-    if (event === 'load') cb();
-  }),
-  once: vi.fn((event: string, cb: () => void) => {
-    if (event === 'load') cb();
-  }),
-  loaded: vi.fn(() => true),
-  addSource: vi.fn(),
-  addLayer: vi.fn(),
-  removeSource: vi.fn(),
-  removeLayer: vi.fn(),
-  getSource: vi.fn(() => null),
-  getLayer: vi.fn(() => null),
   fitBounds: vi.fn(),
-  resize: vi.fn(),
-  remove: vi.fn(),
+  getZoom: vi.fn(() => 12),
+  setZoom: vi.fn(),
 };
+const boundsInstances: Array<{ extend: (p: unknown) => void }> = [];
+const markerInstances: Array<{ options: unknown }> = [];
 
-vi.mock('maplibre-gl', () => {
-  return {
-    supported: vi.fn(() => true),
+const googleStub = {
+  maps: {
     Map: class MockMap {
-      on = mockMap.on;
-      once = mockMap.once;
-      loaded = mockMap.loaded;
-      addSource = mockMap.addSource;
-      addLayer = mockMap.addLayer;
-      removeSource = mockMap.removeSource;
-      removeLayer = mockMap.removeLayer;
-      getSource = mockMap.getSource;
-      getLayer = mockMap.getLayer;
       fitBounds = mockMap.fitBounds;
-      resize = mockMap.resize;
-      remove = mockMap.remove;
+      getZoom = mockMap.getZoom;
+      setZoom = mockMap.setZoom;
     },
     Marker: class MockMarker {
-      setLngLat = mockMarker.setLngLat;
-      setPopup = mockMarker.setPopup;
-      addTo = mockMarker.addTo;
-      remove = mockMarker.remove;
+      options: unknown;
+      setMap = mockMarker.setMap;
+      addListener = mockMarker.addListener;
+      constructor(opts: unknown) {
+        this.options = opts;
+        markerInstances.push(this);
+      }
     },
-    Popup: class MockPopup {
-      setHTML = mockPopup.setHTML;
+    Polyline: class MockPolyline {
+      setMap = mockPolyline.setMap;
+      constructor(public opts: unknown) {}
     },
-    LngLatBounds: class MockLngLatBounds {
+    InfoWindow: class MockInfoWindow {
+      setContent = mockInfoWindow.setContent;
+      open = mockInfoWindow.open;
+      close = mockInfoWindow.close;
+    },
+    LatLngBounds: class MockLatLngBounds {
       extend = vi.fn();
+      constructor() {
+        boundsInstances.push(this);
+      }
     },
-  };
-});
+    Point: class MockPoint {
+      constructor(public x: number, public y: number) {}
+    },
+    event: {
+      trigger: vi.fn(),
+      addListenerOnce: vi.fn((_map: unknown, _event: string, cb: () => void) => cb()),
+    },
+  },
+};
 
-vi.mock('maplibre-gl/dist/maplibre-gl.css', () => ({}));
+const loaderState = { shouldFail: false };
 
-import ItineraryMap, { extractMarkers, createMarkerElement } from '@/components/ItineraryMap';
+vi.mock('@googlemaps/js-api-loader', () => ({
+  setOptions: vi.fn(),
+  importLibrary: vi.fn(() => {
+    if (loaderState.shouldFail) return Promise.reject(new Error('load failed'));
+    (window as unknown as { google: unknown }).google = googleStub;
+    return Promise.resolve(googleStub.maps);
+  }),
+}));
+
+import ItineraryMap, { extractMarkers, markerIcon } from '@/components/ItineraryMap';
 import type { DayPlan } from '@/lib/types';
-
-// jsdom has no real canvas/WebGL — stub getContext so the component's WebGL
-// probe behaves like a real browser by default; individual tests can
-// override to simulate an unsupported browser.
-const getContextMock = vi.fn((): object | null => ({}));
-// @ts-expect-error jsdom's HTMLCanvasElement.getContext isn't fully typed for a stub
-HTMLCanvasElement.prototype.getContext = getContextMock;
 
 const daysWithCoords: DayPlan[] = [
   {
@@ -120,6 +114,14 @@ const daysNoCoords: DayPlan[] = [
   },
 ];
 
+beforeEach(() => {
+  vi.stubEnv('NEXT_PUBLIC_GOOGLE_MAPS_API_KEY', 'test-key');
+  loaderState.shouldFail = false;
+  vi.clearAllMocks();
+  markerInstances.length = 0;
+  boundsInstances.length = 0;
+});
+
 describe('ItineraryMap', () => {
   it('renders map with day tabs when coordinates are present', () => {
     render(<ItineraryMap days={daysWithCoords} destination="Paris, France" />);
@@ -134,18 +136,15 @@ describe('ItineraryMap', () => {
 
   it('switches day on tab click', () => {
     render(<ItineraryMap days={daysWithCoords} destination="Paris, France" />);
-    // Day 1 should be active initially
     const day1Btn = screen.getByText('Day 1');
     const day2Btn = screen.getByText('Day 2');
     fireEvent.click(day2Btn);
-    // After clicking Day 2, it should become active (primary style)
     expect(day2Btn.className).toContain('bg-primary');
     expect(day1Btn.className).not.toContain('bg-primary');
   });
 
   it('renders legend with activity names for the selected day', () => {
     render(<ItineraryMap days={daysWithCoords} destination="Paris, France" />);
-    // Day 1 is selected by default — should show its activities in legend
     expect(screen.getByText(/Check-in/)).toBeInTheDocument();
     expect(screen.getByText(/Eiffel Tower/)).toBeInTheDocument();
     expect(screen.getByText(/Dinner/)).toBeInTheDocument();
@@ -154,8 +153,6 @@ describe('ItineraryMap', () => {
   it('only shows day tabs for days with coordinates', () => {
     const mixedDays: DayPlan[] = [daysWithCoords[0], daysNoCoords[0]];
     render(<ItineraryMap days={mixedDays} destination="Paris, France" />);
-    // Only Day 1 should appear (Day 2 has no coords) — and with just one
-    // selectable day the tab row is hidden entirely
     expect(screen.queryByText('Day 2')).not.toBeInTheDocument();
   });
 
@@ -172,38 +169,33 @@ describe('ItineraryMap', () => {
     expect(onDaySelect).toHaveBeenCalledWith(2);
   });
 
-  it('calls resize() after mount to settle container size', async () => {
+  it('creates markers and fits bounds once the API loads', async () => {
     render(<ItineraryMap days={daysWithCoords} destination="Paris, France" />);
-    await vi.waitFor(() => expect(mockMap.resize).toHaveBeenCalled());
+    await vi.waitFor(() => expect(markerInstances.length).toBe(3));
+    expect(mockMap.fitBounds).toHaveBeenCalled();
   });
 
-  it('shows a link-list fallback when WebGL is unsupported', () => {
-    getContextMock.mockReturnValueOnce(null).mockReturnValueOnce(null);
+  it('shows the link-list fallback when no API key is configured', () => {
+    vi.stubEnv('NEXT_PUBLIC_GOOGLE_MAPS_API_KEY', '');
     render(<ItineraryMap days={daysWithCoords} destination="Paris, France" />);
     expect(screen.getByText(/Map unavailable/)).toBeInTheDocument();
     expect(screen.getAllByText(/Check-in/).length).toBeGreaterThan(0);
   });
 
-  it('falls back to a link list if the map never fires load', async () => {
-    vi.useFakeTimers();
-    // First `.once` call is the fail-timer's own 'load' registration —
-    // swallow it so the timeout fires instead of clearing.
-    mockMap.once.mockImplementationOnce(() => {});
+  it('falls back to a link list if the loader rejects', async () => {
+    loaderState.shouldFail = true;
     render(<ItineraryMap days={daysWithCoords} destination="Paris, France" />);
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(10000);
-    });
-    expect(screen.getByText(/Map unavailable/)).toBeInTheDocument();
-    vi.useRealTimers();
+    await vi.waitFor(() => expect(screen.getByText(/Map unavailable/)).toBeInTheDocument());
+    expect(screen.getAllByText(/Check-in/).length).toBeGreaterThan(0);
   });
 
   it('re-fits bounds when itinerary markers change (edit/regenerate)', async () => {
     const { rerender } = render(
       <ItineraryMap days={daysWithCoords} destination="Paris, France" activeDay={1} />
     );
+    await vi.waitFor(() => expect(markerInstances.length).toBe(3));
     const callsAfterMount = mockMap.fitBounds.mock.calls.length;
 
-    // Same day numbers, different marker locations — the map must re-fit
     const editedDays: DayPlan[] = daysWithCoords.map((d) => ({
       ...d,
       morning: d.morning
@@ -228,10 +220,11 @@ describe('approximate pins (geo_approx)', () => {
     expect(markers[1].approximate).toBe(false);
   });
 
-  it('createMarkerElement renders dashed hollow pin when approximate', () => {
-    const approx = createMarkerElement(1, true);
-    expect(approx.style.border).toContain('dashed');
-    const exact = createMarkerElement(1, false);
-    expect(exact.style.border).toContain('solid');
+  it('markerIcon renders semi-transparent pin when approximate', () => {
+    (window as unknown as { google: unknown }).google = googleStub;
+    const approx = markerIcon(1, true);
+    expect(approx.fillOpacity).toBeLessThan(1);
+    const exact = markerIcon(1, false);
+    expect(exact.fillOpacity).toBe(1);
   });
 });

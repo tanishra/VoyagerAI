@@ -244,12 +244,26 @@ async def csrf_middleware(request: Request, call_next):
     """
     if request.method in _CSRF_METHODS and request.url.path not in _CSRF_EXEMPT_PATHS and not request.url.path.endswith("/edit-itinerary"):
         cookie_token = request.cookies.get(CSRF_COOKIE_NAME)
-        header_token = request.headers.get(CSRF_HEADER_NAME)
+        # Custom headers force a CORS preflight that some hosting proxies
+        # (e.g. Hugging Face Spaces) answer without credentials support, so
+        # the frontend sends the token as a query param instead — the
+        # double-submit guarantee (cookie vs caller-supplied value) is kept.
+        header_token = request.headers.get(CSRF_HEADER_NAME) or request.query_params.get("csrf_token")
         if not cookie_token or not header_token or not hmac.compare_digest(cookie_token, header_token):
-            return JSONResponse(
+            response = JSONResponse(
                 status_code=403,
                 content={"detail": "CSRF token missing or invalid"},
             )
+            if not cookie_token:
+                response.set_cookie(
+                    CSRF_COOKIE_NAME,
+                    secrets.token_urlsafe(32),
+                    httponly=False,
+                    samesite="none" if _use_secure_cookies else "lax",
+                    secure=_use_secure_cookies,
+                    max_age=7 * 24 * 3600,
+                )
+            return response
     response = await call_next(request)
     if not request.cookies.get(CSRF_COOKIE_NAME):
         response.set_cookie(
@@ -330,17 +344,23 @@ def _sse(event: str, data: object) -> dict:
     return {"event": event, "data": json.dumps({"event": event, "data": data})}
 
 
-async def _read_thread_values(thread_id: str, checkpoint_id: str | None = None) -> dict | None:
-    """Read a thread's checkpoint channel_values without building the agent."""
-    from agents.deep_agent import create_checkpointer
-    saver = await create_checkpointer()
+async def _read_thread_values(thread_id: str, checkpoint_id: str | None = None, user_id: str | None = None) -> dict | None:
+    """Read a thread's hydrated state values via the compiled graph.
+
+    langgraph-checkpoint 4.x stores delta channels (e.g. ``messages``) as
+    write deltas — raw ``saver.aget_tuple()`` ``channel_values`` omits them
+    outside snapshot points. ``aget_state`` replays the writes through the
+    graph's channel specs and returns complete values."""
+    agent = await create_chat_agent(user_id=user_id)
     config: dict = {"configurable": {"thread_id": thread_id}}
+    if user_id:
+        config["configurable"]["user_id"] = user_id
     if checkpoint_id:
         config["configurable"]["checkpoint_id"] = checkpoint_id
-    tup = await saver.aget_tuple(config)
-    if tup is None:
+    snapshot = await agent.aget_state(config)
+    if snapshot is None:
         return None
-    return tup.checkpoint.get("channel_values", {})
+    return snapshot.values or None
 
 
 def _history_message_text(content) -> str:
@@ -2496,7 +2516,7 @@ async def get_thread_history(
         raise _err(403, "thread_forbidden", "Thread does not belong to this user")
 
     try:
-        values = await _read_thread_values(thread_id, checkpoint_id)
+        values = await _read_thread_values(thread_id, checkpoint_id, user_id=user_id)
     except Exception:  # noqa: BLE001 (intentional fallback handler)
         logger.warning("Failed to load thread history for %s", thread_id, exc_info=True)
         raise HTTPException(status_code=503, detail="Failed to load thread history")
@@ -3017,12 +3037,25 @@ def _itinerary_to_markdown(itinerary: dict) -> str:
 
 
 async def _get_latest_itinerary(thread_id: str, user_id: str) -> dict | None:
-    """Extract the latest itinerary from a thread's checkpointer state."""
+    """Extract the latest itinerary for a thread.
+
+    Primary source is the durable per-thread ``latest_itinerary`` record the
+    pipeline writes on every generation/regeneration/edit — pipeline cards
+    travel via one-shot payloads, so their data is not in message text.
+    Falls back to scanning hydrated message state for legacy inline
+    ``<itinerary>`` tags."""
     user_tag = hashlib.sha256(user_id.encode()).hexdigest()[:12]
     if not thread_id.startswith(f"chat:{user_tag}:"):
         return None
     try:
-        values = await _read_thread_values(thread_id)
+        from payload_store import payload_store
+        record = await payload_store.get_thread_state(thread_id, "latest_itinerary")
+        if isinstance(record, dict) and record.get("days"):
+            return record
+    except Exception:  # noqa: BLE001, S110
+        pass
+    try:
+        values = await _read_thread_values(thread_id, user_id=user_id)
     except Exception:  # noqa: BLE001
         logger.warning("Failed to load state for export/share thread=%s", thread_id, exc_info=True)
         return None

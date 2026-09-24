@@ -1,9 +1,9 @@
+/// <reference types="google.maps" />
 'use client';
 
 import { useState, useEffect, useRef, useMemo } from 'react';
 import useSWR from 'swr';
-import { Map as MapLibreMap, Marker as MapLibreMarker, Popup as MapLibrePopup, LngLatBounds } from 'maplibre-gl';
-import 'maplibre-gl/dist/maplibre-gl.css';
+import { setOptions, importLibrary } from '@googlemaps/js-api-loader';
 import { useTranslations } from 'next-intl';
 import type { DayPlan, TimeSlot } from '@/lib/types';
 import { useLocale } from '@/lib/useLocale';
@@ -32,6 +32,10 @@ const CHART_HEX: Record<number, string> = {
   2: '#4d8a62',
   3: '#c29438',
 };
+
+// Material "place" teardrop glyph — scaled to roughly the old 28px DOM pin.
+const PIN_PATH =
+  'M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z';
 
 interface MapMarker {
   lat: number;
@@ -96,35 +100,30 @@ async function geocodeDay(day: DayPlan): Promise<DayPlan> {
   return correctedDay;
 }
 
-export function createMarkerElement(slotIndex: number, approximate = false): HTMLElement {
-  const color = CHART_HEX[slotIndex] ?? CHART_HEX[1];
-  const el = document.createElement('div');
-  el.className = 'flex items-center justify-center cursor-pointer';
-  el.style.width = '28px';
-  el.style.height = '28px';
-  el.style.borderRadius = '50% 50% 50% 0';
-  el.style.transform = 'rotate(-45deg)';
-  // Approximate pins render hollow/dashed — visibly less certain than exact.
-  el.style.background = approximate ? `${color}59` : color;
-  el.style.border = approximate ? `2px dashed ${color}` : '2px solid white';
-  el.style.boxShadow = '0 2px 6px rgba(0,0,0,0.2)';
-  const span = document.createElement('span');
-  span.style.transform = 'rotate(45deg)';
-  span.style.fontSize = '11px';
-  span.style.fontWeight = 'bold';
-  span.style.color = 'white';
-  span.style.fontFamily = 'monospace';
-  span.textContent = String(slotIndex);
-  el.appendChild(span);
-  return el;
+// Approximate pins render semi-transparent — visibly less certain than exact.
+export function markerIcon(slotIndex: number, approximate = false): google.maps.Symbol {
+  return {
+    path: PIN_PATH,
+    fillColor: CHART_HEX[slotIndex] ?? CHART_HEX[1],
+    fillOpacity: approximate ? 0.35 : 1,
+    strokeColor: '#ffffff',
+    strokeWeight: 2,
+    scale: 1.5,
+    anchor: new google.maps.Point(12, 22),
+    labelOrigin: new google.maps.Point(12, 9),
+  };
 }
 
 export default function ItineraryMap({ days, destination, currency, activeDay, onMarkerClick, onDaySelect }: ItineraryMapProps) {
   const t = useTranslations('itinerary');
   const locale = useLocale();
+  const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
   const mapContainerRef = useRef<HTMLDivElement>(null);
-  const mapRef = useRef<MapLibreMap | null>(null);
-  const markersRef = useRef<MapLibreMarker[]>([]);
+  const mapRef = useRef<google.maps.Map | null>(null);
+  const markersRef = useRef<google.maps.Marker[]>([]);
+  const polylinesRef = useRef<google.maps.Polyline[]>([]);
+  const infoWindowRef = useRef<google.maps.InfoWindow | null>(null);
+  const observerRef = useRef<ResizeObserver | null>(null);
 
   const daysWithCoords = useMemo(
     () => days.filter((d) => extractMarkers(d).length > 0),
@@ -132,20 +131,10 @@ export default function ItineraryMap({ days, destination, currency, activeDay, o
   );
   const hasAnyCoords = daysWithCoords.length > 0;
 
-  // MapLibre requires WebGL — some corporate/locked-down browsers disable
-  // it entirely, in which case the map silently never paints (canvas stays
-  // blank, no error event fires). Probe for it directly rather than
-  // constructing a Map and hoping.
-  const webglSupported = useMemo(() => {
-    if (typeof document === 'undefined') return true;
-    try {
-      const canvas = document.createElement('canvas');
-      return !!(canvas.getContext('webgl2') || canvas.getContext('webgl'));
-    } catch {
-      return false;
-    }
-  }, []);
   const [mapFailed, setMapFailed] = useState(false);
+  // Marker/route/camera updates must re-run once the async API load resolves —
+  // without this flag they fire before mapRef is set and pins never appear.
+  const [mapReady, setMapReady] = useState(false);
 
   const [internalSelectedDay, setInternalSelectedDay] = useState(0);
   const isControlled = activeDay !== undefined;
@@ -179,166 +168,153 @@ export default function ItineraryMap({ days, destination, currency, activeDay, o
   const currentDay = geocodedDay ?? currentDayRaw;
   const currentMarkers = currentDay ? extractMarkers(currentDay) : [];
 
-  // Create map once on mount
+  // Load the Maps JS API + create the map once on mount. Without a key we
+  // render the link-list fallback — no watermark, no broken tiles.
   useEffect(() => {
-    if (!hasAnyCoords || !webglSupported || !mapContainerRef.current) return;
+    if (!hasAnyCoords || !apiKey || !mapContainerRef.current) return;
+    let cancelled = false;
 
-    // A vector style (glyphs + sprite + vector tiles = 3 separate origins)
-    // has three independent ways to fail silently into a grey box. A raster
-    // tile source is a single PNG fetch per tile — far more resilient to
-    // ad-blockers, flaky networks, and browsers without WebGL2.
-    const map = new MapLibreMap({
-      container: mapContainerRef.current,
-      style: {
-        version: 8,
-        sources: {
-          'raster-tiles': {
-            type: 'raster',
-            tiles: [
-              'https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
-              'https://b.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
-              'https://c.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
-              'https://d.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
-            ],
-            tileSize: 256,
-            attribution: '\u00A9 OpenStreetMap contributors \u00A9 CARTO',
-          },
-        },
-        layers: [
-          { id: 'background', type: 'background', paint: { 'background-color': '#f5f5f3' } },
-          { id: 'raster-tiles', type: 'raster', source: 'raster-tiles', minzoom: 0, maxzoom: 20 },
-        ],
-      },
-      center: currentMarkers.length > 0 ? [currentMarkers[0].lng, currentMarkers[0].lat] : [0, 0],
-      zoom: 12,
-    });
+    // Give the loader a fair chance before falling back — a slow connection
+    // shouldn't flash the unavailable state.
+    const failTimer = setTimeout(() => {
+      if (!cancelled) setMapFailed(true);
+    }, 10000);
 
-    mapRef.current = map;
-    setMapFailed(false);
-    map.on('error', (e) => {
-      console.error('ItineraryMap tile/style error', e?.error ?? e);
-    });
+    setOptions({ key: apiKey, v: 'weekly' });
+    importLibrary('maps')
+      .then(() => {
+        if (cancelled || !mapContainerRef.current) return;
+        const map = new google.maps.Map(mapContainerRef.current, {
+          center:
+            currentMarkers.length > 0
+              ? { lat: currentMarkers[0].lat, lng: currentMarkers[0].lng }
+              : { lat: 0, lng: 0 },
+          zoom: 12,
+          mapTypeControl: false,
+          streetViewControl: false,
+          fullscreenControl: false,
+          clickableIcons: false,
+        });
+        mapRef.current = map;
+        clearTimeout(failTimer);
+        setMapFailed(false);
+        setMapReady(true);
 
-    // Give the tiles a fair chance to load before treating the map as
-    // failed — a real load() clears this before it ever fires.
-    const failTimer = setTimeout(() => setMapFailed(true), 10000);
-    map.once('load', () => clearTimeout(failTimer));
-
-    // MapLibre never resizes itself: a map constructed before the container
-    // reaches its final layout (collapsible sections, dialog entrance
-    // animations) stays blank until resize() is called.
-    const raf = requestAnimationFrame(() => map.resize());
-    const observer =
-      typeof ResizeObserver !== 'undefined'
-        ? new ResizeObserver(() => map.resize())
-        : null;
-    observer?.observe(mapContainerRef.current);
+        // Google Maps doesn't always re-layout when the container is revealed
+        // inside a collapsed section/dialog — nudge it on size changes.
+        observerRef.current =
+          typeof ResizeObserver !== 'undefined'
+            ? new ResizeObserver(() => google.maps.event.trigger(map, 'resize'))
+            : null;
+        observerRef.current?.observe(mapContainerRef.current);
+      })
+      .catch((err: unknown) => {
+        console.error('Google Maps failed to load', err);
+        if (!cancelled) setMapFailed(true);
+      });
 
     return () => {
+      cancelled = true;
       clearTimeout(failTimer);
-      cancelAnimationFrame(raf);
-      observer?.disconnect();
-      markersRef.current.forEach((m) => m.remove());
+      observerRef.current?.disconnect();
+      observerRef.current = null;
+      markersRef.current.forEach((m) => m.setMap(null));
       markersRef.current = [];
-      map.remove();
+      polylinesRef.current.forEach((p) => p.setMap(null));
+      polylinesRef.current = [];
+      infoWindowRef.current?.close();
+      infoWindowRef.current = null;
       mapRef.current = null;
+      setMapReady(false);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasAnyCoords]);
 
-  // Update markers and fly when day changes
+  // Update markers, route polyline and camera when the selected day changes
   useEffect(() => {
-    if (!mapRef.current || currentMarkers.length === 0) return;
     const map = mapRef.current;
+    if (!map || currentMarkers.length === 0) return;
 
-    const updateMap = () => {
-      markersRef.current.forEach((m) => m.remove());
-      markersRef.current = [];
+    markersRef.current.forEach((m) => m.setMap(null));
+    markersRef.current = [];
+    polylinesRef.current.forEach((p) => p.setMap(null));
+    polylinesRef.current = [];
 
-      if (map.getLayer('route')) map.removeLayer('route');
-      if (map.getSource('route')) map.removeSource('route');
+    const infoWindow = new google.maps.InfoWindow();
+    infoWindowRef.current = infoWindow;
 
-      for (const m of currentMarkers) {
-        const el = createMarkerElement(m.slotIndex, m.approximate);
+    for (const m of currentMarkers) {
+      const marker = new google.maps.Marker({
+        position: { lat: m.lat, lng: m.lng },
+        map,
+        icon: markerIcon(m.slotIndex, m.approximate),
+        label: { text: String(m.slotIndex), color: '#ffffff', fontSize: '11px', fontWeight: 'bold' },
+      });
 
-        const popup = new MapLibrePopup({ offset: 25 }).setHTML(`
+      marker.addListener('click', () => {
+        infoWindow.setContent(`
           <div class="font-sans min-w-[180px] p-1">
-            <p class="font-semibold text-sm text-foreground">${m.activity}</p>
-            <p class="text-xs text-muted-foreground mt-0.5">${t(m.slot)} &middot; ${m.location}</p>
-            ${m.approximate ? `<p class="text-[10px] text-muted-foreground/70 italic mt-0.5">${t('approxLocation')}</p>` : ''}
-            <div class="flex items-center gap-3 text-xs text-muted-foreground mt-1">
-              ${m.duration ? `<span>\u23F1 ${m.duration}</span>` : ''}
-              ${m.cost_usd > 0 ? `<span>\u{1F4B0} ${formatCurrency(m.cost_usd, locale, undefined, currency)}</span>` : ''}
+            <p class="font-semibold text-sm">${m.activity}</p>
+            <p class="text-xs mt-0.5">${t(m.slot)} &middot; ${m.location}</p>
+            ${m.approximate ? `<p class="text-[10px] italic mt-0.5">${t('approxLocation')}</p>` : ''}
+            <div class="flex items-center gap-3 text-xs mt-1">
+              ${m.duration ? `<span>⏱ ${m.duration}</span>` : ''}
+              ${m.cost_usd > 0 ? `<span>💰 ${formatCurrency(m.cost_usd, locale, undefined, currency)}</span>` : ''}
             </div>
-            <a href="https://www.google.com/maps/search/?api=1&query=${m.lat},${m.lng}" target="_blank" rel="noopener noreferrer" class="text-xs text-primary hover:text-primary/80 mt-1.5 inline-block">
+            <a href="https://www.google.com/maps/search/?api=1&query=${m.lat},${m.lng}" target="_blank" rel="noopener noreferrer" class="text-xs mt-1.5 inline-block">
               ${t('openInMaps')} &rarr;
             </a>
           </div>
         `);
+        infoWindow.open({ anchor: marker, map });
+        onMarkerClick?.(m.day);
+      });
 
-        const marker = new MapLibreMarker({ element: el })
-          .setLngLat([m.lng, m.lat])
-          .setPopup(popup)
-          .addTo(map);
-
-        if (onMarkerClick) {
-          el.addEventListener('click', () => onMarkerClick(m.day));
-        }
-
-        markersRef.current.push(marker);
-      }
-
-      if (currentMarkers.length >= 2) {
-        const features = [];
-        for (let i = 0; i < currentMarkers.length - 1; i++) {
-          const from = currentMarkers[i];
-          const to = currentMarkers[i + 1];
-          features.push({
-            type: 'Feature' as const,
-            geometry: {
-              type: 'LineString' as const,
-              coordinates: [[from.lng, from.lat], [to.lng, to.lat]],
-            },
-            properties: {
-              color: CHART_HEX[to.slotIndex] ?? CHART_HEX[1],
-            },
-          });
-        }
-
-        map.addSource('route', {
-          type: 'geojson',
-          data: { type: 'FeatureCollection' as const, features },
-        });
-        map.addLayer({
-          id: 'route',
-          type: 'line',
-          source: 'route',
-          layout: {
-            'line-join': 'round',
-            'line-cap': 'round',
-          },
-          paint: {
-            'line-color': ['get', 'color'],
-            'line-width': 3,
-            'line-dasharray': [2, 1],
-          },
-        });
-      }
-
-      const bounds = new LngLatBounds();
-      for (const m of currentMarkers) {
-        bounds.extend([m.lng, m.lat]);
-      }
-      map.fitBounds(bounds, { padding: 60, maxZoom: 14, duration: 1000 });
-    };
-
-    if (map.loaded()) {
-      updateMap();
-    } else {
-      map.once('load', updateMap);
+      markersRef.current.push(marker);
     }
+
+    // Dashed route between consecutive slots, each segment colored by the
+    // destination slot's color (same scheme as the old MapLibre layer).
+    for (let i = 0; i < currentMarkers.length - 1; i++) {
+      const from = currentMarkers[i];
+      const to = currentMarkers[i + 1];
+      polylinesRef.current.push(
+        new google.maps.Polyline({
+          path: [
+            { lat: from.lat, lng: from.lng },
+            { lat: to.lat, lng: to.lng },
+          ],
+          geodesic: true,
+          strokeOpacity: 0,
+          icons: [
+            {
+              icon: {
+                path: 'M 0,-1 0,1',
+                strokeColor: CHART_HEX[to.slotIndex] ?? CHART_HEX[1],
+                strokeOpacity: 1,
+                scale: 3,
+              },
+              offset: '0',
+              repeat: '14px',
+            },
+          ],
+          map,
+        })
+      );
+    }
+
+    const bounds = new google.maps.LatLngBounds();
+    for (const m of currentMarkers) {
+      bounds.extend({ lat: m.lat, lng: m.lng });
+    }
+    map.fitBounds(bounds, 60);
+    // Single-point bounds zoom to max street level — cap at city zoom.
+    google.maps.event.addListenerOnce(map, 'bounds_changed', () => {
+      const zoom = map.getZoom();
+      if (zoom !== undefined && zoom > 14) map.setZoom(14);
+    });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentDay?.day, geocodedDay, destination, daysSig]);
+  }, [mapReady, currentDay?.day, geocodedDay, destination, daysSig]);
 
   if (!hasAnyCoords) {
     return (
@@ -382,7 +358,7 @@ export default function ItineraryMap({ days, destination, currency, activeDay, o
           className="w-full h-[360px] rounded-lg border border-border overflow-hidden"
           aria-label={t('mapForDay', { day: currentDay?.day ?? 1, destination })}
         />
-        {(!webglSupported || mapFailed) && (
+        {(!apiKey || mapFailed) && (
           <div className="absolute inset-0 rounded-lg border border-border bg-muted/95 p-4 space-y-2 overflow-y-auto">
             <p className="text-sm text-muted-foreground">{t('mapUnavailable')}</p>
             <ul className="space-y-1">

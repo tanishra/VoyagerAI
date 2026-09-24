@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { MapPin, Clock, DollarSign, ChevronRight, Bus, Train, Footprints, Car, Navigation } from 'lucide-react';
+import { MapPin, Clock, ChevronRight, Bus, Train, Footprints, Car, Navigation } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import type { DayPlan } from '@/lib/types';
 import { useLocale } from '@/lib/useLocale';
@@ -155,7 +155,6 @@ export default function TimelineView({ days, destination, currency: itineraryCur
                                 )}
                                 {slot.cost_usd != null && slot.cost_usd > 0 && (
                                   <span className="flex items-center gap-1">
-                                    <DollarSign className="w-3 h-3" />
                                     {formatCurrency(slot.cost_usd, locale, undefined, currency)}
                                   </span>
                                 )}

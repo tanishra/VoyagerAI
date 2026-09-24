@@ -16,6 +16,14 @@ from geocode_cache import GeocodeCache
 # ---------------------------------------------------------------------------
 
 
+@pytest.fixture(autouse=True)
+def _no_google_key(monkeypatch):
+    """Nominatim tests must not see a real GOOGLE_MAPS_API_KEY from .env —
+    the Google-first path would consume the mocked HTTP client. Tests for
+    the Google path re-patch this attribute themselves."""
+    monkeypatch.setattr("geocode_service.settings.GOOGLE_MAPS_API_KEY", "")
+
+
 @pytest.fixture
 def fresh_cache():
     """A GeocodeCache with no Redis connection — uses in-memory fallback."""
@@ -249,6 +257,105 @@ class TestGeocodeService:
         _, empty_ttl = geocode_service._miss_cache["empty query"]
         assert err_ttl == geocode_service._MISS_ERR_TTL
         assert empty_ttl == geocode_service._MISS_TTL
+
+    @pytest.mark.asyncio
+    async def test_google_geocode_success_skips_nominatim(self, fresh_cache):
+        """GOOGLE_MAPS_API_KEY set → Google result returned and cached, Nominatim untouched."""
+        google_response = MagicMock()
+        google_response.status_code = 200
+        google_response.json.return_value = {
+            "status": "OK",
+            "results": [{"geometry": {"location": {"lat": 48.8584, "lng": 2.2945}}}],
+        }
+
+        google_client = AsyncMock()
+        google_client.get = AsyncMock(return_value=google_response)
+        google_client.__aenter__ = AsyncMock(return_value=google_client)
+        google_client.__aexit__ = AsyncMock(return_value=None)
+
+        import geocode_service
+        geocode_service._miss_cache.clear()
+
+        with (
+            patch("geocode_service.geocode_cache", fresh_cache),
+            patch("geocode_service.httpx.AsyncClient", return_value=google_client),
+            patch("geocode_service.settings.GOOGLE_MAPS_API_KEY", "test-key"),
+            patch("geocode_service._throttle", new_callable=AsyncMock) as mock_throttle,
+        ):
+            from geocode_service import geocode
+
+            result = await geocode("Eiffel Tower, Paris, France")
+            assert result == {"lat": pytest.approx(48.8584), "lng": pytest.approx(2.2945)}
+            mock_throttle.assert_not_called()  # Nominatim never reached
+            cached = await fresh_cache.get("Eiffel Tower, Paris, France")
+            assert cached is not None
+
+    @pytest.mark.asyncio
+    async def test_google_zero_results_falls_back_to_nominatim(self, fresh_cache):
+        """Google returns ZERO_RESULTS → Nominatim fallback still applies."""
+        calls: list[dict] = []
+
+        def make_client():
+            client = AsyncMock()
+            async def get(url, **kwargs):
+                calls.append(kwargs.get("params", {}))
+                resp = MagicMock()
+                resp.status_code = 200
+                if "maps.googleapis.com" in url:
+                    resp.json.return_value = {"status": "ZERO_RESULTS", "results": []}
+                else:
+                    resp.json.return_value = [{"lat": "48.85", "lon": "2.35"}]
+                return resp
+            client.get = get
+            client.__aenter__ = AsyncMock(return_value=client)
+            client.__aexit__ = AsyncMock(return_value=None)
+            return client
+
+        import geocode_service
+        geocode_service._miss_cache.clear()
+
+        with (
+            patch("geocode_service.geocode_cache", fresh_cache),
+            patch("geocode_service.httpx.AsyncClient", side_effect=lambda **kw: make_client()),
+            patch("geocode_service.settings.GOOGLE_MAPS_API_KEY", "test-key"),
+            patch("geocode_service._throttle", new_callable=AsyncMock),
+        ):
+            from geocode_service import geocode
+
+            result = await geocode("Some Obscure Place, Paris")
+            assert result == {"lat": pytest.approx(48.85), "lng": pytest.approx(2.35)}
+            assert len(calls) == 2  # google then nominatim
+
+    @pytest.mark.asyncio
+    async def test_google_failure_falls_back_to_nominatim(self, fresh_cache):
+        """Google raises → Nominatim still tried; never propagates."""
+        def make_client():
+            client = AsyncMock()
+            async def get(url, **kwargs):
+                if "maps.googleapis.com" in url:
+                    raise RuntimeError("google down")
+                resp = MagicMock()
+                resp.status_code = 200
+                resp.json.return_value = [{"lat": "40.71", "lon": "-74.0"}]
+                return resp
+            client.get = get
+            client.__aenter__ = AsyncMock(return_value=client)
+            client.__aexit__ = AsyncMock(return_value=None)
+            return client
+
+        import geocode_service
+        geocode_service._miss_cache.clear()
+
+        with (
+            patch("geocode_service.geocode_cache", fresh_cache),
+            patch("geocode_service.httpx.AsyncClient", side_effect=lambda **kw: make_client()),
+            patch("geocode_service.settings.GOOGLE_MAPS_API_KEY", "test-key"),
+            patch("geocode_service._throttle", new_callable=AsyncMock),
+        ):
+            from geocode_service import geocode
+
+            result = await geocode("Somewhere, NYC")
+            assert result == {"lat": pytest.approx(40.71), "lng": pytest.approx(-74.0)}
 
     @pytest.mark.asyncio
     async def test_throttle_enforces_interval(self):

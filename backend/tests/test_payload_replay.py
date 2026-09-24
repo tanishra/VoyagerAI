@@ -140,7 +140,7 @@ def _wire(monkeypatch, messages, records: dict):
     import main as main_module
     import payload_store as ps_module
 
-    async def fake_read(tid, checkpoint_id=None):
+    async def fake_read(tid, checkpoint_id=None, user_id=None):
         return {"messages": messages}
 
     async def fake_get_state(tid, key):
@@ -244,7 +244,7 @@ class TestHistoryReplay:
         import main as main_module
         import payload_store as ps_module
 
-        async def fake_read(tid, checkpoint_id=None):
+        async def fake_read(tid, checkpoint_id=None, user_id=None):
             return {"messages": [_Msg("human", "hi"), _tool_msg("x"), _Msg("ai", "ok")]}
 
         async def boom(tid, key):

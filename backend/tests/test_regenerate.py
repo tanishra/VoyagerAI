@@ -239,7 +239,7 @@ class TestHistoryWithCheckpointId:
                 self.type = msg_type
                 self.content = content
 
-        async def fake_read(thread_id, checkpoint_id=None):
+        async def fake_read(thread_id, checkpoint_id=None, user_id=None):
             # Verify checkpoint_id is forwarded to the checkpoint reader
             assert checkpoint_id == "branch-xyz"
             return {
@@ -268,7 +268,7 @@ class TestHistoryWithCheckpointId:
                 self.type = msg_type
                 self.content = content
 
-        async def fake_read(thread_id, checkpoint_id=None):
+        async def fake_read(thread_id, checkpoint_id=None, user_id=None):
             # checkpoint_id should NOT be set for a normal history read
             assert checkpoint_id is None
             return {

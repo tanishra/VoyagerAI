@@ -19,6 +19,10 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: str | None = None
     GOOGLE_GENAI_USE_VERTEXAI: bool = False
 
+    # Google Maps Platform — server-side Geocoding API. Restrict the key by
+    # server IP in GCP. When unset, geocoding falls back to free Nominatim.
+    GOOGLE_MAPS_API_KEY: str | None = None
+
     TAVILY_API_KEY: str | None = None
 
     # LLM provider config — LiteLLM model strings

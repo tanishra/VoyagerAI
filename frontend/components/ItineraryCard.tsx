@@ -1,6 +1,6 @@
 'use client';
 
-import { MoreHorizontal, Printer, FileJson, FileText, Share2, Check, Map as MapIcon, ChevronDown, Calendar, Pencil, ExternalLink, AlertTriangle, PencilRuler } from 'lucide-react';
+import { MoreHorizontal, Printer, FileText, Share2, Check, Map as MapIcon, ChevronDown, Calendar, Pencil, ExternalLink, AlertTriangle, PencilRuler } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import { useTranslations } from 'next-intl';
 import dynamic from 'next/dynamic';
@@ -79,14 +79,14 @@ export default function ItineraryCard({ itinerary, threadId, printMode = false, 
     }
   }
 
-  async function handleExport(format: 'json' | 'markdown' | 'ical') {
+  async function handleExport(format: 'markdown' | 'ical') {
     if (!threadId) return;
     try {
       const blob = await exportItinerary(threadId, format);
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      const ext = format === 'json' ? 'json' : format === 'markdown' ? 'md' : 'ics';
+      const ext = format === 'markdown' ? 'md' : 'ics';
       a.download = `${itinerary.destination?.replace(/[^a-zA-Z0-9]/g, '_') || 'itinerary'}.${ext}`;
       document.body.appendChild(a);
       a.click();
@@ -207,13 +207,6 @@ export default function ItineraryCard({ itinerary, threadId, printMode = false, 
                 >
                   <Printer className="w-3.5 h-3.5" />
                   {t('printPdf')}
-                </button>
-                <button
-                  onClick={() => handleExport('json')}
-                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-foreground hover:bg-muted transition-colors cursor-pointer"
-                >
-                  <FileJson className="w-3.5 h-3.5" />
-                  {t('downloadJson')}
                 </button>
                 <button
                   onClick={() => handleExport('markdown')}

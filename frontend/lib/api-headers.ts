@@ -1,4 +1,4 @@
-import { getCsrfHeaders } from './csrf';
+import { getCsrfHeaders, getCsrfToken } from './csrf';
 import { getSessionToken } from './session-token';
 
 /**
@@ -43,6 +43,10 @@ export function withAuthParams(url: string): string {
   const sessionToken = getSessionToken();
   if (sessionToken) {
     u.searchParams.set('session_token', sessionToken);
+  }
+  const csrfToken = getCsrfToken();
+  if (csrfToken) {
+    u.searchParams.set('csrf_token', csrfToken);
   }
   const apiKey = process.env.NEXT_PUBLIC_API_AUTH_KEY;
   if (apiKey) {

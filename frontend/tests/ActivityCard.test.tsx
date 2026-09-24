@@ -47,13 +47,13 @@ describe('ActivityCard', () => {
   });
 
   it('renders activity name in collapsed state', () => {
-    setMock('wikimedia:Senso-ji Temple Tokyo', { data: null, isLoading: false });
+    setMock('activity-image:Senso-ji Temple:Asakusa:Tokyo', { data: null, isLoading: false });
     render(<ActivityCard slot={makeSlot()} slotKey="morning" destination="Tokyo" />);
     expect(screen.getByText('Senso-ji Temple')).toBeInTheDocument();
   });
 
   it('renders location, cost, duration in collapsed state', () => {
-    setMock('wikimedia:Senso-ji Temple Tokyo', { data: null, isLoading: false });
+    setMock('activity-image:Senso-ji Temple:Asakusa:Tokyo', { data: null, isLoading: false });
     render(<ActivityCard slot={makeSlot({ cost_usd: 10, duration: '3h' })} slotKey="afternoon" destination="Tokyo" />);
     expect(screen.getByText('Asakusa')).toBeInTheDocument();
     expect(screen.getByText('3h')).toBeInTheDocument();
@@ -61,25 +61,25 @@ describe('ActivityCard', () => {
   });
 
   it('shows skeleton placeholder while image is loading', () => {
-    setMock('wikimedia:Senso-ji Temple Tokyo', { data: undefined, isLoading: true });
+    setMock('activity-image:Senso-ji Temple:Asakusa:Tokyo', { data: undefined, isLoading: true });
     const { container } = render(<ActivityCard slot={makeSlot()} slotKey="morning" destination="Tokyo" />);
     expect(container.querySelector('.animate-pulse')).toBeInTheDocument();
   });
 
   it('shows thumbnail image when loaded', () => {
-    setMock('wikimedia:Senso-ji Temple Tokyo', { data: 'https://example.com/image.jpg', isLoading: false });
+    setMock('activity-image:Senso-ji Temple:Asakusa:Tokyo', { data: 'https://example.com/image.jpg', isLoading: false });
     render(<ActivityCard slot={makeSlot()} slotKey="morning" destination="Tokyo" />);
     expect(screen.getByAltText('Senso-ji Temple')).toBeInTheDocument();
   });
 
   it('shows MapPin fallback when no image found', () => {
-    setMock('wikimedia:Senso-ji Temple Tokyo', { data: null, isLoading: false });
+    setMock('activity-image:Senso-ji Temple:Asakusa:Tokyo', { data: null, isLoading: false });
     const { container } = render(<ActivityCard slot={makeSlot()} slotKey="morning" destination="Tokyo" />);
     expect(container.querySelector('.lucide-map-pin')).toBeInTheDocument();
   });
 
   it('clicking card toggles expanded state', () => {
-    setMock('wikimedia:Senso-ji Temple Tokyo', { data: null, isLoading: false });
+    setMock('activity-image:Senso-ji Temple:Asakusa:Tokyo', { data: null, isLoading: false });
     render(<ActivityCard slot={makeSlot()} slotKey="morning" destination="Tokyo" />);
     const button = screen.getByRole('button');
     expect(button).toHaveAttribute('aria-expanded', 'false');
@@ -88,7 +88,7 @@ describe('ActivityCard', () => {
   });
 
   it('shows Wikipedia description when expanded and loaded', async () => {
-    setMock('wikimedia:Senso-ji Temple Tokyo', { data: null, isLoading: false });
+    setMock('activity-image:Senso-ji Temple:Asakusa:Tokyo', { data: null, isLoading: false });
     setMock('wikipedia:Senso-ji Temple', { data: 'An ancient Buddhist temple in Tokyo.', isLoading: false });
     render(<ActivityCard slot={makeSlot()} slotKey="morning" destination="Tokyo" />);
     fireEvent.click(screen.getByRole('button'));
@@ -98,7 +98,7 @@ describe('ActivityCard', () => {
   });
 
   it('hides description section when Wikipedia returns null', () => {
-    setMock('wikimedia:Senso-ji Temple Tokyo', { data: null, isLoading: false });
+    setMock('activity-image:Senso-ji Temple:Asakusa:Tokyo', { data: null, isLoading: false });
     setMock('wikipedia:Senso-ji Temple', { data: null, isLoading: false });
     render(<ActivityCard slot={makeSlot()} slotKey="morning" destination="Tokyo" />);
     fireEvent.click(screen.getByRole('button'));
@@ -106,7 +106,7 @@ describe('ActivityCard', () => {
   });
 
   it('shows mini-map when lat/lng exist and card is expanded', () => {
-    setMock('wikimedia:Senso-ji Temple Tokyo', { data: null, isLoading: false });
+    setMock('activity-image:Senso-ji Temple:Asakusa:Tokyo', { data: null, isLoading: false });
     setMock('wikipedia:Senso-ji Temple', { data: null, isLoading: false });
     render(<ActivityCard slot={makeSlot({ lat: 35.7148, lng: 139.7967 })} slotKey="morning" destination="Tokyo" />);
     fireEvent.click(screen.getByRole('button'));
@@ -114,7 +114,7 @@ describe('ActivityCard', () => {
   });
 
   it('hides mini-map when no lat/lng', () => {
-    setMock('wikimedia:Senso-ji Temple Tokyo', { data: null, isLoading: false });
+    setMock('activity-image:Senso-ji Temple:Asakusa:Tokyo', { data: null, isLoading: false });
     setMock('wikipedia:Senso-ji Temple', { data: null, isLoading: false });
     render(<ActivityCard slot={makeSlot()} slotKey="morning" destination="Tokyo" />);
     fireEvent.click(screen.getByRole('button'));

@@ -345,3 +345,88 @@ class TestExportEndpoints:
         assert "BEGIN:VEVENT" in body
         assert "END:VCALENDAR" in body
         assert "Eiffel Tower" in body or "Morning Activity" in body or "Check-in" in body
+
+
+class TestCsrfQueryParam:
+    """Mutations may supply the CSRF token as a query param — custom headers
+    force a CORS preflight that some hosting proxies break (see withAuthParams)."""
+
+    def test_share_csrf_via_query_param(self, client):
+        thread_id = _make_scoped_thread_id()
+        resp = client.post(f"/share/{thread_id}?csrf_token=test-csrf-token")
+        assert resp.status_code == 200
+        assert "share_url" in resp.json()
+
+    def test_share_csrf_query_param_mismatch(self, client):
+        thread_id = _make_scoped_thread_id()
+        resp = client.post(f"/share/{thread_id}?csrf_token=wrong-token")
+        assert resp.status_code == 403
+
+    def test_csrf_403_sets_cookie_for_retry(self, fresh_share_store):
+        """A first-ever mutation without the cookie gets 403 AND the cookie,
+        so a retry can succeed (previously the cookie was never set on 403)."""
+        import main as main_module
+
+        session_id = _create_dev_session()
+        with (
+            patch.object(main_module, "share_store", fresh_share_store),
+            patch.object(main_module, "_get_latest_itinerary", AsyncMock(return_value=_make_itinerary())),
+            TestClient(main_module.app) as c,
+        ):
+            c.cookies.set("voyager_session", session_id)
+            resp = c.post(f"/share/{_make_scoped_thread_id()}")
+            assert resp.status_code == 403
+            assert "voyager_csrf" in resp.headers.get("set-cookie", "")
+
+
+class TestGetLatestItinerary:
+    """_get_latest_itinerary prefers the durable per-thread latest_itinerary
+    record (pipeline cards never enter message text) and falls back to
+    scanning hydrated state for inline <itinerary> tags."""
+
+    @pytest.mark.asyncio
+    async def test_reads_latest_itinerary_record(self, monkeypatch):
+        import main as main_module
+        import payload_store as ps_module
+
+        async def fake_get(tid, key):
+            assert key == "latest_itinerary"
+            return _make_itinerary()
+
+        async def boom(*a, **k):
+            raise AssertionError("checkpoint read should not be reached")
+
+        monkeypatch.setattr(ps_module.payload_store, "get_thread_state", fake_get)
+        monkeypatch.setattr(main_module, "_read_thread_values", boom)
+
+        result = await main_module._get_latest_itinerary(_make_scoped_thread_id(), "dev@localhost")
+        assert result["destination"] == "Paris, France"
+
+    @pytest.mark.asyncio
+    async def test_falls_back_to_message_scan(self, monkeypatch):
+        import json
+
+        import main as main_module
+        import payload_store as ps_module
+
+        async def fake_get(tid, key):
+            return None
+
+        class _Msg:
+            type = "ai"
+            content = f"here: <itinerary>{json.dumps(_make_itinerary())}</itinerary>"
+
+        async def fake_read(tid, checkpoint_id=None, user_id=None):
+            return {"messages": [_Msg()]}
+
+        monkeypatch.setattr(ps_module.payload_store, "get_thread_state", fake_get)
+        monkeypatch.setattr(main_module, "_read_thread_values", fake_read)
+
+        result = await main_module._get_latest_itinerary(_make_scoped_thread_id(), "dev@localhost")
+        assert result["destination"] == "Paris, France"
+
+    @pytest.mark.asyncio
+    async def test_rejects_foreign_thread(self, monkeypatch):
+        import main as main_module
+
+        assert await main_module._get_latest_itinerary("chat:otheruser1234:t", "dev@localhost") is None

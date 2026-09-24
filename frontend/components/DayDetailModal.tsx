@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Bus, Home, DollarSign, Lightbulb } from 'lucide-react';
+import { X, Bus, Home, Lightbulb } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import type { DayPlan } from '@/lib/types';
 import { useLocale } from '@/lib/useLocale';

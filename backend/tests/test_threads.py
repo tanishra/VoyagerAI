@@ -281,7 +281,7 @@ class TestThreadHistoryEndpoint:
 
         import main as main_module
 
-        async def _no_values(thread_id, checkpoint_id=None):
+        async def _no_values(thread_id, checkpoint_id=None, user_id=None):
             return None
 
         monkeypatch.setattr(main_module, "_read_thread_values", _no_values)
@@ -299,7 +299,7 @@ class TestThreadHistoryEndpoint:
 
         import main as main_module
 
-        async def _values(tid, checkpoint_id=None):
+        async def _values(tid, checkpoint_id=None, user_id=None):
             return {
                 "messages": [
                     _Msg("human", "Plan a Tokyo trip"),
@@ -331,7 +331,7 @@ class TestThreadHistoryEndpoint:
 
         import main as main_module
 
-        async def _values(tid, checkpoint_id=None):
+        async def _values(tid, checkpoint_id=None, user_id=None):
             return {
                 "messages": [
                     _Msg("human", [
@@ -368,7 +368,7 @@ class TestThreadHistoryEndpoint:
 
         import main as main_module
 
-        async def _values(tid, checkpoint_id=None):
+        async def _values(tid, checkpoint_id=None, user_id=None):
             return {
                 "messages": [
                     _Msg("human", "Plan a Tokyo trip"),
@@ -420,25 +420,24 @@ class TestThreadAutoSave:
 
 
 class TestReadThreadValues:
-    """Lightweight checkpoint reader — no agent graph build."""
+    """Thread state reader — hydrates delta channels via the compiled graph."""
 
     @pytest.mark.asyncio
-    async def test_reads_channel_values(self, monkeypatch):
+    async def test_reads_state_values(self, monkeypatch):
         import main as main_module
 
-        class _Tup:
-            checkpoint: ClassVar = {"channel_values": {"messages": ["hello"]}}
+        class _Snapshot:
+            values: ClassVar[dict] = {"messages": ["hello"]}
 
-        class _Saver:
-            async def aget_tuple(self, config):
+        class _Agent:
+            async def aget_state(self, config):
                 assert config["configurable"]["thread_id"] == "t-mem"
-                return _Tup()
+                return _Snapshot()
 
-        async def _fake_checkpointer():
-            return _Saver()
+        async def _fake_agent(**kwargs):
+            return _Agent()
 
-        import agents.deep_agent as da
-        monkeypatch.setattr(da, "create_checkpointer", _fake_checkpointer)
+        monkeypatch.setattr(main_module, "create_chat_agent", _fake_agent)
 
         values = await main_module._read_thread_values("t-mem")
         assert values == {"messages": ["hello"]}
@@ -449,19 +448,18 @@ class TestReadThreadValues:
 
         seen = {}
 
-        class _Tup:
-            checkpoint: ClassVar = {"channel_values": {"messages": []}}
+        class _Snapshot:
+            values: ClassVar[dict] = {"messages": []}
 
-        class _Saver:
-            async def aget_tuple(self, config):
+        class _Agent:
+            async def aget_state(self, config):
                 seen.update(config["configurable"])
-                return _Tup()
+                return _Snapshot()
 
-        async def _fake_checkpointer():
-            return _Saver()
+        async def _fake_agent(**kwargs):
+            return _Agent()
 
-        import agents.deep_agent as da
-        monkeypatch.setattr(da, "create_checkpointer", _fake_checkpointer)
+        monkeypatch.setattr(main_module, "create_chat_agent", _fake_agent)
 
         await main_module._read_thread_values("t1", checkpoint_id="cp-9")
         assert seen == {"thread_id": "t1", "checkpoint_id": "cp-9"}
@@ -470,14 +468,16 @@ class TestReadThreadValues:
     async def test_returns_none_for_missing_thread(self, monkeypatch):
         import main as main_module
 
-        class _Saver:
-            async def aget_tuple(self, config):
-                return None
+        class _Snapshot:
+            values: ClassVar[dict] = {}
 
-        async def _fake_checkpointer():
-            return _Saver()
+        class _Agent:
+            async def aget_state(self, config):
+                return _Snapshot()
 
-        import agents.deep_agent as da
-        monkeypatch.setattr(da, "create_checkpointer", _fake_checkpointer)
+        async def _fake_agent(**kwargs):
+            return _Agent()
+
+        monkeypatch.setattr(main_module, "create_chat_agent", _fake_agent)
 
         assert await main_module._read_thread_values("nope") is None

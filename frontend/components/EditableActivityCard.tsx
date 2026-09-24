@@ -1,6 +1,6 @@
 'use client';
 
-import { MapPin, Clock, DollarSign, X, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, GripVertical } from 'lucide-react';
+import { MapPin, Clock, X, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, GripVertical } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useLocale } from '@/lib/useLocale';
 import { formatCurrency } from '@/lib/format';
@@ -92,7 +92,6 @@ export default function EditableActivityCard({
           )}
           {slot.cost_usd != null && slot.cost_usd > 0 && (
             <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-medium ${colorClass} bg-current/5`}>
-              <DollarSign className="w-2.5 h-2.5" />
               {formatCurrency(slot.cost_usd, locale, undefined, currency)}
             </span>
           )}

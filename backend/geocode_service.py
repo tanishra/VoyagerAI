@@ -16,10 +16,12 @@ import time
 
 import httpx
 
+from config.settings import settings
 from geocode_cache import geocode_cache
 
 logger = logging.getLogger("travel_agent.geocode")
 
+_GOOGLE_GEOCODE_URL = "https://maps.googleapis.com/maps/api/geocode/json"
 _NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
 _USER_AGENT = "VoyagerAI/1.0 (travel itinerary planner)"
 _TIMEOUT = 5.0
@@ -93,7 +95,31 @@ async def geocode(query: str) -> dict | None:
         logger.debug("Geocode cache hit: %s → %s", query[:50], cached)
         return cached
 
-    # Cache miss — call Nominatim
+    # Cache miss — Google Geocoding first when a key is configured (far better
+    # hit rate on place names than Nominatim), then Nominatim as fallback.
+    if settings.GOOGLE_MAPS_API_KEY:
+        try:
+            async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+                resp = await client.get(
+                    _GOOGLE_GEOCODE_URL,
+                    params={"address": query, "key": settings.GOOGLE_MAPS_API_KEY},
+                )
+                if resp.status_code == 200:
+                    payload = resp.json()
+                    status = payload.get("status")
+                    if status == "OK" and payload.get("results"):
+                        loc = payload["results"][0]["geometry"]["location"]
+                        coords = {"lat": float(loc["lat"]), "lng": float(loc["lng"])}
+                        await geocode_cache.set(query, coords["lat"], coords["lng"])
+                        logger.info("Geocoded (google): %s → (%.4f, %.4f)", query[:60], coords["lat"], coords["lng"])
+                        return coords
+                    if status in ("REQUEST_DENIED", "INVALID_REQUEST"):
+                        logger.warning("Google Geocoding denied/invalid (%s) — check key restrictions", status)
+                else:
+                    logger.warning("Google Geocoding HTTP %d for query: %s", resp.status_code, query[:80])
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Google Geocoding failed for '%s': %s", query[:80], exc)
+
     await _throttle()
 
     try:

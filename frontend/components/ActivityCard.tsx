@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import useSWR from 'swr';
 import { motion, AnimatePresence } from 'framer-motion';
-import { MapPin, Clock, DollarSign, ChevronDown } from 'lucide-react';
+import { MapPin, Clock, ChevronDown } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import dynamic from 'next/dynamic';
 import type { TimeSlot } from '@/lib/types';
@@ -11,7 +11,7 @@ import { useLocale } from '@/lib/useLocale';
 import { formatCurrency } from '@/lib/format';
 import { useCurrency } from '@/lib/useCurrency';
 import type { Currency } from '@/lib/currency';
-import { fetchWikimediaImage } from '@/lib/wikimedia';
+import { fetchActivityImage } from '@/lib/wikimedia';
 import { fetchWikipediaDescription } from '@/lib/wikipedia';
 
 const ItineraryMap = dynamic(() => import('./ItineraryMap'), { ssr: false });
@@ -37,8 +37,8 @@ export default function ActivityCard({ slot, slotKey, destination, currency: pro
   const [expanded, setExpanded] = useState(false);
 
   const { data: imageUrl, isLoading: imageLoading } = useSWR(
-    `wikimedia:${slot.activity} ${destination}`,
-    () => fetchWikimediaImage(`${slot.activity} ${destination}`),
+    `activity-image:${slot.activity}:${slot.location}:${destination}`,
+    () => fetchActivityImage(slot.activity, slot.location, destination),
     { revalidateOnFocus: false, dedupingInterval: 600000 }
   );
 
@@ -94,7 +94,6 @@ export default function ActivityCard({ slot, slotKey, destination, currency: pro
               )}
               {slot.cost_usd != null && slot.cost_usd > 0 && (
                 <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-medium ${SLOT_COLORS[slotKey]} bg-current/5`}>
-                  <DollarSign className="w-2.5 h-2.5" />
                   {formatCurrency(slot.cost_usd, locale, undefined, currency)}
                 </span>
               )}
