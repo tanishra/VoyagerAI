@@ -536,8 +536,7 @@
     "otherPlaceholder": "अपना उत्तर लिखें...",
     "pickOne": "एक चुनें",
     "pickMany": "कई चुनें",
-    "prev": "पिछला प्रश्न",
-    "next": "अगला प्रश्न"
+    "keysHint": "↑↓ चुनें · ←→ प्रश्न · Enter भेजें"
   },
   "clarifyOptions": {
     "travel_style": {

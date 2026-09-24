@@ -536,8 +536,7 @@
     "otherPlaceholder": "回答を入力...",
     "pickOne": "1つ選択",
     "pickMany": "複数選択可",
-    "prev": "前の質問",
-    "next": "次の質問"
+    "keysHint": "↑↓ 選択 · ←→ 質問 · Enter 送信"
   },
   "clarifyOptions": {
     "travel_style": {

@@ -536,8 +536,7 @@
     "otherPlaceholder": "Type your own answer...",
     "pickOne": "pick one",
     "pickMany": "pick any",
-    "prev": "Previous question",
-    "next": "Next question"
+    "keysHint": "↑↓ select · ←→ questions · Enter send"
   },
   "clarifyOptions": {
     "travel_style": {

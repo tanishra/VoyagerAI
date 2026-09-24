@@ -536,8 +536,7 @@
     "otherPlaceholder": "Eigene Antwort eingeben...",
     "pickOne": "eine wählen",
     "pickMany": "mehrere wählbar",
-    "prev": "Vorherige Frage",
-    "next": "Nächste Frage"
+    "keysHint": "↑↓ wählen · ←→ Fragen · Enter senden"
   },
   "clarifyOptions": {
     "travel_style": {

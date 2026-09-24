@@ -72,3 +72,33 @@ class TestExtractStatedDays:
 
     def test_never_raises(self):
         assert extract_stated_days("12345678901234567890 days") is None
+
+
+class TestClarifyAnswers:
+    """extract_clarify_answers / parse_budget_range / strip_clarify_answers."""
+
+    def test_parses_json_block(self):
+        from agents.constraints import extract_clarify_answers
+        text = 'A: x\n<clarify_answers>{"a": "1", "b": ["x", "y"]}</clarify_answers>'
+        assert extract_clarify_answers(text) == {"a": "1", "b": ["x", "y"]}
+
+    def test_garbage_returns_empty(self):
+        from agents.constraints import extract_clarify_answers
+        assert extract_clarify_answers("<clarify_answers>{oops</clarify_answers>") == {}
+        assert extract_clarify_answers("no tag") == {}
+        assert extract_clarify_answers(None) == {}
+
+    def test_budget_range_two_numbers(self):
+        from agents.constraints import parse_budget_range
+        assert parse_budget_range("₹25,000–₹60,000") == (25000, 60000)
+
+    def test_budget_cap_single_number(self):
+        from agents.constraints import parse_budget_range
+        assert parse_budget_range("Under ₹25,000") == (None, 25000)
+        assert parse_budget_range("abc") == (None, None)
+
+    def test_strip_removes_block(self):
+        from agents.constraints import strip_clarify_answers
+        text = 'Trip budget: ₹25,000\n<clarify_answers>{"budget_amount": "999"}</clarify_answers>'
+        out = strip_clarify_answers(text)
+        assert "999" not in out and "clarify_answers" not in out

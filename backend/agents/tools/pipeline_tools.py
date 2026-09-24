@@ -135,6 +135,29 @@ class ClarifyQuestion(BaseModel):
     multi_select: bool = Field(default=False, description="True when several options may apply (e.g. dietary)")
 
 
+# Required fields and the keys they appear under in the stated-constraints
+# map (clarify answers are keyed by field name; text extraction uses "days").
+_REQUIRED_FIELDS = (
+    "destination",
+    "total_days",
+    "budget_amount",
+    "budget_currency",
+    "travel_style",
+    "group_type",
+)
+_FIELD_ALIASES = {
+    "total_days": ("days", "duration"),
+    "budget_amount": ("budget", "trip_budget", "budget_min", "budget_max"),
+    "budget_currency": ("currency",),
+}
+
+
+def _field_known(field: str, stated: dict) -> bool:
+    """True when `field` already has an answer in the stated-constraints map."""
+    keys = (field, *_FIELD_ALIASES.get(field, ()))
+    return any(k in stated and stated[k] is not None for k in keys)
+
+
 @tool
 async def ask_clarifying_questions(questions: list[ClarifyQuestion]) -> str:
     """Ask the user for missing trip requirements as selectable question cards.
@@ -145,6 +168,9 @@ async def ask_clarifying_questions(questions: list[ClarifyQuestion]) -> str:
     leave options empty for free-text fields (destination, days, budget) — the
     UI adds an "Other" free-text input automatically.
 
+    Fields the user already answered are tracked automatically — questions
+    for them are dropped, so never ask the same field twice.
+
     Args:
         questions: 1-4 questions, each with up to 4 options.
     """
@@ -152,17 +178,43 @@ async def ask_clarifying_questions(questions: list[ClarifyQuestion]) -> str:
     if not questions:
         return "No questions supplied — ask in plain text instead."
 
+    stated = _pipeline_stated.get() or {}
     clipped = [q.model_dump() for q in questions[:4]]
     for q in clipped:
         q["options"] = q["options"][:4]
 
-    payload_id = await store_payload(thread_id, "clarify", {"questions": clipped})
+    # Drop questions for fields the user already answered — re-asking the
+    # same thing makes the flow feel broken.
+    remaining = [q for q in clipped if not _field_known(q["field"], stated)]
+    known = dict(stated)
+    if not remaining:
+        return json.dumps({
+            "answered_fields": known,
+            "message": (
+                "All of these fields are already answered (see "
+                "answered_fields) — do NOT ask them again. Proceed to "
+                "generate_trip_plans with the values the user already gave."
+            ),
+        })
+
+    still_missing = [
+        f for f in _REQUIRED_FIELDS
+        if not _field_known(f, stated) and not any(q["field"] == f for q in remaining)
+    ]
+    payload_id = await store_payload(thread_id, "clarify", {"questions": remaining})
     return json.dumps({
         "_pipeline_payload_id": payload_id,
+        "answered_fields": known,
         "message": (
             "Your questions are displayed to the user as selectable cards. "
             "Wait for their reply — do NOT answer on their behalf or call "
             "generate_trip_plans until the required fields are known."
+            + (
+                f" Still-unknown required fields you did not ask about: "
+                f"{', '.join(still_missing)} — ask them in a follow-up "
+                "clarify call unless the user's reply covers them."
+                if still_missing else ""
+            )
         ),
     })
 
@@ -190,10 +242,32 @@ def _check_against_stated(constraints: TripConstraints, stated: dict | None) -> 
             "before generating."
         )
     stated_budget = stated.get("budget_amount")
+    stated_min = stated.get("budget_min")
+    stated_max = stated.get("budget_max")
     stated_currency = stated.get("budget_currency")
-    if stated_budget is not None:
+    if stated_budget is not None or stated_max is not None:
+        if stated_min is not None and stated_max is not None:
+            # Clarify card answered with a range — accept anything inside it
+            # (with 5% slack on the bounds) instead of a point estimate.
+            if not stated_min * 0.95 <= constraints.budget_amount <= stated_max * 1.05:
+                return (
+                    f"The user picked a budget range of {stated_min:,.0f}–"
+                    f"{stated_max:,.0f} {stated_currency or ''}, but the "
+                    f"constraints say {constraints.budget_amount:,.0f} "
+                    f"{constraints.budget_currency}. Confirm the budget with "
+                    "the user before generating."
+                )
+        elif stated_max is not None:
+            # "Under ₹X" — an upper bound, not a point estimate.
+            if constraints.budget_amount > stated_max * 1.05:
+                return (
+                    f"The user picked a budget cap of {stated_max:,.0f} "
+                    f"{stated_currency or ''}, but the constraints say "
+                    f"{constraints.budget_amount:,.0f} {constraints.budget_currency}. "
+                    "Confirm the budget with the user before generating."
+                )
         # ±5% tolerance — rounding like "50k" vs 50000 shouldn't trip this.
-        if abs(stated_budget - constraints.budget_amount) > stated_budget * 0.05:
+        elif abs(stated_budget - constraints.budget_amount) > stated_budget * 0.05:
             return (
                 f"The user stated a total budget of {stated_budget:,.0f} "
                 f"{stated_currency or ''}, but the constraints say "
@@ -205,6 +279,20 @@ def _check_against_stated(constraints: TripConstraints, stated: dict | None) -> 
                 f"The user wrote amounts in {stated_currency}, but the "
                 f"constraints say {constraints.budget_currency}. Confirm the "
                 "currency with the user before generating."
+            )
+    # Enum fields answered via clarify cards — only enforce when the stated
+    # value maps cleanly onto the enum, so free-text "Other" answers don't
+    # produce false rejections.
+    for field, allowed in (
+        ("travel_style", ("relaxed", "balanced", "adventurous")),
+        ("group_type", ("solo", "couple", "family", "friends")),
+    ):
+        sv = stated.get(field)
+        if isinstance(sv, str) and sv.lower() in allowed and sv.lower() != getattr(constraints, field):
+            return (
+                f"The user chose {field} '{sv}', but the constraints say "
+                f"'{getattr(constraints, field)}'. Confirm with the user "
+                "before generating."
             )
     return None
 

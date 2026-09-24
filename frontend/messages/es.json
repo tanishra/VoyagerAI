@@ -536,8 +536,7 @@
     "otherPlaceholder": "Escribe tu respuesta...",
     "pickOne": "elige una",
     "pickMany": "elige varias",
-    "prev": "Pregunta anterior",
-    "next": "Siguiente pregunta"
+    "keysHint": "↑↓ elegir · ←→ preguntas · Enter enviar"
   },
   "clarifyOptions": {
     "travel_style": {

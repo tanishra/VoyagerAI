@@ -1068,8 +1068,8 @@ def _looks_like_comparison_draft(text: str) -> bool:
 
 
 # Strip complete and partial structured blocks from displayed text
-_STRIP_COMPLETE_RE = re.compile(r"<(?:comparison|itinerary)>[\s\S]*?</(?:comparison|itinerary)>", re.DOTALL)
-_STRIP_PARTIAL_RE = re.compile(r"<(?:comparison|itinerary)>[\s\S]*$")
+_STRIP_COMPLETE_RE = re.compile(r"<(?:comparison|itinerary|clarify_answers)>[\s\S]*?</(?:comparison|itinerary|clarify_answers)>", re.DOTALL)
+_STRIP_PARTIAL_RE = re.compile(r"<(?:comparison|itinerary|clarify_answers)>[\s\S]*$")
 
 
 def _strip_structured_tags(text: str) -> str:
@@ -1592,7 +1592,35 @@ def _fill_stated(found: dict, content) -> None:
         )
     if not isinstance(content, str):
         return
-    from agents.constraints import extract_stated_days
+    from agents.constraints import (
+        extract_clarify_answers,
+        extract_stated_days,
+        parse_budget_range,
+        strip_clarify_answers,
+    )
+    from agents.prompts import extract_stated_currency
+
+    # Clarify-card replies carry an authoritative field->answer map; use it
+    # before regexes so localized headers and range values can't confuse them.
+    answers = extract_clarify_answers(content)
+    for key, val in answers.items():
+        if key in ("budget_amount", "budget", "trip_budget"):
+            lo, hi = parse_budget_range(val)
+            if lo is not None:
+                found.setdefault("budget_min", lo)
+            if hi is not None:
+                found.setdefault("budget_max", hi)
+            if "budget_currency" not in found:
+                cur = extract_stated_currency(str(val))
+                if cur:
+                    found["budget_currency"] = cur
+        elif key in ("total_days", "days", "duration"):
+            m = re.search(r"\d+", str(val))
+            if m:
+                found.setdefault("days", int(m.group(0)))
+        elif val:
+            found.setdefault(key, val)
+    content = strip_clarify_answers(content)
 
     if "days" not in found:
         days = extract_stated_days(content)

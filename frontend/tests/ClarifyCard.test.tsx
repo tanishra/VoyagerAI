@@ -89,7 +89,7 @@ describe('ClarifyCard (U7)', () => {
       target: { value: 'Very fast' },
     });
     click(screen.getByRole('button', { name: /send answers/i }));
-    expect(onSend).toHaveBeenCalledWith('Travel style: Very fast');
+    expect(onSend).toHaveBeenCalledWith('Travel style: Very fast\n<clarify_answers>{"travel_style":"Very fast"}</clarify_answers>');
   });
 
   it('composes header: label per question', () => {
@@ -98,6 +98,52 @@ describe('ClarifyCard (U7)', () => {
     click(screen.getByText('Adventurous')); // auto-advances to Q2
     click(screen.getByText('Friends'));
     click(screen.getByRole('button', { name: /send answers/i }));
-    expect(onSend).toHaveBeenCalledWith('Travel style: Adventurous; Group: Friends');
+    expect(onSend).toHaveBeenCalledWith('Travel style: Adventurous; Group: Friends\n<clarify_answers>{"travel_style":"adventurous","group_type":"friends"}</clarify_answers>');
+  });
+});
+
+describe('ClarifyCard keyboard nav', () => {
+  const key = (k: string) => act(() => { fireEvent.keyDown(document.activeElement ?? document.body, { key: k }); });
+
+  it('number key selects option and auto-advances', () => {
+    render(<ClarifyCard data={twoQuestions} onSend={() => {}} />);
+    key('1'); // picks option 1 of Q1 → jumps to Q2
+    expect(screen.getByText('Who is travelling?')).toBeInTheDocument();
+    click(screen.getByRole('tab', { name: 'Travel style' }));
+    expect(screen.getByText('Relaxed pace').closest('button')).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('arrows move focus, Enter selects', () => {
+    render(<ClarifyCard data={twoQuestions} onSend={() => {}} />);
+    key('ArrowDown');
+    key('Enter'); // selects option 2 (Adventurous) → auto-advances to Q2
+    expect(screen.getByText('Who is travelling?')).toBeInTheDocument();
+    click(screen.getByRole('tab', { name: 'Travel style' }));
+    expect(screen.getByText('Adventurous').closest('button')).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('left/right arrows switch question tabs', () => {
+    render(<ClarifyCard data={twoQuestions} onSend={() => {}} />);
+    key('ArrowRight');
+    expect(screen.getByText('Who is travelling?')).toBeInTheDocument();
+    key('ArrowLeft');
+    expect(screen.getByText('What pace do you prefer?')).toBeInTheDocument();
+  });
+
+  it('Enter submits when all questions answered', () => {
+    const onSend = vi.fn();
+    render(<ClarifyCard data={twoQuestions} onSend={onSend} />);
+    key('1'); // Q1 → auto-advance
+    key('1'); // Q2 → all answered
+    key('Enter');
+    expect(onSend).toHaveBeenCalledWith('Travel style: Relaxed pace; Group: Solo\n<clarify_answers>{"travel_style":"relaxed","group_type":"solo"}</clarify_answers>');
+  });
+
+  it('typing a letter opens Other and seeds the input', () => {
+    render(<ClarifyCard data={{ questions: [twoQuestions.questions[0]] }} onSend={() => {}} />);
+    key('x');
+    const input = screen.getByPlaceholderText(/type your own answer/i);
+    expect(input).toHaveValue('x');
+    expect(document.activeElement).toBe(input);
   });
 });

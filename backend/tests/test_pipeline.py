@@ -809,3 +809,165 @@ class TestCurrencyFieldDocs:
     def test_stub_schema_documents_currency(self):
         schema = pipeline_module.PlanItineraryStub.model_json_schema()
         assert "currency" in schema["properties"]["estimated_total_cost_usd"]["description"]
+
+
+class TestClarifyAnswerTracking:
+    """Clarify replies carry a machine-readable field map — already-answered
+    fields must never be re-asked and must constrain generation."""
+
+    def setup_method(self):
+        pipeline_module._reset_for_tests()
+        pipeline_tools_module._reset_for_tests()
+
+    @staticmethod
+    def _clarify_call(fields):
+        from agents.tools.pipeline_tools import ask_clarifying_questions
+        from agents.tools.visuals import set_current_thread_id
+        set_current_thread_id("t-clar")
+        qs = [
+            {
+                "field": f,
+                "header": f,
+                "question": f"{f}?",
+                "options": [],
+                "multi_select": False,
+            }
+            for f in fields
+        ]
+        raw = asyncio.run(ask_clarifying_questions.ainvoke({"questions": qs}))
+        return json.loads(raw)
+
+    async def _payload_questions(self, result):
+        payload = await pop_payload(result["_pipeline_payload_id"])
+        return [q["field"] for q in payload["data"]["questions"]]
+
+    def test_drops_already_answered_fields(self):
+        set_pipeline_context(stated_constraints={"travel_style": "relaxed"})
+        result = self._clarify_call(["travel_style", "destination"])
+        assert asyncio.run(self._payload_questions(result)) == ["destination"]
+        assert result["answered_fields"]["travel_style"] == "relaxed"
+
+    def test_all_answered_returns_no_card(self):
+        set_pipeline_context(stated_constraints={
+            "travel_style": "relaxed",
+            "group_type": "solo",
+        })
+        result = self._clarify_call(["travel_style", "group_type"])
+        assert "_pipeline_payload_id" not in result
+        assert "generate_trip_plans" in result["message"]
+
+    def test_reports_still_missing_required_fields(self):
+        set_pipeline_context(stated_constraints={"destination": "Goa"})
+        result = self._clarify_call(["total_days"])
+        assert "travel_style" in result["message"]
+        assert "budget_amount" in result["message"]
+        assert asyncio.run(self._payload_questions(result)) == ["total_days"]
+
+    def test_days_alias_marks_total_days_answered(self):
+        set_pipeline_context(stated_constraints={"days": 5})
+        result = self._clarify_call(["total_days", "destination"])
+        assert asyncio.run(self._payload_questions(result)) == ["destination"]
+
+    def test_range_budget_passes_inside_and_rejects_outside(self, monkeypatch):
+        async def _fake_pipeline(constraints, **kwargs):
+            return _valid_comparison(), {}
+        monkeypatch.setattr(
+            pipeline_tools_module, "run_comparison_pipeline", _fake_pipeline
+        )
+        from agents.tools.visuals import set_current_thread_id
+        set_current_thread_id("t-range")
+        stated = {
+            "budget_min": 25000,
+            "budget_max": 60000,
+            "budget_currency": "INR",
+        }
+        set_pipeline_context(stated_constraints=stated)
+        raw = asyncio.run(generate_trip_plans.ainvoke({
+            "constraints": _constraints().model_dump()
+        }))
+        assert "_pipeline_payload_id" in raw
+
+        async def _boom(constraints, **kwargs):
+            raise AssertionError("pipeline must not run outside the range")
+        monkeypatch.setattr(
+            pipeline_tools_module, "run_comparison_pipeline", _boom
+        )
+        raw = asyncio.run(generate_trip_plans.ainvoke({
+            "constraints": _constraints(budget_amount=90000).model_dump()
+        }))
+        assert "budget range" in raw and "25,000" in raw
+
+    def test_budget_cap_rejects_above(self, monkeypatch):
+        async def _boom(constraints, **kwargs):
+            raise AssertionError("pipeline must not run above the cap")
+        monkeypatch.setattr(
+            pipeline_tools_module, "run_comparison_pipeline", _boom
+        )
+        set_pipeline_context(stated_constraints={
+            "budget_max": 25000,
+            "budget_currency": "INR",
+        })
+        raw = asyncio.run(generate_trip_plans.ainvoke({
+            "constraints": _constraints(budget_amount=40000).model_dump()
+        }))
+        assert "cap" in raw.lower()
+
+    def test_enum_answer_rejects_conflicting_constraints(self, monkeypatch):
+        async def _boom(constraints, **kwargs):
+            raise AssertionError("pipeline must not run on enum mismatch")
+        monkeypatch.setattr(
+            pipeline_tools_module, "run_comparison_pipeline", _boom
+        )
+        set_pipeline_context(stated_constraints={"travel_style": "relaxed"})
+        raw = asyncio.run(generate_trip_plans.ainvoke({
+            "constraints": _constraints(travel_style="adventurous").model_dump()
+        }))
+        assert "relaxed" in raw and "Confirm" in raw
+
+    def test_free_text_enum_answer_not_rejected(self, monkeypatch):
+        """An 'Other' answer that isn't an enum member must not false-positive."""
+        comparison = _valid_comparison()
+        async def _fake_pipeline(constraints, **kwargs):
+            return comparison, {}
+        monkeypatch.setattr(
+            pipeline_tools_module, "run_comparison_pipeline", _fake_pipeline
+        )
+        from agents.tools.visuals import set_current_thread_id
+        set_current_thread_id("t-free")
+        set_pipeline_context(stated_constraints={"travel_style": "Very fast"})
+        raw = asyncio.run(generate_trip_plans.ainvoke({
+            "constraints": _constraints().model_dump()
+        }))
+        assert "_pipeline_payload_id" in raw
+
+
+class TestFillStatedClarifyAnswers:
+    """_fill_stated must prefer the machine-readable clarify_answers block
+    over regex extraction on the pretty text."""
+
+    def test_reads_field_map(self):
+        from agents.deep_agent import _fill_stated
+        found: dict = {}
+        _fill_stated(
+            found,
+            'Trip budget: ₹25,000–₹60,000; Travel style: Relaxed\n'
+            '<clarify_answers>{"budget_amount": "₹25,000–₹60,000", '
+            '"travel_style": "relaxed"}</clarify_answers>',
+        )
+        assert found["budget_min"] == 25000
+        assert found["budget_max"] == 60000
+        assert found["travel_style"] == "relaxed"
+        assert found["budget_currency"] == "INR"
+
+    def test_range_text_does_not_poison_point_extraction(self):
+        """Without the tag the first number in '25,000–₹60,000' would be
+        read as a point budget; the tag's bounds must win instead."""
+        from agents.deep_agent import _fill_stated
+        found: dict = {}
+        _fill_stated(
+            found,
+            'Trip budget: ₹25,000–₹60,000\n'
+            '<clarify_answers>{"budget_amount": "₹25,000–₹60,000"}</clarify_answers>',
+        )
+        assert found.get("budget_amount") in (None, 25000)
+        assert found["budget_max"] == 60000

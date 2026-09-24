@@ -7,6 +7,7 @@ know can't be silently dropped downstream — the tool call can't be formed.
 
 from __future__ import annotations
 
+import json
 import re
 from typing import Literal
 
@@ -63,3 +64,58 @@ def extract_stated_days(text: str | None) -> int | None:
     except (ValueError, AttributeError):
         return None
     return None
+
+
+_CLARIFY_ANSWERS_RE = re.compile(r"<clarify_answers>([\s\S]*?)</clarify_answers>")
+_STRIP_CLARIFY_RE = re.compile(r"<clarify_answers>[\s\S]*?(?:</clarify_answers>|$)")
+_NUMBER_RE = re.compile(r"[\d][\d,]*(?:\.\d+)?")
+
+
+def extract_clarify_answers(text: str | None) -> dict:
+    """Parse the machine-readable <clarify_answers>{...}</clarify_answers> block
+    the chat UI appends to a clarification reply.
+
+    Returns {field: value_or_list} — these are the authoritative answers to
+    questions already asked, so the agent never needs to re-ask them.
+    Never raises.
+    """
+    if not text:
+        return {}
+    m = _CLARIFY_ANSWERS_RE.search(text)
+    if not m:
+        return {}
+    try:
+        data = json.loads(m.group(1))
+    except (ValueError, TypeError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def strip_clarify_answers(text: str | None) -> str:
+    """Remove the <clarify_answers> block so amount/days regexes can't match
+    numbers inside the JSON payload."""
+    if not text:
+        return text or ""
+    return _STRIP_CLARIFY_RE.sub("", text)
+
+
+def parse_budget_range(value) -> tuple[float | None, float | None]:
+    """Extract (min, max) numbers from a budget answer like '₹25,000–₹60,000'.
+
+    One number -> (None, n) treated as an upper bound ('Under ₹25,000').
+    Two+     -> (first, last). Returns (None, None) when unparseable.
+    """
+    if value is None:
+        return (None, None)
+    text = value if isinstance(value, str) else ", ".join(str(v) for v in value)
+    nums = []
+    for m in _NUMBER_RE.finditer(text):
+        try:
+            nums.append(float(m.group(0).replace(",", "")))
+        except ValueError:
+            continue
+    if not nums:
+        return (None, None)
+    if len(nums) == 1:
+        return (None, nums[0])
+    return (min(nums[0], nums[-1]), max(nums[0], nums[-1]))
