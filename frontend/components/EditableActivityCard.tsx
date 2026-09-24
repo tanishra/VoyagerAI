@@ -5,6 +5,7 @@ import { useTranslations } from 'next-intl';
 import { useLocale } from '@/lib/useLocale';
 import { formatCurrency } from '@/lib/format';
 import { useCurrency } from '@/lib/useCurrency';
+import type { Currency } from '@/lib/currency';
 import type { TimeSlot } from '@/lib/types';
 
 interface EditableActivityCardProps {
@@ -21,6 +22,7 @@ interface EditableActivityCardProps {
   canMoveRight?: boolean;
   isCustom?: boolean;
   isDragging?: boolean;
+  currency?: Currency;
 }
 
 const SLOT_COLORS: Record<string, string> = {
@@ -49,10 +51,12 @@ export default function EditableActivityCard({
   canMoveRight = true,
   isCustom = false,
   isDragging = false,
+  currency: currencyProp,
 }: EditableActivityCardProps) {
   const t = useTranslations('itinerary');
   const locale = useLocale();
-  const [currency] = useCurrency();
+  const [preferredCurrency] = useCurrency();
+  const currency = currencyProp ?? preferredCurrency;
   const colorClass = SLOT_COLORS[slotKey] ?? 'text-chart-2';
 
   return (

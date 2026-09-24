@@ -10,6 +10,7 @@ import ItineraryCard from '@/components/ItineraryCard';
 import { formatCurrency } from '@/lib/format';
 import { useLocale } from '@/lib/useLocale';
 import { useCurrency } from '@/lib/useCurrency';
+import { asCurrency } from '@/lib/currency';
 import { Loader2, AlertCircle } from 'lucide-react';
 import Link from 'next/link';
 
@@ -22,7 +23,8 @@ export default function SharePage() {
   const [error, setError] = useState(false);
   const cardRef = useRef<HTMLDivElement>(null);
   const locale = useLocale();
-  const [currency] = useCurrency();
+  const [preferredCurrency] = useCurrency();
+  const currency = asCurrency(data?.itinerary?.currency) ?? preferredCurrency;
 
   useEffect(() => {
     if (!token) return;

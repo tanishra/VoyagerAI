@@ -97,6 +97,7 @@ export default function DayDetailModal({ day, dayNumber, destination, currency: 
                     slot={slot}
                     slotKey={key}
                     destination={destination}
+                    currency={currency}
                   />
                 );
               })}

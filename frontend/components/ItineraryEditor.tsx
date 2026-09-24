@@ -18,6 +18,7 @@ import type { Itinerary, DayPlan, TimeSlot } from '@/lib/types';
 import { useLocale } from '@/lib/useLocale';
 import { formatCurrency } from '@/lib/format';
 import { useCurrency } from '@/lib/useCurrency';
+import { asCurrency, type Currency } from '@/lib/currency';
 import BudgetStatus from './BudgetStatus';
 import EditableActivityCard from './EditableActivityCard';
 import AddActivityForm from './AddActivityForm';
@@ -67,11 +68,13 @@ function DraggableActivity({
   onMoveLeft,
   onMoveRight,
   isCustom,
+  currency,
 }: {
   slot: TimeSlot;
   slotKey: SlotKey;
   dayIndex: number;
   totalDays: number;
+  currency: Currency;
   onRemove: () => void;
   onMoveUp: () => void;
   onMoveDown: () => void;
@@ -106,6 +109,7 @@ function DraggableActivity({
         canMoveRight={canMoveRight}
         isCustom={isCustom}
         isDragging={isDragging}
+        currency={currency}
       />
     </div>
   );
@@ -138,7 +142,9 @@ function DroppableSlot({
 export default function ItineraryEditor({ itinerary, threadId: _threadId, onClose, onSave }: ItineraryEditorProps) {
   const t = useTranslations('itinerary');
   const locale = useLocale();
-  const [currency] = useCurrency();
+  const [preferredCurrency] = useCurrency();
+  // The itinerary's own currency wins over the app-wide preference.
+  const currency = asCurrency(itinerary.currency) ?? preferredCurrency;
   const [editedItinerary, setEditedItinerary] = useState<Itinerary>(() => deepCloneItinerary(itinerary));
   const [, setRemovedActivities] = useState<RemovedActivity[]>([]);
   const [isSaving, setIsSaving] = useState(false);
@@ -404,6 +410,7 @@ export default function ItineraryEditor({ itinerary, threadId: _threadId, onClos
                                 onMoveLeft={() => handleMoveLeft(dayIndex, slotKey)}
                                 onMoveRight={() => handleMoveRight(dayIndex, slotKey)}
                                 isCustom={isCustom}
+                                currency={currency}
                               />
                             ) : (
                               <div className="min-h-[80px] rounded-lg border border-dashed border-border/50 flex items-center justify-center text-xs text-muted-foreground/40">

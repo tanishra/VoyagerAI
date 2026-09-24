@@ -5,6 +5,7 @@ import { useTranslations } from 'next-intl';
 import { formatCurrency } from '@/lib/format';
 import { useLocale } from '@/lib/useLocale';
 import { useCurrency } from '@/lib/useCurrency';
+import { asCurrency } from '@/lib/currency';
 import type { Itinerary } from '@/lib/types';
 
 interface ShareCardProps {
@@ -31,7 +32,9 @@ const ShareCard = forwardRef<HTMLDivElement, ShareCardProps>(function ShareCard(
 ) {
   const t = useTranslations('share');
   const locale = useLocale();
-  const [currency] = useCurrency();
+  const [preferredCurrency] = useCurrency();
+  // The itinerary's own currency wins over the viewer's preference.
+  const currency = asCurrency(itinerary.currency) ?? preferredCurrency;
 
   const days = itinerary.total_days ?? (itinerary.days ?? []).length;
   const cost = itinerary.estimated_total_cost_usd ?? 0;

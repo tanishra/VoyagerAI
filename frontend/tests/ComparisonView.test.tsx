@@ -292,3 +292,18 @@ describe('limited research badge (R5)', () => {
     expect(screen.queryByText(/Limited live data/i)).not.toBeInTheDocument();
   });
 });
+
+describe('currency source (U4)', () => {
+  it('renders the plan currency, not the app preference', () => {
+    const inrData = {
+      ...mockData,
+      plans: mockData.plans.map((p) => ({
+        ...p,
+        itinerary: { ...p.itinerary, currency: 'INR' },
+      })),
+    };
+    render(<ComparisonView data={inrData} onSelect={() => {}} />);
+    expect(screen.getAllByText(/₹/).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/\$/)).not.toBeInTheDocument();
+  });
+});

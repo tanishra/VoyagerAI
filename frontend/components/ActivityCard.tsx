@@ -10,12 +10,14 @@ import type { TimeSlot } from '@/lib/types';
 import { useLocale } from '@/lib/useLocale';
 import { formatCurrency } from '@/lib/format';
 import { useCurrency } from '@/lib/useCurrency';
+import type { Currency } from '@/lib/currency';
 import { fetchWikimediaImage } from '@/lib/wikimedia';
 import { fetchWikipediaDescription } from '@/lib/wikipedia';
 
 const ItineraryMap = dynamic(() => import('./ItineraryMap'), { ssr: false });
 
 interface ActivityCardProps {
+  currency?: Currency;
   slot: TimeSlot;
   slotKey: 'morning' | 'afternoon' | 'evening';
   destination: string;
@@ -27,10 +29,11 @@ const SLOT_COLORS: Record<string, string> = {
   evening: 'text-chart-3',
 };
 
-export default function ActivityCard({ slot, slotKey, destination }: ActivityCardProps) {
+export default function ActivityCard({ slot, slotKey, destination, currency: propCurrency }: ActivityCardProps) {
   const t = useTranslations('itinerary');
   const locale = useLocale();
-  const [currency] = useCurrency();
+  const [preferredCurrency] = useCurrency();
+  const currency = propCurrency ?? preferredCurrency;
   const [expanded, setExpanded] = useState(false);
 
   const { data: imageUrl, isLoading: imageLoading } = useSWR(
@@ -146,6 +149,7 @@ export default function ActivityCard({ slot, slotKey, destination }: ActivityCar
                       tips: [],
                     }]}
                     destination={slot.location || destination}
+                    currency={currency}
                   />
                 </div>
               )}

@@ -8,10 +8,13 @@ import type { DayPlan } from '@/lib/types';
 import { useLocale } from '@/lib/useLocale';
 import { formatCurrency } from '@/lib/format';
 import { useCurrency } from '@/lib/useCurrency';
+import { asCurrency } from '@/lib/currency';
 
 interface TimelineViewProps {
   days: DayPlan[];
   destination: string;
+  // The itinerary's currency — wins over the app preference when provided.
+  currency?: string;
   onDayClick: (day: DayPlan) => void;
   activeDay?: number | null;
   onDayExpand?: (day: number | null) => void;
@@ -32,10 +35,11 @@ function getTransportIcon(transport: string) {
   return Navigation;
 }
 
-export default function TimelineView({ days, destination, onDayClick, activeDay, onDayExpand }: TimelineViewProps) {
+export default function TimelineView({ days, destination, currency: itineraryCurrency, onDayClick, activeDay, onDayExpand }: TimelineViewProps) {
   const t = useTranslations('itinerary');
   const locale = useLocale();
-  const [currency] = useCurrency();
+  const [preferredCurrency] = useCurrency();
+  const currency = asCurrency(itineraryCurrency) ?? preferredCurrency;
   const [internalExpandedDay, setInternalExpandedDay] = useState<number | null>(null);
   const isControlled = activeDay !== undefined;
   const expandedDay = isControlled ? activeDay : internalExpandedDay;

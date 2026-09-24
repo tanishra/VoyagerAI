@@ -8,11 +8,14 @@ import { useTranslations } from 'next-intl';
 import type { DayPlan, TimeSlot } from '@/lib/types';
 import { useLocale } from '@/lib/useLocale';
 import { formatCurrency } from '@/lib/format';
+import type { Currency } from '@/lib/currency';
 import { geocodeLocation, shouldCorrectCoordinates } from '@/lib/geocode';
 
 interface ItineraryMapProps {
   days: DayPlan[];
   destination: string;
+  // The itinerary's currency — wins over the app preference when provided.
+  currency?: Currency;
   activeDay?: number | null;
   onMarkerClick?: (day: number) => void;
   onDaySelect?: (day: number) => void;
@@ -116,7 +119,7 @@ export function createMarkerElement(slotIndex: number, approximate = false): HTM
   return el;
 }
 
-export default function ItineraryMap({ days, destination, activeDay, onMarkerClick, onDaySelect }: ItineraryMapProps) {
+export default function ItineraryMap({ days, destination, currency, activeDay, onMarkerClick, onDaySelect }: ItineraryMapProps) {
   const t = useTranslations('itinerary');
   const locale = useLocale();
   const mapContainerRef = useRef<HTMLDivElement>(null);
@@ -265,7 +268,7 @@ export default function ItineraryMap({ days, destination, activeDay, onMarkerCli
             ${m.approximate ? `<p class="text-[10px] text-muted-foreground/70 italic mt-0.5">${t('approxLocation')}</p>` : ''}
             <div class="flex items-center gap-3 text-xs text-muted-foreground mt-1">
               ${m.duration ? `<span>\u23F1 ${m.duration}</span>` : ''}
-              ${m.cost_usd > 0 ? `<span>\u{1F4B0} ${formatCurrency(m.cost_usd, locale)}</span>` : ''}
+              ${m.cost_usd > 0 ? `<span>\u{1F4B0} ${formatCurrency(m.cost_usd, locale, undefined, currency)}</span>` : ''}
             </div>
             <a href="https://www.google.com/maps/search/?api=1&query=${m.lat},${m.lng}" target="_blank" rel="noopener noreferrer" class="text-xs text-primary hover:text-primary/80 mt-1.5 inline-block">
               ${t('openInMaps')} &rarr;

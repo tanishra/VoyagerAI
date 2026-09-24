@@ -86,3 +86,21 @@ describe('formatCurrency snapshots per locale', () => {
     expect(formatCurrency(1500, 'ja')).toMatchSnapshot();
   });
 });
+
+describe('currency-aware grouping (U4)', () => {
+  it('uses lakh separators for INR under the en locale', () => {
+    expect(formatCurrency(500000, 'en', undefined, 'INR')).toBe('₹5,00,000');
+  });
+
+  it('keeps lakh separators for INR under the hi locale', () => {
+    expect(formatCurrency(500000, 'hi', undefined, 'INR')).toBe('₹5,00,000');
+  });
+
+  it('does not change USD grouping', () => {
+    expect(formatCurrency(500000, 'en', undefined, 'USD')).toBe('$500,000');
+  });
+
+  it('keeps JPY at zero decimals', () => {
+    expect(formatCurrency(500000, 'en', undefined, 'JPY')).not.toContain('.');
+  });
+});

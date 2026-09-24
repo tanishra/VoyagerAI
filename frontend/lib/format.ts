@@ -10,6 +10,13 @@ const CURRENCY_MAP: Record<Locale, string> = {
   ja: 'JPY',
 };
 
+// Grouping follows the currency, not just the UI locale — INR amounts use
+// Indian lakh separators (₹5,00,000) even when the UI is English. `hi` is
+// already Indian-grouped; everything else falls back to en-IN.
+function formatLocaleFor(currency: string, locale: Locale): string {
+  return currency === 'INR' && locale !== 'hi' ? 'en-IN' : locale;
+}
+
 export function formatCurrency(
   amount: number,
   locale: Locale = defaultLocale,
@@ -17,7 +24,7 @@ export function formatCurrency(
   currencyOverride?: Currency,
 ): string {
   const currency = currencyOverride ?? getStoredCurrency() ?? CURRENCY_MAP[locale] ?? 'USD';
-  return new Intl.NumberFormat(locale, {
+  return new Intl.NumberFormat(formatLocaleFor(currency, locale), {
     style: 'currency',
     currency,
     minimumFractionDigits: currency === 'JPY' ? 0 : 0,
@@ -36,7 +43,7 @@ export function formatNumber(
 
 export function getCurrencySymbol(locale: Locale = defaultLocale, currencyOverride?: Currency): string {
   const currency = currencyOverride ?? getStoredCurrency() ?? CURRENCY_MAP[locale] ?? 'USD';
-  return new Intl.NumberFormat(locale, {
+  return new Intl.NumberFormat(formatLocaleFor(currency, locale), {
     style: 'currency',
     currency,
     minimumFractionDigits: 0,

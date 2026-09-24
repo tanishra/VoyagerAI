@@ -254,6 +254,7 @@ export default function ItineraryCard({ itinerary, threadId, printMode = false, 
           <TimelineView
             days={days}
             destination={itinerary.destination}
+            currency={currency}
             onDayClick={(day) => setSelectedDay(day)}
             activeDay={activeDay}
             onDayExpand={(day) => {
@@ -305,6 +306,7 @@ export default function ItineraryCard({ itinerary, threadId, printMode = false, 
                 <ItineraryMap
                   days={days}
                   destination={itinerary.destination}
+                  currency={currency}
                   activeDay={activeDay}
                   onMarkerClick={(day) => setActiveDay(day)}
                   onDaySelect={(day) => setActiveDay(day)}

@@ -9,6 +9,7 @@ import type { ComparisonData, PlanTier } from '@/lib/types';
 import { useLocale } from '@/lib/useLocale';
 import { formatCurrency } from '@/lib/format';
 import { useCurrency } from '@/lib/useCurrency';
+import { asCurrency, type Currency } from '@/lib/currency';
 import { useCountUp } from '@/lib/useCountUp';
 import { fetchWikimediaImage } from '@/lib/wikimedia';
 
@@ -35,12 +36,14 @@ function planTotal(plan: PlanTier): number | null {
 function PlanCard({
   plan,
   index,
+  currency,
   onSelect,
   onRegenerateTier,
   regeneratingTier,
 }: {
   plan: PlanTier;
   index: number;
+  currency: Currency;
   onSelect: (tier: string) => void;
   onRegenerateTier?: (tier: string) => void;
   regeneratingTier?: string | null;
@@ -48,7 +51,6 @@ function PlanCard({
   const t = useTranslations('comparison');
   const tItin = useTranslations('itinerary');
   const locale = useLocale();
-  const [currency] = useCurrency();
   const [expanded, setExpanded] = useState(false);
   const tierKey = TIER_KEYS[plan.tier] ?? 'balanced';
   const cfg = TIER_CONFIG[plan.tier] ?? TIER_CONFIG.balanced;
@@ -257,7 +259,10 @@ export default function ComparisonView({
 }) {
   const t = useTranslations('comparison');
   const locale = useLocale();
-  const [currency] = useCurrency();
+  const [preferredCurrency] = useCurrency();
+  // The plan's own currency (what the numbers are actually expressed in)
+  // wins over the app-wide preference — otherwise a ₹ trip can render as $.
+  const currency = asCurrency(data.plans[0]?.itinerary?.currency) ?? preferredCurrency;
   const matrix = data.comparison_matrix;
   const tiers = ['budget', 'balanced', 'premium'] as const;
   const destination = data.plans[0]?.itinerary?.destination ?? '';
@@ -347,6 +352,7 @@ export default function ComparisonView({
             key={plan.tier}
             plan={plan}
             index={i}
+            currency={currency}
             onSelect={onSelect}
             onRegenerateTier={onRegenerateTier}
             regeneratingTier={regeneratingTier}

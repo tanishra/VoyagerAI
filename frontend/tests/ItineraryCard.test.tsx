@@ -182,7 +182,7 @@ describe('ItineraryCard', () => {
 
   it('uses the itinerary currency over the app preference when formatting cost', () => {
     render(<ItineraryCard itinerary={makeItinerary({ currency: 'INR' })} threadId="t1" />);
-    expect(screen.getByText(/₹/)).toBeInTheDocument();
+    expect(screen.getByText('₹500')).toBeInTheDocument();
   });
 
   it('shows destination banner image when loaded', () => {
