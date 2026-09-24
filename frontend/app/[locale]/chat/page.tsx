@@ -32,7 +32,7 @@ import FilePreview from '@/components/FilePreview';
 import CurrencySwitcher from '@/components/CurrencySwitcher';
 import { useCurrency } from '@/lib/useCurrency';
 import { stripStructuredTags } from '@/lib/utils';
-import { deriveStage, deriveStageDetail, STAGE_LABEL_KEYS } from '@/lib/stage';
+import { deriveStage, deriveStageDetail } from '@/lib/stage';
 import { uploadFile, type UploadedFile } from '@/lib/upload-api';
 import type { ChatMessage, ClarifyData, ComparisonData, Itinerary, ActivityData, BranchInfo, GeneratedImage, GeneratedChart } from '@/lib/types';
 import { useStreamAccumulators } from '@/hooks/chat/useStreamAccumulators';
@@ -1863,7 +1863,7 @@ export default function ChatPage() {
                   if (!stage && !detail) return null;
                   return (
                     <GenerationStatus
-                      label={stage ? tStatus(STAGE_LABEL_KEYS[stage.labelKey]) : (detail ?? '')}
+                      label={stage ? tStatus(stage.labelKey) : (detail ?? '')}
                       detail={stage ? detail : null}
                     />
                   );
