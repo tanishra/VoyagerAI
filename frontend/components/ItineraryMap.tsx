@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useMemo } from 'react';
 import useSWR from 'swr';
-import * as maplibregl from 'maplibre-gl';
+import { Map as MapLibreMap, Marker as MapLibreMarker, Popup as MapLibrePopup, LngLatBounds } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { useTranslations } from 'next-intl';
 import type { DayPlan, TimeSlot } from '@/lib/types';
@@ -114,8 +114,8 @@ export default function ItineraryMap({ days, destination, activeDay, onMarkerCli
   const t = useTranslations('itinerary');
   const locale = useLocale();
   const mapContainerRef = useRef<HTMLDivElement>(null);
-  const mapRef = useRef<maplibregl.Map | null>(null);
-  const markersRef = useRef<maplibregl.Marker[]>([]);
+  const mapRef = useRef<MapLibreMap | null>(null);
+  const markersRef = useRef<MapLibreMarker[]>([]);
 
   const daysWithCoords = useMemo(
     () => days.filter((d) => extractMarkers(d).length > 0),
@@ -178,7 +178,7 @@ export default function ItineraryMap({ days, destination, activeDay, onMarkerCli
     // has three independent ways to fail silently into a grey box. A raster
     // tile source is a single PNG fetch per tile — far more resilient to
     // ad-blockers, flaky networks, and browsers without WebGL2.
-    const map = new maplibregl.Map({
+    const map = new MapLibreMap({
       container: mapContainerRef.current,
       style: {
         version: 8,
@@ -252,7 +252,7 @@ export default function ItineraryMap({ days, destination, activeDay, onMarkerCli
       for (const m of currentMarkers) {
         const el = createMarkerElement(m.slotIndex);
 
-        const popup = new maplibregl.Popup({ offset: 25 }).setHTML(`
+        const popup = new MapLibrePopup({ offset: 25 }).setHTML(`
           <div class="font-sans min-w-[180px] p-1">
             <p class="font-semibold text-sm text-foreground">${m.activity}</p>
             <p class="text-xs text-muted-foreground mt-0.5">${t(m.slot)} &middot; ${m.location}</p>
@@ -266,7 +266,7 @@ export default function ItineraryMap({ days, destination, activeDay, onMarkerCli
           </div>
         `);
 
-        const marker = new maplibregl.Marker({ element: el })
+        const marker = new MapLibreMarker({ element: el })
           .setLngLat([m.lng, m.lat])
           .setPopup(popup)
           .addTo(map);
@@ -315,7 +315,7 @@ export default function ItineraryMap({ days, destination, activeDay, onMarkerCli
         });
       }
 
-      const bounds = new maplibregl.LngLatBounds();
+      const bounds = new LngLatBounds();
       for (const m of currentMarkers) {
         bounds.extend([m.lng, m.lat]);
       }

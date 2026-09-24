@@ -47,9 +47,15 @@ export interface CostBreakdown {
   total: number;
 }
 
+// Comparison cards only need a summary stub — the hybrid pipeline emits
+// plans without day-by-day detail (days arrive later via the itinerary event
+// for the selected tier). Legacy payloads still include `days`, so it stays
+// optional rather than removed.
+export type PlanItineraryStub = Omit<Itinerary, 'days'> & { days?: DayPlan[] };
+
 export interface PlanTier {
   tier: 'budget' | 'balanced' | 'premium';
-  itinerary: Itinerary;
+  itinerary: PlanItineraryStub;
   cost_breakdown: CostBreakdown;
   tradeoffs: string[];
 }

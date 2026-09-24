@@ -8,14 +8,7 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage
 
 from agents.llm import get_subagent_model
-from agents.subagents.constraint_analyzer import build_constraint_analyzer
-from agents.subagents.cost_optimizer import build_cost_optimizer
-from agents.subagents.enricher import build_enricher
-from agents.subagents.multi_plan_generator import build_multi_plan_generator
-from agents.subagents.quality_scorer import build_quality_scorer
 from agents.subagents.researcher import build_researcher
-from agents.subagents.risk_detector import build_risk_detector
-from agents.subagents.validator import build_validator
 from agents.tools import get_internet_tools
 
 logger = logging.getLogger("travel_agent")
@@ -84,17 +77,11 @@ def wrap_subagent_for_resilience(spec: SubAgent) -> SubAgent:
 
 
 def get_subagents() -> list:
-    internet_tools = get_internet_tools()
+    """Subagents dispatchable by the orchestrator via the task tool.
 
-    raw = [
-        build_researcher(get_subagent_model("researcher"), internet_tools),
-        build_validator(get_subagent_model("validator")),
-        build_enricher(get_subagent_model("enricher"), internet_tools),
-        build_cost_optimizer(get_subagent_model("cost_optimizer"), internet_tools),
-        build_risk_detector(get_subagent_model("risk_detector"), internet_tools),
-        build_constraint_analyzer(get_subagent_model("constraint_analyzer")),
-        build_multi_plan_generator(get_subagent_model("multi_plan_generator")),
-        build_quality_scorer(get_subagent_model("quality_scorer")),
-    ]
-
+    Only the researcher remains — plan generation, validation, and
+    enrichment run inside the deterministic pipeline (agents/pipeline.py),
+    not as orchestrator-dispatched subagents.
+    """
+    raw = [build_researcher(get_subagent_model("researcher"), get_internet_tools())]
     return [wrap_subagent_for_resilience(spec) for spec in raw]

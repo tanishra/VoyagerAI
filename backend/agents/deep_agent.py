@@ -23,6 +23,7 @@ from pydantic import BaseModel
 
 from agents.activity_store import load_activity, load_all_activity, save_activity
 from agents.tools import is_visual_tool, set_current_thread_id
+from agents.tools.pipeline_tools import is_pipeline_tool, pop_payload, set_pipeline_context
 from agents.llm import get_formatter_model, get_orchestrator_model, get_subagent_model
 from agents.prompts import build_chat_agent_prompt, extract_stated_budget
 from agents.subagents import get_subagents
@@ -315,6 +316,10 @@ class _ModelStream:
         }
         self._tool_call_index: dict[str, int] = {}
         self._task_run_ids: set[str] = set()
+        # run_ids of generate_trip_plans / refine_itinerary tool calls — their
+        # inner model chunks must never land in _texts (structured output and
+        # specialist briefs would poison plan detection / last_text).
+        self._pipeline_run_ids: set[str] = set()
         self._last_progress_time: dict[str, float] = {}
         self._session_cost: float = 0.0
         self._budget_reached: bool = False
@@ -388,6 +393,10 @@ class _ModelStream:
                     else:
                         text = ""
                         reasoning_text = ""
+                    # Skip chunks nested inside a pipeline tool — that output is
+                    # internal pipeline data, not user-facing text.
+                    if self._pipeline_run_ids.intersection(event.get("parent_ids") or []):
+                        continue
                     if run_id is not None:
                         if run_id not in self._texts:
                             self._order.append(run_id)
@@ -431,9 +440,18 @@ class _ModelStream:
                     desc = self._extract_progress_description(name, tool_input)
                     if desc and self._maybe_yield_progress(run_id, desc):
                         yield {"event": "subagent_progress", "data": {"run_id": run_id, "description": desc}}
+                elif is_pipeline_tool(name):
+                    # Deterministic pipeline — inner calls are nested under this
+                    # run_id; flag the guardrail (the tool itself checks the
+                    # budget via ContextVar and returns a graceful message).
+                    if self._check_budget():
+                        self._budget_reached = True
+                    self._pipeline_run_ids.add(run_id)
+                    self._active_task_names[run_id] = name
+                    yield {"event": "subagent_progress", "data": {"run_id": run_id, "description": "Generating plans..." if name == "generate_trip_plans" else "Building your itinerary..."}}
                 else:
                     for pid in parent_ids:
-                        if pid in self._task_run_ids:
+                        if pid in self._task_run_ids or pid in self._pipeline_run_ids:
                             parent_task_id = pid
                             break
                     if parent_task_id:
@@ -454,6 +472,9 @@ class _ModelStream:
 
             elif etype == "on_tool_end":
                 output = edata.get("output") if isinstance(edata, dict) else edata
+                # astream_events v2 wraps tool results in ToolMessage — unwrap
+                if hasattr(output, "content"):
+                    output = output.content
                 tool_name = event.get("name", "")
                 idx = self._tool_call_index.get(run_id)
                 if idx is not None and idx < len(self.activity["tool_calls"]):
@@ -488,6 +509,36 @@ class _ModelStream:
                         # Store chart data in activity for persistence
                         self.activity["charts"].append(parsed_output)
 
+                # Pipeline tool outputs — emit the parked comparison/itinerary
+                # payload (mirrors the pending-visuals pattern above).
+                if is_pipeline_tool(tool_name) and isinstance(output, str):
+                    try:
+                        parsed_output = json.loads(output)
+                    except (json.JSONDecodeError, ValueError):
+                        parsed_output = None
+                    # Per-stage cost attribution — the pipeline reports each
+                    # stage's token usage on the tool result.
+                    stage_usage = parsed_output.get("_stage_usage") if parsed_output else None
+                    if isinstance(stage_usage, dict):
+                        for stage, u in stage_usage.items():
+                            if not isinstance(u, dict):
+                                continue
+                            inp = u.get("input_tokens") or 0
+                            outp = u.get("output_tokens") or 0
+                            if not inp and not outp:
+                                continue
+                            model = u.get("model") or ""
+                            entry = self._subagent_costs.setdefault(
+                                stage, {"input_tokens": 0, "output_tokens": 0, "cost": 0.0, "model": model}
+                            )
+                            entry["input_tokens"] += inp
+                            entry["output_tokens"] += outp
+                            entry["cost"] += calculate_cost(model, inp, outp)
+                    if parsed_output and parsed_output.get("_pipeline_payload_id"):
+                        payload = await pop_payload(parsed_output["_pipeline_payload_id"])
+                        if payload is not None:
+                            yield {"event": payload["kind"], "data": payload["data"]}
+
             elif etype == "on_tool_error":
                 error_msg = edata.get("error") if isinstance(edata, dict) else str(edata)
                 idx = self._tool_call_index.get(run_id)
@@ -514,23 +565,29 @@ class _ModelStream:
                         # Cost tracking
                         cost = calculate_cost(model_name, inp, outp)
                         self._session_cost += cost
-                        # Track per-subagent cost
+                        # Track per-subagent cost. Pipeline-tool children are
+                        # skipped here — their usage arrives authoritatively as
+                        # _stage_usage on the tool result, keyed per stage.
                         parent_ids = event.get("parent_ids") or []
-                        subagent_name = "orchestrator"
-                        for pid in parent_ids:
-                            if pid in self._active_task_names:
-                                subagent_name = self._active_task_names[pid]
-                                break
-                        if subagent_name not in self._subagent_costs:
-                            self._subagent_costs[subagent_name] = {
-                                "input_tokens": 0,
-                                "output_tokens": 0,
-                                "cost": 0.0,
-                                "model": model_name,
-                            }
-                        self._subagent_costs[subagent_name]["input_tokens"] += inp
-                        self._subagent_costs[subagent_name]["output_tokens"] += outp
-                        self._subagent_costs[subagent_name]["cost"] += cost
+                        if self._pipeline_run_ids.intersection(parent_ids):
+                            subagent_name = None
+                        else:
+                            subagent_name = "orchestrator"
+                            for pid in parent_ids:
+                                if pid in self._active_task_names:
+                                    subagent_name = self._active_task_names[pid]
+                                    break
+                        if subagent_name is not None:
+                            if subagent_name not in self._subagent_costs:
+                                self._subagent_costs[subagent_name] = {
+                                    "input_tokens": 0,
+                                    "output_tokens": 0,
+                                    "cost": 0.0,
+                                    "model": model_name,
+                                }
+                            self._subagent_costs[subagent_name]["input_tokens"] += inp
+                            self._subagent_costs[subagent_name]["output_tokens"] += outp
+                            self._subagent_costs[subagent_name]["cost"] += cost
                         # Budget warning at threshold
                         if not self._budget_warned and self._session_cost >= (
                             _cfg_settings.SESSION_BUDGET_LIMIT_USD * _cfg_settings.BUDGET_WARNING_THRESHOLD
@@ -705,7 +762,9 @@ async def create_chat_agent(checkpointer=None, store=None, user_id=None, locale=
         model=model,
         tools=get_orchestrator_tools(),
         subagents=subagents,
-        system_prompt=build_chat_agent_prompt(locale, user_id=uid, timezone=timezone, currency=currency),
+        system_prompt=build_chat_agent_prompt(
+            locale, user_id=uid, timezone=timezone, currency=currency,
+        ),
         checkpointer=checkpointer,
         store=store,
         permissions=[
@@ -1090,6 +1149,9 @@ def _reconcile_itinerary_budget(
         currency = str(itinerary.get("currency") or "USD").upper()
         needs_currency_default = not itinerary.get("currency")
 
+        declared_days = itinerary.get("total_days")
+        needs_days_flag = isinstance(declared_days, int) and declared_days != len(days)
+
         new_status = None
         if stated_budget is not None:
             cap_amount, cap_currency = stated_budget
@@ -1103,12 +1165,14 @@ def _reconcile_itinerary_budget(
         current_status = itinerary.get("budget_status")
         needs_status_fix = new_status is not None and new_status != current_status
 
-        if not (needs_total_fix or needs_currency_default or needs_status_fix):
+        if not (needs_total_fix or needs_currency_default or needs_status_fix or needs_days_flag):
             return itinerary
 
         import copy
 
         enriched = copy.deepcopy(itinerary)
+        if needs_days_flag:
+            _sync_plan_days(enriched)
         if needs_total_fix:
             enriched["estimated_total_cost_usd"] = round(day_sum, 2)
             if declared is not None and declared > 0:
@@ -1138,11 +1202,84 @@ def _reconcile_itinerary_budget(
         return itinerary
 
 
+def _reconcile_plan_breakdown(plan: dict, total: float) -> None:
+    """Sync a plan's cost_breakdown with the reconciled itinerary total.
+
+    The model's category numbers are often invented and don't sum to the
+    total (or to the reconciled total after a fix). Scale the categories
+    proportionally so Stay+Food+Activities+Transport == total — the split
+    proportions come from the model, the arithmetic comes from us.
+    Mutates `plan` in place (already a deep copy upstream).
+    """
+    breakdown = plan.get("cost_breakdown")
+    if not isinstance(breakdown, dict) or total <= 0:
+        return
+    cat_keys = ("accommodation", "food", "activities", "transport")
+    cats: dict[str, float] = {}
+    for k in cat_keys:
+        try:
+            v = float(breakdown.get(k))
+            if v > 0:
+                cats[k] = v
+        except (TypeError, ValueError):
+            continue
+    if not cats:
+        return
+    cat_sum = sum(cats.values())
+    if abs(cat_sum - total) / total <= 0.05:
+        breakdown["total"] = round(total, 2)
+        return
+    scale = total / cat_sum
+    scaled = {k: round(v * scale, 2) for k, v in cats.items()}
+    # Fix rounding drift on the largest category so the sum lands exactly.
+    drift = round(total - sum(scaled.values()), 2)
+    if drift:
+        largest = max(scaled, key=scaled.get)
+        scaled[largest] = round(scaled[largest] + drift, 2)
+    breakdown.update(scaled)
+    breakdown["total"] = round(total, 2)
+
+
+def _sync_plan_days(itinerary: dict) -> None:
+    """Keep total_days consistent with the days[] content.
+
+    If both exist and disagree, total_days (the declared intent, matching
+    what the user asked for) wins for display — the mismatch is flagged in
+    warnings rather than silently rewriting. Mutates in place.
+    """
+    days = itinerary.get("days")
+    declared = itinerary.get("total_days")
+    if not isinstance(days, list) or not isinstance(declared, int):
+        return
+    if days and declared != len(days):
+        logger.warning(
+            "Itinerary total_days=%s but days[] has %d entries",
+            declared, len(days),
+        )
+        warnings = itinerary.get("warnings")
+        note = f"This plan shows {len(days)} of {declared} days in detail."
+        if isinstance(warnings, list):
+            if note not in warnings:
+                warnings.append(note)
+        else:
+            itinerary["warnings"] = [note]
+    elif not days and isinstance(declared, int):
+        # total_days with empty days[] is a summary stub — fine.
+        return
+
+
 def _reconcile_comparison_budgets(
     comparison: dict | None,
     stated_budget: tuple[float, str] | None = None,
 ) -> dict | None:
-    """Apply _reconcile_itinerary_budget to each plan's itinerary. Never raises."""
+    """Reconcile every plan's itinerary AND keep the comparison matrix and
+    per-plan cost_breakdown consistent with the reconciled totals.
+
+    One source of truth: the reconciled itinerary total. Without this, the
+    matrix row and breakdown can show the model's pre-reconciliation numbers
+    alongside the corrected card total — three contradictory figures on one
+    card. Never raises.
+    """
     if not isinstance(comparison, dict):
         return comparison
     try:
@@ -1150,14 +1287,76 @@ def _reconcile_comparison_budgets(
 
         enriched = copy.deepcopy(comparison)
         plans = enriched.get("plans")
+        matrix = enriched.get("comparison_matrix")
+        matrix_costs = matrix.get("total_cost") if isinstance(matrix, dict) else None
+
         if isinstance(plans, list):
             for plan in plans:
-                if isinstance(plan, dict) and isinstance(plan.get("itinerary"), dict):
-                    plan["itinerary"] = _reconcile_itinerary_budget(plan["itinerary"], stated_budget)
+                if not isinstance(plan, dict):
+                    continue
+                it = plan.get("itinerary")
+                if isinstance(it, dict):
+                    plan["itinerary"] = _reconcile_itinerary_budget(it, stated_budget)
+                    _sync_plan_days(plan["itinerary"])
+                    total = plan["itinerary"].get("estimated_total_cost_usd")
+                    try:
+                        total_f = float(total) if total is not None else None
+                    except (TypeError, ValueError):
+                        total_f = None
+                    if total_f is not None:
+                        _reconcile_plan_breakdown(plan, total_f)
+                        tier = plan.get("tier")
+                        if isinstance(matrix_costs, dict) and tier:
+                            matrix_costs[tier] = round(total_f, 2)
         return enriched
     except Exception:
         logger.warning("Comparison budget reconciliation failed", exc_info=True)
         return comparison
+
+
+def _fill_stated(found: dict, content) -> None:
+    """Extract days/budget/currency from one text into `found` (first wins)."""
+    if isinstance(content, list):
+        content = " ".join(
+            b.get("text", "") for b in content if isinstance(b, dict) and b.get("type") == "text"
+        )
+    if not isinstance(content, str):
+        return
+    from agents.constraints import extract_stated_days
+
+    if "days" not in found:
+        days = extract_stated_days(content)
+        if days is not None:
+            found["days"] = days
+    if "budget_amount" not in found:
+        budget = extract_stated_budget(content)
+        if budget:
+            found["budget_amount"], found["budget_currency"] = budget
+
+
+async def _get_stated_constraints(agent, config, extra_text: str | None = None) -> dict:
+    """Extract days/budget/currency the user stated across human messages.
+
+    Most-recent-wins per field — `extra_text` (the message just sent, not yet
+    in checkpoint state) is scanned first. Fed to the pipeline tools via
+    ContextVar so a hallucinated tool arg (model says 3 days when the user
+    wrote 5) gets rejected deterministically. Never raises.
+    """
+    found: dict = {}
+    try:
+        if extra_text:
+            _fill_stated(found, extra_text)
+        state = await agent.aget_state(config)
+        messages = state.values.get("messages", [])
+        for msg in reversed(messages):
+            if getattr(msg, "type", "") != "human":
+                continue
+            _fill_stated(found, msg.content)
+            if all(k in found for k in ("days", "budget_amount")):
+                break
+    except Exception:
+        pass
+    return found
 
 
 async def _get_conversation_stated_budget(agent, config) -> tuple[float, str] | None:
@@ -1543,6 +1742,15 @@ async def stream_chat_agent(
         return
 
     stream = _ModelStream(agent, config)
+    # Pipeline tools read locale/cancel/budget-check/stated-constraints from
+    # ContextVars set here — they run inside the agent's tool machinery in
+    # this context. `message` is scanned first: it isn't in checkpoint state yet.
+    set_pipeline_context(
+        locale=locale,
+        cancel_event=cancel_event,
+        budget_check=stream._check_budget,
+        stated_constraints=await _get_stated_constraints(agent, config, message),
+    )
     if prepend_text:
         yield {"event": "token", "data": prepend_text}
     async for event in stream.events(inputs, cancel_event=cancel_event):
@@ -1704,6 +1912,12 @@ async def regenerate_chat_agent(
     # Stream from the forked checkpoint — no new user message needed,
     # the fork already has the user's last message in state
     stream = _ModelStream(agent, forked_config)
+    set_pipeline_context(
+        locale=locale,
+        cancel_event=cancel_event,
+        budget_check=stream._check_budget,
+        stated_constraints=await _get_stated_constraints(agent, forked_config),
+    )
     async for event in stream.events(
         {"messages": []},
         cancel_event=cancel_event,
@@ -1904,6 +2118,12 @@ async def edit_chat_agent(
     set_current_thread_id(thread_id)
 
     stream = _ModelStream(agent, run_config)
+    set_pipeline_context(
+        locale=locale,
+        cancel_event=cancel_event,
+        budget_check=stream._check_budget,
+        stated_constraints=await _get_stated_constraints(agent, run_config, new_message),
+    )
     if prepend_text:
         yield {"event": "token", "data": prepend_text}
     async for event in stream.events(run_inputs, cancel_event=cancel_event):
@@ -2014,112 +2234,57 @@ async def edit_itinerary_agent(
     cancel_event=None,
     currency: str | None = None,
 ):
-    """Validate a user-edited itinerary via AI and stream the response.
+    """Validate a user-edited itinerary via the deterministic pipeline.
 
     The user has manually modified their itinerary (drag-and-drop, removed
-    activities, added custom ones). This function sends the modified itinerary
-    to the chat agent with a validation prompt, streams the AI response, and
-    emits the validated itinerary as an SSE event.
+    activities, added custom ones). Structure and budget math are checked in
+    code; an LLM fix-pass runs only if the edit left real damage. Emits the
+    validated itinerary as an SSE event — no model round-trip for clean edits.
     """
-    from agents.prompts import build_edit_itinerary_prompt
-
-    agent = await create_chat_agent(user_id=user_id, locale=locale, timezone=timezone, currency=currency)
-    config = {
-        "configurable": {
-            "thread_id": thread_id,
-            "user_id": user_id or "anonymous",
-        },
-        "recursion_limit": 100,
-    }
+    from agents.pipeline import run_edit_validation_pipeline
 
     reset_orchestrator_search_count(thread_id)
     set_current_thread_id(thread_id)
+    set_pipeline_context(locale=locale, cancel_event=cancel_event)
 
-    validation_prompt = build_edit_itinerary_prompt(
-        modified_itinerary,
-        currency=currency,
-        locale=locale,
+    yield {"event": "subagent_progress", "data": {"run_id": "edit-validation", "description": "Validating your edits..."}}
+
+    result = await run_edit_validation_pipeline(
+        modified_itinerary, locale=locale, cancel_event=cancel_event
     )
-
-    stream = _ModelStream(agent, config)
-    async for event in stream.events(
-        {"messages": [{"role": "user", "content": validation_prompt}]},
-        cancel_event=cancel_event,
-    ):
-        yield event
 
     if cancel_event and cancel_event.is_set():
         yield {"event": "cancelled", "data": None}
         return
 
-    # Save activity data
-    if stream.activity["thinking"] or stream.activity["tool_calls"] or stream.activity["usage"] or stream.activity["images"] or stream.activity["charts"]:
-        store = get_activity_store()
-        try:
-            state = await agent.aget_state(config)
-            msg_count = len(state.values.get("messages", []))
-            message_index = msg_count - 1
-        except Exception:
-            message_index = None
-        await save_activity(store, thread_id, stream.activity, message_index=message_index)
-
-    # Persist cost data
-    try:
-        await stream.persist_costs(thread_id, user_id or "anonymous")
-    except Exception:
-        logger.warning("Failed to persist cost data for thread %s", thread_id, exc_info=True)
-
-    stream_text = stream.last_text()
-    logger.info(
-        "edit_itinerary finished: last_text len=%d, has_tags=%s",
-        len(stream_text),
-        bool(stream_text and _ITINERARY_TAG_RE.search(stream_text)),
-    )
-
-    has_itinerary_tag = bool(stream_text and _ITINERARY_TAG_RE.search(stream_text))
-
-    if not has_itinerary_tag:
-        yield {"event": "done", "data": {"budget_reached": stream._budget_reached}}
+    if result is None:
+        yield {"event": "error", "data": "Could not validate the edited itinerary"}
         return
 
-    itinerary = _extract_itinerary_from_text(stream_text) if stream_text else None
-    if itinerary is None:
-        state = await agent.aget_state(config)
-        itinerary = _extract_chat_itinerary(state.values)
+    itinerary, stage_usage = result
+    yield {"event": "itinerary", "data": itinerary}
+    yield {"event": "done", "data": {"budget_reached": False}}
 
-    if itinerary is None:
-        hint_id = f"extract-retry-{uuid.uuid4().hex[:12]}"
-        retry = _ModelStream(agent, config)
-        async for event in retry.events(
-            {
-                "messages": [
-                    HumanMessage(
-                        content=_extraction_failure_hint(state.values, stream_text),
-                        id=hint_id,
-                    )
-                ]
-            },
-            cancel_event=cancel_event,
-        ):
-            yield event
-        await _remove_internal_message(agent, config, hint_id)
-
-        if cancel_event and cancel_event.is_set():
-            yield {"event": "cancelled", "data": None}
-            return
-
-        stream_text = stream.last_text() or retry.last_text()
-        itinerary = _extract_itinerary_from_text(stream_text) if stream_text else None
-        if itinerary is None:
-            state = await agent.aget_state(config)
-            itinerary = _extract_chat_itinerary(state.values)
-
-    try:
-        if itinerary is not None:
-            stated_budget = await _get_conversation_stated_budget(agent, config)
-            itinerary = await _enrich_itinerary_with_coordinates(itinerary)
-            itinerary = _reconcile_itinerary_budget(itinerary, stated_budget)
-            yield {"event": "itinerary", "data": itinerary}
-        yield {"event": "done", "data": {"budget_reached": stream._budget_reached}}
-    except (ValueError, json.JSONDecodeError) as exc:
-        yield {"event": "error", "data": str(exc)}
+    # Persist per-stage cost rows (same sink as _ModelStream.persist_costs)
+    for name, u in (stage_usage or {}).items():
+        inp = u.get("input_tokens") or 0
+        outp = u.get("output_tokens") or 0
+        if not inp and not outp:
+            continue
+        try:
+            model = u.get("model") or ""
+            await cost_store.record_subagent_cost(
+                thread_id=thread_id,
+                user_id=user_id or "anonymous",
+                subagent_name=name,
+                input_tokens=inp,
+                output_tokens=outp,
+                cost_usd=calculate_cost(model, inp, outp),
+                model_used=model,
+            )
+            LLM_CALLS_TOTAL.labels(model=model, subagent=name).inc()
+            LLM_TOKENS_TOTAL.labels(model=model, direction="input").inc(inp)
+            LLM_TOKENS_TOTAL.labels(model=model, direction="output").inc(outp)
+            LLM_COST_TOTAL.labels(model=model).inc(calculate_cost(model, inp, outp))
+        except Exception:
+            logger.warning("Failed to persist edit-validation cost for %s", thread_id, exc_info=True)

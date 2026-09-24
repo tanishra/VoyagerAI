@@ -1,12 +1,17 @@
-"""Tests for the subagent registry and Phase 4.2 parallel dispatch prompts."""
+"""Tests for the subagent registry and orchestrator prompts.
+
+Post-cutover: only the researcher is dispatchable via the task tool —
+plan generation, validation, and enrichment live in the deterministic
+pipeline (agents/pipeline.py). The specialist system prompts remain
+because the pipeline stages use them directly.
+"""
 
 from __future__ import annotations
 
 from agents.prompts import (
     CHAT_AGENT_SYSTEM_PROMPT,
+    COMPARISON_SUMMARY_PROMPT,
     CONSTRAINT_ANALYZER_SYSTEM_PROMPT,
-    MULTI_PLAN_GENERATOR_SYSTEM_PROMPT,
-    QUALITY_SCORER_SYSTEM_PROMPT,
     RESEARCHER_SYSTEM_PROMPT,
     RISK_DETECTOR_SYSTEM_PROMPT,
 )
@@ -14,46 +19,31 @@ from agents.subagents import get_subagents, _ResilientModel, wrap_subagent_for_r
 
 
 class TestSubagentRegistry:
-    def test_all_eight_subagents_registered(self):
+    def test_only_researcher_registered(self):
         names = [s["name"] for s in get_subagents()]
-        assert names == [
-            "researcher",
-            "validator",
-            "enricher",
-            "cost_optimizer",
-            "risk_detector",
-            "constraint_analyzer",
-            "multi_plan_generator",
-            "quality_scorer",
-        ]
+        assert names == ["researcher"]
 
-    def test_risk_detector_has_internet_tools(self):
+    def test_researcher_has_internet_tools(self):
         by_name = {s["name"]: s for s in get_subagents()}
-        tool_names = [getattr(t, "name", None) for t in by_name["risk_detector"]["tools"]]
+        tool_names = [getattr(t, "name", None) for t in by_name["researcher"]["tools"]]
         assert "internet_search" in tool_names
 
-    def test_constraint_analyzer_has_no_tools(self):
-        by_name = {s["name"]: s for s in get_subagents()}
-        assert by_name["constraint_analyzer"]["tools"] == []
-
-    def test_subagents_use_subagent_model(self):
+    def test_researcher_uses_subagent_model(self):
         from config.settings import settings
 
-        by_name = {s["name"]: s for s in get_subagents()}
-        for name in ("risk_detector", "constraint_analyzer"):
-            model = by_name[name]["model"]
-            inner = getattr(model, "inner", model)
-            assert getattr(inner, "model", None) == settings.LLM_SUBAGENT_MODEL
+        model = get_subagents()[0]["model"]
+        inner = getattr(model, "inner", model)
+        assert getattr(inner, "model", None) == settings.LLM_SUBAGENT_MODEL
 
     def test_all_subagents_wrapped_with_resilient_model(self):
         for spec in get_subagents():
             assert isinstance(spec["model"], _ResilientModel)
 
     def test_resilient_model_preserves_name_and_description(self):
-        from agents.subagents import build_risk_detector
+        from agents.subagents import build_researcher
         from agents.llm import get_subagent_model
 
-        raw = build_risk_detector(get_subagent_model())
+        raw = build_researcher(get_subagent_model())
         wrapped = wrap_subagent_for_resilience(raw)
         assert wrapped["name"] == raw["name"]
         assert wrapped["description"] == raw["description"]
@@ -61,36 +51,19 @@ class TestSubagentRegistry:
         assert isinstance(wrapped["model"], _ResilientModel)
         assert wrapped["model"].subagent_name == raw["name"]
 
-    def test_subagent_descriptions_mention_purpose(self):
-        by_name = {s["name"]: s for s in get_subagents()}
-        assert "risks" in by_name["risk_detector"]["description"].lower()
-        assert "constraints" in by_name["constraint_analyzer"]["description"].lower()
-        assert "itinerary" in by_name["multi_plan_generator"]["description"].lower() or "plan" in by_name["multi_plan_generator"]["description"].lower()
-        assert "score" in by_name["quality_scorer"]["description"].lower() or "quality" in by_name["quality_scorer"]["description"].lower()
 
-
-class TestParallelDispatchPrompts:
-    def test_chat_prompt_has_parallel_dispatch(self):
-        assert "<parallel_dispatch>" in CHAT_AGENT_SYSTEM_PROMPT
-
-    def test_chat_dispatch_dispatches_all_workers(self):
-        for worker in ("researcher", "constraint_analyzer", "risk_detector"):
-            assert worker in CHAT_AGENT_SYSTEM_PROMPT
-
-    def test_dispatch_mentions_parallel_execution(self):
-        assert "ONE message" in CHAT_AGENT_SYSTEM_PROMPT
-        assert "parallel" in CHAT_AGENT_SYSTEM_PROMPT
-
-    def test_dispatch_handles_subagent_failure(self):
-        assert "continue with the remaining results" in CHAT_AGENT_SYSTEM_PROMPT
-
+class TestChatPrompt:
     def test_prompt_has_required_fields_gate(self):
         assert "<required_fields>" in CHAT_AGENT_SYSTEM_PROMPT
-        assert "destination" in CHAT_AGENT_SYSTEM_PROMPT
-        assert "duration" in CHAT_AGENT_SYSTEM_PROMPT
-        assert "budget" in CHAT_AGENT_SYSTEM_PROMPT
-        assert "travel_style" in CHAT_AGENT_SYSTEM_PROMPT
-        assert "group_type" in CHAT_AGENT_SYSTEM_PROMPT
+        for field in ("destination", "total_days", "budget", "travel_style", "group_type"):
+            assert field in CHAT_AGENT_SYSTEM_PROMPT
+
+    def test_prompt_delegates_generation_to_pipeline(self):
+        assert "generate_trip_plans" in CHAT_AGENT_SYSTEM_PROMPT
+        assert "refine_itinerary" in CHAT_AGENT_SYSTEM_PROMPT
+
+    def test_prompt_prohibits_inline_plan_json(self):
+        assert "NEVER write plan or itinerary JSON" in CHAT_AGENT_SYSTEM_PROMPT
 
     def test_prompt_prohibits_tags_in_conversation_mode(self):
         conv_section = CHAT_AGENT_SYSTEM_PROMPT.split('<mode type="conversation">')[1].split("</mode>")[0]
@@ -100,8 +73,28 @@ class TestParallelDispatchPrompts:
         struct_section = CHAT_AGENT_SYSTEM_PROMPT.split('<mode type="structured">')[1].split("</mode>")[0]
         assert "ALL required fields" in struct_section
 
+    def test_chat_prompt_has_anti_loop_rules(self):
+        assert "<anti_loop_rules>" in CHAT_AGENT_SYSTEM_PROMPT
+        assert "STOP" in CHAT_AGENT_SYSTEM_PROMPT
+
     def test_researcher_prompt_parallel_searches(self):
         assert "MULTIPLE internet_search" in RESEARCHER_SYSTEM_PROMPT
+
+
+class TestComparisonSummaryPrompt:
+    def test_defines_three_tiers(self):
+        for tier in ("budget", "balanced", "premium"):
+            assert tier in COMPARISON_SUMMARY_PROMPT
+
+    def test_summary_only_no_days(self):
+        assert "NO \"days\" array" in COMPARISON_SUMMARY_PROMPT
+
+    def test_has_comparison_matrix(self):
+        assert "comparison_matrix" in COMPARISON_SUMMARY_PROMPT
+
+    def test_budget_tiers_target_percentages(self):
+        for pct in ("60%", "100%", "150%"):
+            assert pct in COMPARISON_SUMMARY_PROMPT
 
 
 class TestRiskDetectorPrompt:
@@ -133,78 +126,6 @@ class TestConstraintAnalyzerPrompt:
     def test_distinguishes_active_and_inferred(self):
         assert '"active"' in CONSTRAINT_ANALYZER_SYSTEM_PROMPT
         assert '"inferred"' in CONSTRAINT_ANALYZER_SYSTEM_PROMPT
-
-
-class TestMultiPlanGeneratorPrompt:
-    def test_defines_three_tiers(self):
-        for tier in ("Budget", "Balanced", "Premium"):
-            assert tier in MULTI_PLAN_GENERATOR_SYSTEM_PROMPT
-
-    def test_has_comparison_matrix_output(self):
-        assert "comparison_matrix" in MULTI_PLAN_GENERATOR_SYSTEM_PROMPT
-
-    def test_has_cost_breakdown(self):
-        assert "cost_breakdown" in MULTI_PLAN_GENERATOR_SYSTEM_PROMPT
-
-    def test_has_tradeoffs(self):
-        assert "tradeoffs" in MULTI_PLAN_GENERATOR_SYSTEM_PROMPT
-
-    def test_budget_tiers_target_percentages(self):
-        assert "60%" in MULTI_PLAN_GENERATOR_SYSTEM_PROMPT
-        assert "100%" in MULTI_PLAN_GENERATOR_SYSTEM_PROMPT
-        assert "150%" in MULTI_PLAN_GENERATOR_SYSTEM_PROMPT
-
-
-class TestChatPromptComparisonMode:
-    def test_chat_prompt_has_comparison_format(self):
-        assert "<comparison_format>" in CHAT_AGENT_SYSTEM_PROMPT
-
-    def test_chat_prompt_has_comparison_tags(self):
-        assert "<comparison>" in CHAT_AGENT_SYSTEM_PROMPT
-
-    def test_chat_prompt_mentions_multi_plan_generator(self):
-        assert "multi_plan_generator" in CHAT_AGENT_SYSTEM_PROMPT
-
-    def test_chat_prompt_has_itinerary_format(self):
-        assert "<itinerary_format>" in CHAT_AGENT_SYSTEM_PROMPT
-
-
-class TestQualityScorerPrompt:
-    def test_covers_all_ten_criteria(self):
-        for check in ("Budget accuracy", "Constraint satisfaction", "Route efficiency",
-                      "Activity density", "Seasonal appropriateness", "Safety",
-                      "Diversity", "Local authenticity", "Internal consistency", "Completeness"):
-            assert check in QUALITY_SCORER_SYSTEM_PROMPT
-
-    def test_has_structured_output_format(self):
-        assert "<output_format>" in QUALITY_SCORER_SYSTEM_PROMPT
-        assert '"score"' in QUALITY_SCORER_SYSTEM_PROMPT
-        assert '"issues"' in QUALITY_SCORER_SYSTEM_PROMPT
-        assert '"improved_plan"' in QUALITY_SCORER_SYSTEM_PROMPT
-
-    def test_has_severity_levels(self):
-        assert '"error"' in QUALITY_SCORER_SYSTEM_PROMPT
-        assert '"warning"' in QUALITY_SCORER_SYSTEM_PROMPT
-
-    def test_has_fix_guidance(self):
-        assert '"fix"' in QUALITY_SCORER_SYSTEM_PROMPT
-
-    def test_score_threshold_rule(self):
-        assert "80" in QUALITY_SCORER_SYSTEM_PROMPT
-
-
-class TestChatPromptAntiLoop:
-    def test_chat_prompt_has_anti_loop_rules(self):
-        assert "<anti_loop_rules>" in CHAT_AGENT_SYSTEM_PROMPT
-
-    def test_anti_loop_mentions_no_retry(self):
-        assert "do NOT retry" in CHAT_AGENT_SYSTEM_PROMPT
-
-    def test_anti_loop_mentions_one_round(self):
-        assert "ONE round" in CHAT_AGENT_SYSTEM_PROMPT
-
-    def test_anti_loop_mentions_stop_after_output(self):
-        assert "STOP" in CHAT_AGENT_SYSTEM_PROMPT
 
 
 class TestResilientModel:
@@ -252,9 +173,8 @@ class TestResilientModel:
                 return ChatResult(generations=[ChatGeneration(message=AIMessage(content="ok"))])
 
         wrapper = _ResilientModel(_OkModel(), "test_agent")
-        result = asyncio.new_event_loop().run_until_complete(
-            wrapper._agenerate([HumanMessage(content="hi")])
-        )
+        result = wrapper._agenerate([HumanMessage(content="hi")])
+        result = asyncio.new_event_loop().run_until_complete(result)
         assert result.generations[0].message.content == "ok"
 
     def test_llm_type_includes_inner(self):

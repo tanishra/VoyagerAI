@@ -64,7 +64,9 @@ function PlanCard({
   const total = planTotal(plan);
   const isRecommended = plan.tier === RECOMMENDED_TIER;
   const animatedTotal = useCountUp(total ?? 0);
-  const perDay = total != null && days.length > 0 ? total / days.length : null;
+  // dayCount falls back to total_days so summary-only stubs (no days array)
+  // still show a per-day figure.
+  const perDay = total != null && dayCount > 0 ? total / dayCount : null;
 
   return (
     <motion.div

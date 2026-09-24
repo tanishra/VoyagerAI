@@ -93,6 +93,7 @@ from oauth import (
 from locale_utils import classify_exception, extract_locale, get_error_message
 from sanitize import sanitize_prompt_input, sanitize_prompt_input_detailed
 from share_store import share_store
+from agents.tools.pipeline_tools import is_pipeline_tool
 from agents.tools.visuals import generate_destination_image
 from threads import generate_summary, thread_store
 from cost_store import cost_store
@@ -518,16 +519,22 @@ def _parse_chat_event(
         payloads: list[dict] = []
         if name == "task" and isinstance(tool_input, dict):
             subagent_type = tool_input.get("subagent_type")
-            if subagent_type:
-                if run_id:
-                    active_tasks[run_id] = subagent_type
-                    subagent_run_ids.add(run_id)
-                payloads.append(_sse("status", {"tool": subagent_type, "status": "running"}))
-                payloads.append(_sse("tool_start", {
-                    "name": subagent_type,
-                    "input": _truncate_tool_data(tool_input),
-                    "run_id": run_id,
-                }))
+        elif is_pipeline_tool(name):
+            # Pipeline tools run inner model/tool calls that bubble up under
+            # this run_id — register it so those chunks stay out of "token".
+            subagent_type = name
+        else:
+            subagent_type = None
+        if subagent_type:
+            if run_id:
+                active_tasks[run_id] = subagent_type
+                subagent_run_ids.add(run_id)
+            payloads.append(_sse("status", {"tool": subagent_type, "status": "running"}))
+            payloads.append(_sse("tool_start", {
+                "name": subagent_type,
+                "input": _truncate_tool_data(tool_input),
+                "run_id": run_id,
+            }))
         else:
             ts_payload = {
                 "name": name,

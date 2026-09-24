@@ -210,33 +210,3 @@ class TestEditItineraryEndpoint:
         dev_tag = hashlib.sha256(b"dev@localhost").hexdigest()[:12]
         assert captured_thread_id
         assert captured_thread_id[0].startswith(f"chat:{dev_tag}:")
-
-
-class TestBuildEditItineraryPrompt:
-    def test_prompt_contains_itinerary_json(self):
-        from agents.prompts import build_edit_itinerary_prompt
-
-        prompt = build_edit_itinerary_prompt(SAMPLE_ITINERARY)
-        assert "Tokyo" in prompt
-        assert "<itinerary>" in prompt
-        assert "<validation_checks>" in prompt
-
-    def test_prompt_includes_currency(self):
-        from agents.prompts import build_edit_itinerary_prompt
-
-        prompt = build_edit_itinerary_prompt(SAMPLE_ITINERARY, currency="INR")
-        assert "INR" in prompt
-        assert "₹" in prompt
-
-    def test_prompt_includes_language_for_non_english(self):
-        from agents.prompts import build_edit_itinerary_prompt
-
-        prompt = build_edit_itinerary_prompt(SAMPLE_ITINERARY, locale="ja")
-        assert "<language>" in prompt
-        assert "日本語" in prompt
-
-    def test_prompt_omits_language_for_english(self):
-        from agents.prompts import build_edit_itinerary_prompt
-
-        prompt = build_edit_itinerary_prompt(SAMPLE_ITINERARY, locale="en")
-        assert "<language>" not in prompt

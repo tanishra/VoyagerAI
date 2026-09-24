@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { Copy, Check } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import type { Itinerary, ComparisonData, DayPlan } from '@/lib/types';
+import type { Itinerary, PlanItineraryStub, ComparisonData, DayPlan } from '@/lib/types';
 import { getStoredCurrency, CURRENCY_SYMBOLS } from '@/lib/currency';
 
 function getCurrencySymbol(): string {
@@ -11,7 +11,7 @@ function getCurrencySymbol(): string {
   return c ? CURRENCY_SYMBOLS[c] : '$';
 }
 
-export function formatItineraryText(itinerary: Itinerary): string {
+export function formatItineraryText(itinerary: PlanItineraryStub): string {
   const lines: string[] = [];
   const sym = getCurrencySymbol();
   const cost = itinerary.estimated_total_cost_usd != null

@@ -158,3 +158,75 @@ class TestReconcileComparisonBudgets:
 
     def test_non_dict_passthrough(self):
         assert reconcile_comparison("text") == "text"
+
+    def test_matrix_synced_to_reconciled_totals(self):
+        """The production bug: matrix showed the model's original totals
+        while card totals were reconciled to day sums — two contradictory
+        numbers on one card."""
+        comp = {
+            "plans": [
+                {"tier": "budget", "itinerary": _itinerary(40000, [8000, 8000])},
+                {"tier": "balanced", "itinerary": _itinerary(50000, [10000, 10000])},
+                {"tier": "premium", "itinerary": _itinerary(80000, [16000, 16000])},
+            ],
+            "comparison_matrix": {
+                "total_cost": {"budget": 40000, "balanced": 50000, "premium": 80000}
+            },
+        }
+        out = reconcile_comparison(comp)
+        mc = out["comparison_matrix"]["total_cost"]
+        assert mc == {"budget": 16000, "balanced": 20000, "premium": 32000}
+        for p in out["plans"]:
+            assert p["itinerary"]["estimated_total_cost_usd"] == mc[p["tier"]]
+
+    def test_plan_breakdown_scaled_to_total(self):
+        """Breakdown categories that don't sum to the total get scaled so
+        the card never shows contradictory figures."""
+        comp = {
+            "plans": [{
+                "tier": "budget",
+                "itinerary": _itinerary(16000, [8000, 8000]),
+                "cost_breakdown": {
+                    "accommodation": 5000, "food": 5000,
+                    "activities": 3000, "transport": 2000, "total": 40000,
+                },
+            }]
+        }
+        out = reconcile_comparison(comp)
+        bd = out["plans"][0]["cost_breakdown"]
+        assert bd["total"] == 16000
+        cat_sum = bd["accommodation"] + bd["food"] + bd["activities"] + bd["transport"]
+        assert abs(cat_sum - 16000) < 1  # rounding drift fixed on largest category
+
+    def test_breakdown_total_updated_within_tolerance(self):
+        comp = {
+            "plans": [{
+                "tier": "balanced",
+                "itinerary": _itinerary(20000, [10000, 10000]),
+                "cost_breakdown": {
+                    "accommodation": 5000, "food": 6000,
+                    "activities": 5000, "transport": 4000, "total": 20001,
+                },
+            }]
+        }
+        out = reconcile_comparison(comp)
+        bd = out["plans"][0]["cost_breakdown"]
+        # Within 5% — categories untouched, total normalized to itinerary total
+        assert bd["accommodation"] == 5000
+        assert bd["total"] == 20000
+
+    def test_total_days_mismatch_flagged(self):
+        it = _itinerary(16000, [8000, 8000])
+        it["total_days"] = 5  # declared 5, only 2 day objects
+        out = reconcile(it)
+        assert any("2 of 5 days" in w for w in out["warnings"])
+
+    def test_total_days_mismatch_flagged_in_comparison(self):
+        comp = {
+            "plans": [{
+                "tier": "balanced",
+                "itinerary": {**_itinerary(20000, [10000, 10000]), "total_days": 5},
+            }]
+        }
+        out = reconcile_comparison(comp)
+        assert any("2 of 5 days" in w for w in out["plans"][0]["itinerary"]["warnings"])
