@@ -320,3 +320,18 @@ class TestClarifyTool:
         from agents.pipeline import is_pipeline_tool
         assert is_pipeline_tool("ask_clarifying_questions")
         assert is_pipeline_tool("generate_trip_plans")
+
+
+class TestClarifyPromptRules:
+    def test_prompt_forbids_prose_questions(self):
+        """Regression: model must call ask_clarifying_questions, not write
+        questions as text — soft wording let gpt-4o default to prose."""
+        from agents.prompts import build_chat_agent_prompt
+        p = build_chat_agent_prompt()
+        assert "ask_clarifying_questions" in p
+        assert "NEVER write clarifying questions as plain text" in p
+
+    def test_workflow_uses_tool_not_natural_prose(self):
+        from agents.prompts import build_chat_agent_prompt
+        p = build_chat_agent_prompt()
+        assert "ask for missing required fields naturally" not in p
