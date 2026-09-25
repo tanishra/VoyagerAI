@@ -16,6 +16,6 @@ describe('CTASection', () => {
   it('renders CTA button linking to /login', () => {
     render(<CTASection />);
     const btn = screen.getByText('Plan Your Trip');
-    expect(btn.closest('a')).toHaveAttribute('href', '/login');
+    expect(btn.closest('a')).toHaveAttribute('href', '/chat');
   });
 });

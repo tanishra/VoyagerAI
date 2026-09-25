@@ -6,13 +6,24 @@ import Link from 'next/link';
 import { ArrowLeft } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useLocale } from '@/lib/useLocale';
-import { getLoginUrl } from '@/lib/auth';
+import { getLoginUrl, getSession } from '@/lib/auth';
 import GoogleIcon from '@/components/GoogleIcon';
+import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 
 export default function LoginPage() {
   const t = useTranslations('auth');
   const tNav = useTranslations('nav');
   const locale = useLocale();
+  const router = useRouter();
+
+  // Already signed in → skip the login card entirely
+  useEffect(() => {
+    getSession().then((user) => {
+      if (user) router.replace(`/${locale}/chat`);
+    });
+  }, [router, locale]);
+
   return (
     <main className="relative min-h-screen overflow-hidden">
       {/* Full-bleed destination photograph */}

@@ -54,7 +54,7 @@ export default function AboutPage() {
             {t('aboutCtaDesc')}
           </p>
           <Link
-            href="/login"
+            href="/chat"
             className="inline-flex items-center gap-2 px-7 py-3 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-all duration-200 hover:-translate-y-0.5 shadow-sm"
           >
             {t('aboutCtaButton')}

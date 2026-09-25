@@ -17,7 +17,7 @@ describe('HeroSection', () => {
   it('renders CTA buttons', () => {
     render(<HeroSection />);
     const planBtn = screen.getByText('Plan Your Trip');
-    expect(planBtn.closest('a')).toHaveAttribute('href', '/login');
+    expect(planBtn.closest('a')).toHaveAttribute('href', '/chat');
     const howBtn = screen.getByText('How It Works');
     expect(howBtn.closest('a')).toHaveAttribute('href', '/about');
   });

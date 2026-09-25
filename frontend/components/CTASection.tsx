@@ -24,7 +24,7 @@ export default function CTASection() {
             {t('ctaDesc')}
           </p>
           <Link
-            href="/login"
+            href="/chat"
             className="group inline-flex items-center gap-2 px-8 py-4 rounded-lg bg-primary text-primary-foreground font-semibold text-sm transition-all duration-300 hover:bg-primary/90 hover:-translate-y-0.5 shadow-sm"
           >
             {t('ctaButton')}
