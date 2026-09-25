@@ -10,6 +10,12 @@ export interface TimeSlot {
   // geocode and lat/lng are the destination centroid instead — the map
   // renders these pins dashed + labeled, never as exact positions.
   geo_approx?: boolean;
+  // Optional enrichments (phase 2 — absent on current pipeline output):
+  // local start time, a one-line "why go" note, and a booking hint.
+  time?: string;
+  why?: string;
+  book?: string;
+  food?: string;
 }
 
 export interface DayPlan {
@@ -23,6 +29,9 @@ export interface DayPlan {
   // Legacy name — the actual unit is the itinerary's `currency`, not USD.
   daily_cost_usd: number;
   tips: string[];
+  // Optional enrichments (phase 2): day weather chip + total walking distance.
+  weather?: string;
+  walking_km?: number;
 }
 
 export interface Itinerary {

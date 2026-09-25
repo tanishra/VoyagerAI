@@ -109,26 +109,25 @@ describe('ItineraryCard', () => {
     expect(screen.getByText('Comfortable shoes')).toBeInTheDocument();
   });
 
-  it('expands day bar inline when clicked (accordion)', () => {
+  it('clicking a day row opens the day panel', () => {
     render(<ItineraryCard itinerary={makeItinerary()} threadId="t1" />);
     fireEvent.click(screen.getByText(/Day 1 — Arrival/));
+    // panel shows every day, not just the clicked one
     expect(screen.getByText('Hotel check-in')).toBeInTheDocument();
-    expect(screen.getByText('Shibuya Crossing')).toBeInTheDocument();
-    expect(screen.getByText('Ramen dinner')).toBeInTheDocument();
+    expect(screen.getByText('Senso-ji Temple')).toBeInTheDocument();
+    expect(screen.getByText('Get a Suica card')).toBeInTheDocument();
   });
 
-  it('opens day detail modal via View Details button', () => {
+  it('View full opens the day panel', () => {
     render(<ItineraryCard itinerary={makeItinerary()} threadId="t1" />);
-    fireEvent.click(screen.getByText(/Day 1 — Arrival/));
-    fireEvent.click(screen.getByText('View Details'));
-    expect(screen.getByText('Get a Suica card')).toBeInTheDocument();
+    fireEvent.click(screen.getByText(/View full/));
+    expect(screen.getByText('Hotel check-in')).toBeInTheDocument();
     expect(screen.getByText('Avoid rush hour')).toBeInTheDocument();
   });
 
-  it('closes modal when close button is clicked', () => {
+  it('closes panel when close button is clicked', () => {
     render(<ItineraryCard itinerary={makeItinerary()} threadId="t1" />);
     fireEvent.click(screen.getByText(/Day 1 — Arrival/));
-    fireEvent.click(screen.getByText('View Details'));
     expect(screen.getByText('Get a Suica card')).toBeInTheDocument();
     fireEvent.click(screen.getByLabelText('Close day details'));
     expect(screen.queryByText('Get a Suica card')).not.toBeInTheDocument();
@@ -141,32 +140,41 @@ describe('ItineraryCard', () => {
     expect(screen.getAllByText(/Daily cost:/).length).toBe(2);
   });
 
-  it('does not show View Details button in print mode', () => {
+  it('does not show the day summary block in print mode', () => {
     render(<ItineraryCard itinerary={makeItinerary()} threadId="t1" printMode />);
-    expect(screen.queryByText('View Details')).not.toBeInTheDocument();
+    expect(screen.queryByText('Day by day')).not.toBeInTheDocument();
   });
 
-  it('expanding a day in timeline sets activeDay on map', () => {
+  it('print mode prefixes slot time when present', () => {
+    const it = makeItinerary();
+    it.days[0].morning = { ...it.days[0].morning, time: '09:30' };
+    render(<ItineraryCard itinerary={it} threadId="t1" printMode />);
+    expect(screen.getByText(/09:30 Hotel check-in/)).toBeInTheDocument();
+  });
+
+  it('clicking a day row sets activeDay on the map', () => {
     render(<ItineraryCard itinerary={makeItinerary()} threadId="t1" />);
+    fireEvent.click(screen.getByText('Map'));
     fireEvent.click(screen.getByText(/Day 1 — Arrival/));
-    const map = screen.getByTestId('itinerary-map');
+    const map = screen.getAllByTestId('itinerary-map')[0];
     expect(map.getAttribute('data-active-day')).toBe('1');
   });
 
-  it('map marker click sets activeDay and expands corresponding day', () => {
+  it('map marker click opens the panel at that day', () => {
     render(<ItineraryCard itinerary={makeItinerary()} threadId="t1" />);
     fireEvent.click(screen.getByText('Map'));
     fireEvent.click(screen.getByTestId('map-marker-click'));
     expect(screen.getByText('Senso-ji Temple')).toBeInTheDocument();
-    const map = screen.getByTestId('itinerary-map');
+    const map = screen.getAllByTestId('itinerary-map')[0];
     expect(map.getAttribute('data-active-day')).toBe('2');
   });
 
-  it('map day select click sets activeDay', () => {
+  it('map day select click opens the panel at that day', () => {
     render(<ItineraryCard itinerary={makeItinerary()} threadId="t1" />);
     fireEvent.click(screen.getByText('Map'));
     fireEvent.click(screen.getByTestId('map-day-select'));
-    const map = screen.getByTestId('itinerary-map');
+    expect(screen.getByText('Hotel check-in')).toBeInTheDocument();
+    const map = screen.getAllByTestId('itinerary-map')[0];
     expect(map.getAttribute('data-active-day')).toBe('1');
   });
 

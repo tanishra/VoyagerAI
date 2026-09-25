@@ -187,7 +187,6 @@
     "tips": "सुझाव",
     "closeDayDetails": "दिन विवरण बंद करें",
     "dailyCostSummary": "दैनिक लागत",
-    "viewDetails": "विवरण देखें",
     "loadingDescription": "विवरण लोड हो रहा है...",
     "viewOnMaps": "Google Maps पर देखें",
     "total": "कुल",
@@ -231,7 +230,9 @@
       "changed": "दिन {day} {slot}: \"{activity}\" → \"{detail}\"",
       "moved": "\"{activity}\" दिन {day} {slot} पर ले जाया गया ({detail} से)",
       "cost": "कुल लागत: {before} → {after}"
-    }
+    },
+    "dayByDay": "दिन-प्रतिदिन",
+    "viewFull": "पूरा देखें →"
   },
   "comparison": {
     "title": "योजनाएँ तुलना करें",

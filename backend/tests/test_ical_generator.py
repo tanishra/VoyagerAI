@@ -7,6 +7,7 @@ from ical_generator import (
     _fold_line,
     _guess_timezone,
     _parse_duration,
+    _parse_slot_time,
     generate_ics,
 )
 
@@ -127,3 +128,52 @@ class TestEscapingAndFolding:
         assert len(lines) == 2
         assert len(lines[0]) == 75
         assert lines[1].startswith(" ")
+
+
+class TestSlotTime:
+    """Phase 2: slot.time drives event start times when present."""
+
+    def test_parse_slot_time_24h(self):
+        assert _parse_slot_time("09:30") == (9, 30)
+        assert _parse_slot_time("14:00") == (14, 0)
+        assert _parse_slot_time("8:15") == (8, 15)
+
+    def test_parse_slot_time_ampm(self):
+        assert _parse_slot_time("9:30 AM") == (9, 30)
+        assert _parse_slot_time("2:00 PM") == (14, 0)
+        assert _parse_slot_time("2pm") == (14, 0)
+
+    def test_parse_slot_time_noon_midnight_edges(self):
+        assert _parse_slot_time("12:00 PM") == (12, 0)
+        assert _parse_slot_time("12:00 AM") == (0, 0)
+
+    def test_parse_slot_time_invalid(self):
+        assert _parse_slot_time("25:00") is None
+        assert _parse_slot_time("13pm") is None
+        assert _parse_slot_time("garbage") is None
+        assert _parse_slot_time(None) is None
+        assert _parse_slot_time("") is None
+
+    def test_generate_ics_uses_slot_time(self):
+        itinerary = _make_itinerary(days=1)
+        itinerary["days"][0]["morning"]["time"] = "09:30"
+        itinerary["days"][0]["afternoon"]["time"] = "14:45"
+        ics = generate_ics(itinerary)
+        assert "T093000" in ics
+        assert "T144500" in ics
+        # Evening has no time → 19:00 default
+        assert "T190000" in ics
+
+    def test_generate_ics_falls_back_to_slot_defaults(self):
+        ics = generate_ics(_make_itinerary(days=1))
+        assert "T090000" in ics   # morning
+        assert "T130000" in ics   # afternoon
+        assert "T190000" in ics   # evening
+
+    def test_description_includes_why_and_book(self):
+        itinerary = _make_itinerary(days=1)
+        itinerary["days"][0]["morning"]["why"] = "Beat the crowds"
+        itinerary["days"][0]["morning"]["book"] = "Entry 10 EUR, book ahead"
+        ics = generate_ics(itinerary)
+        assert "Note: Beat the crowds" in ics
+        assert "Booking: Entry 10 EUR" in ics

@@ -128,6 +128,22 @@ class DaySlot(BaseModel):
         description="Activity cost in the itinerary's `currency`, not USD — legacy field name",
     )
     duration: str | None = None
+    time: str | None = Field(
+        default=None,
+        description="Local start time for the slot, 'HH:MM' 24h (e.g. '09:30')",
+    )
+    why: str | None = Field(
+        default=None,
+        description="One line (≤12 words) why this slot works — crowd timing, pairing, opening hours",
+    )
+    book: str | None = Field(
+        default=None,
+        description="Booking hint — entry fee and whether advance booking is needed; omit if nothing to book",
+    )
+    food: str | None = Field(
+        default=None,
+        description="Specific meal/dish recommendation near this slot, respecting dietary restrictions",
+    )
 
 
 class ItineraryDay(BaseModel):
@@ -143,6 +159,14 @@ class ItineraryDay(BaseModel):
         description="Day total in the itinerary's `currency`, not USD — legacy field name",
     )
     tips: list[str] = Field(default_factory=list)
+    weather: str | None = Field(
+        default=None,
+        description="Short weather chip for the day, e.g. '28°C sunny' — from the research brief if given",
+    )
+    walking_km: float | None = Field(
+        default=None,
+        description="Realistic total walking estimate for the day, in km",
+    )
 
 
 class ItineraryPlan(BaseModel):
@@ -384,6 +408,17 @@ async def run_comparison_pipeline(
     ]
     research_brief, constraint_brief, risk_brief = normalized
 
+    # Persist briefs per thread so the refinement stage can ground the
+    # enrichment fields (weather/food/booking) in real research instead of
+    # model guesses. Truncated — a huge brief must not bloat the prompt.
+    tid = _current_thread_id()
+    if tid:
+        await payload_store.set_thread_state(
+            tid,
+            "latest_research",
+            {"research": research_brief[:4000], "risk": risk_brief[:2000]},
+        )
+
     if _check_cancel(cancel_event) or _check_budget(budget_check):
         return None
 
@@ -497,10 +532,24 @@ async def run_refinement_pipeline(
                 break
 
     adjustments_text = f"\n\nRequested adjustments: {adjustments}" if adjustments else ""
+
+    # Ground enrichment fields (weather/food/booking hints) in the real
+    # research the comparison stage gathered — refinement otherwise only
+    # sees the tier summary and would have to guess.
+    research = await payload_store.get_thread_state(
+        _current_thread_id(), "latest_research"
+    )
+    research_text = ""
+    if isinstance(research, dict):
+        if research.get("research"):
+            research_text += f"\n\n<research_brief>\n{research['research']}\n</research_brief>"
+        if research.get("risk"):
+            research_text += f"\n\n<risk_assessment>\n{research['risk']}\n</risk_assessment>"
+
     task_text = (
         f"Generate a complete {constraints.total_days}-day itinerary for "
         f"{constraints.destination}.\n\n{_constraints_block(constraints)}\n"
-        f"Tier: {tier}{plan_hint}{adjustments_text}\n\n"
+        f"Tier: {tier}{plan_hint}{adjustments_text}{research_text}\n\n"
         f"{_language_block(locale)}\n"
         f"All costs in {constraints.budget_currency}. "
         f"The days array MUST contain exactly {constraints.total_days} entries."
@@ -731,6 +780,13 @@ daily flow, respecting every stated constraint.
 - All costs in the requested currency — never silently switch
 - Respect dietary restrictions and accessibility needs in every activity and meal suggestion
 - Keep daily pacing reasonable (not packed, not empty)
+- Fill the enrichment fields when you have grounding; omit rather than invent:
+  - `time`: realistic local start time per slot as "HH:MM" 24h — mornings ~08:00-10:30, afternoons ~13:00-15:00, evenings ~18:00-20:30
+  - `why`: one line, ≤12 words — crowd timing, smart pairing, opening hours, best light
+  - `book`: entry fee + whether advance booking is needed; omit when nothing needs booking
+  - `food`: attach to the slot nearest a meal — name a specific local place or dish; MUST respect dietary restrictions
+  - `weather`: short chip like "28°C sunny" — use the research brief when provided; omit when unknown
+  - `walking_km`: realistic total walking estimate for the day as a number
 </rules>"""
 
 
@@ -742,6 +798,7 @@ corrected itinerary as structured output.
 
 <rules>
 - Preserve the user's edits exactly — do not reorder, remove, or "improve" their choices
+- Preserve enrichment fields (time, why, book, food, weather, walking_km) verbatim — they are curated UI content, not errors to fix
 - Fix ONLY the listed issues: missing fields, emptied day slots, broken costs
 - estimated_total_cost_usd must equal the sum of all daily_cost_usd values
 - All costs in the itinerary's currency — never switch

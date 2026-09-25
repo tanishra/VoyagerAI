@@ -240,3 +240,55 @@ class TestResponseModels:
                 assert field_info.description, (
                     f"{model.__name__}.{field_name} missing description"
                 )
+
+
+class TestEnrichmentFields:
+    """Optional enrichment fields — emitted by the pipeline when grounded."""
+
+    def test_activity_enrichment_optional(self, sample_activity_dict):
+        activity = Activity(**sample_activity_dict)
+        assert activity.time is None
+        assert activity.why is None
+        assert activity.book is None
+        assert activity.food is None
+
+    def test_activity_accepts_enrichment(self, sample_activity_dict):
+        activity = Activity(
+            **sample_activity_dict,
+            time="09:30",
+            why="Beat crowds",
+            book="Book ahead",
+            food="Croissant nearby",
+        )
+        assert activity.time == "09:30"
+        assert activity.food == "Croissant nearby"
+
+    def test_day_plan_enrichment_optional(self, sample_activity_dict):
+        day = DayPlan(
+            day=1,
+            theme="T",
+            morning=Activity(**sample_activity_dict),
+            afternoon=Activity(**sample_activity_dict),
+            evening=Activity(**sample_activity_dict),
+            transport="Bus",
+            accommodation="Hotel",
+            daily_cost_usd=100,
+        )
+        assert day.weather is None
+        assert day.walking_km is None
+
+    def test_day_plan_accepts_enrichment(self, sample_activity_dict):
+        day = DayPlan(
+            day=1,
+            theme="T",
+            morning=Activity(**sample_activity_dict),
+            afternoon=Activity(**sample_activity_dict),
+            evening=Activity(**sample_activity_dict),
+            transport="Bus",
+            accommodation="Hotel",
+            daily_cost_usd=100,
+            weather="28°C sunny",
+            walking_km=5.5,
+        )
+        assert day.weather == "28°C sunny"
+        assert day.walking_km == 5.5

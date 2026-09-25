@@ -5,13 +5,13 @@ import { useState, useRef, useEffect } from 'react';
 import { useTranslations } from 'next-intl';
 import dynamic from 'next/dynamic';
 import useSWR from 'swr';
-import type { Itinerary, DayPlan } from '@/lib/types';
+import type { Itinerary } from '@/lib/types';
 import { createShare, exportItinerary } from '@/lib/share-api';
 import { useLocale } from '@/lib/useLocale';
 import { formatCurrency } from '@/lib/format';
 import { asCurrency } from '@/lib/currency';
 import { fetchWikimediaImage } from '@/lib/wikimedia';
-import DayDetailModal from './DayDetailModal';
+import DayDetailPanel from './DayDetailPanel';
 import TimelineView from './TimelineView';
 import BudgetStatus from './BudgetStatus';
 import { useCurrency } from '@/lib/useCurrency';
@@ -37,9 +37,8 @@ export default function ItineraryCard({ itinerary, threadId, printMode = false, 
   const [menuOpen, setMenuOpen] = useState(false);
   const [shareStatus, setShareStatus] = useState<'idle' | 'creating' | 'copied' | 'error'>('idle');
   const [mapExpanded, setMapExpanded] = useState(false);
-  const [selectedDay, setSelectedDay] = useState<DayPlan | null>(null);
+  const [panelDay, setPanelDay] = useState<number | null>(null);
   const [showEditChanges, setShowEditChanges] = useState(false);
-  const [activeDay, setActiveDay] = useState<number | null>(null);
   const [editing, setEditing] = useState(false);
   const [preferredCurrency] = useCurrency();
   // The itinerary's own currency (what the numbers are actually expressed
@@ -282,12 +281,7 @@ export default function ItineraryCard({ itinerary, threadId, printMode = false, 
             days={days}
             destination={itinerary.destination}
             currency={currency}
-            onDayClick={(day) => setSelectedDay(day)}
-            activeDay={activeDay}
-            onDayExpand={(day) => {
-              setActiveDay(day);
-              if (day !== null) setMapExpanded(true);
-            }}
+            onDayClick={(day) => setPanelDay(day.day)}
           />
         ) : (
           <div className="space-y-2">
@@ -297,7 +291,10 @@ export default function ItineraryCard({ itinerary, threadId, printMode = false, 
                   {t('dayN', { n: day.day })} — {day.theme ?? t('dayN', { n: day.day })}
                 </p>
                 <p className="text-muted-foreground text-xs mt-0.5">
-                  {day.morning?.activity ?? '—'} → {day.afternoon?.activity ?? '—'} → {day.evening?.activity ?? '—'}
+                  {(['morning', 'afternoon', 'evening'] as const).map((k) => {
+                    const slot = day[k];
+                    return slot?.time ? `${slot.time} ${slot.activity}` : (slot?.activity ?? '—');
+                  }).join(' → ')}
                 </p>
                 <div className="mt-1.5 text-xs text-muted-foreground space-y-0.5">
                   <p>{t('transport')}: {day.transport ?? t('na')}</p>
@@ -334,9 +331,9 @@ export default function ItineraryCard({ itinerary, threadId, printMode = false, 
                   days={days}
                   destination={itinerary.destination}
                   currency={currency}
-                  activeDay={activeDay}
-                  onMarkerClick={(day) => setActiveDay(day)}
-                  onDaySelect={(day) => setActiveDay(day)}
+                  activeDay={panelDay}
+                  onMarkerClick={(day) => setPanelDay(day)}
+                  onDaySelect={(day) => setPanelDay(day)}
                 />
               </div>
             )}
@@ -360,13 +357,13 @@ export default function ItineraryCard({ itinerary, threadId, printMode = false, 
           </div>
         )}
       </div>
-      {selectedDay && (
-        <DayDetailModal
-          day={selectedDay}
-          dayNumber={selectedDay.day}
+      {panelDay !== null && (
+        <DayDetailPanel
+          days={days}
           destination={itinerary.destination}
           currency={currency}
-          onClose={() => setSelectedDay(null)}
+          initialDay={panelDay}
+          onClose={() => setPanelDay(null)}
         />
       )}
       {editing && threadId && onEditItinerary && (

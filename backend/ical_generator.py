@@ -61,6 +61,36 @@ def _guess_timezone(destination: str) -> str:
     return "UTC"
 
 
+_TIME_24H_RE = re.compile(r"^(\d{1,2}):(\d{2})")
+_TIME_AMPM_RE = re.compile(r"^(\d{1,2})(?::(\d{2}))?\s*(am|pm)", re.IGNORECASE)
+
+
+def _parse_slot_time(time_str: str | None) -> tuple[int, int] | None:
+    """Parse a slot start time ('09:30', '9:30 AM', '2pm') -> (hour, minute).
+
+    Returns None when absent/unparseable — caller falls back to slot defaults.
+    """
+    if not time_str:
+        return None
+    s = time_str.strip()
+    m = _TIME_AMPM_RE.match(s)
+    if m:
+        hour = int(m.group(1))
+        if hour > 12:
+            return None
+        if m.group(3).lower() == "pm" and hour != 12:
+            hour += 12
+        elif m.group(3).lower() == "am" and hour == 12:
+            hour = 0
+        return hour, int(m.group(2) or 0)
+    m = _TIME_24H_RE.match(s)
+    if m:
+        hour, minute = int(m.group(1)), int(m.group(2))
+        if 0 <= hour <= 23 and 0 <= minute <= 59:
+            return hour, minute
+    return None
+
+
 def _parse_duration(duration_str: str) -> int:
     """Parse duration string like '3h', '1.5h', '30m', '2 hours' -> minutes.
 
@@ -170,8 +200,15 @@ def generate_ics(itinerary: dict, thread_id: str = "voyagerai") -> str:
             cost = slot.get("cost_usd")
             duration_str = slot.get("duration", "")
 
-            start_hour = _SLOT_TIMES.get(slot_name, 9)
-            start_dt = day_date.replace(hour=start_hour, minute=0, second=0, microsecond=0)
+            parsed_time = _parse_slot_time(slot.get("time"))
+            if parsed_time is not None:
+                start_dt = day_date.replace(
+                    hour=parsed_time[0], minute=parsed_time[1],
+                    second=0, microsecond=0,
+                )
+            else:
+                start_hour = _SLOT_TIMES.get(slot_name, 9)
+                start_dt = day_date.replace(hour=start_hour, minute=0, second=0, microsecond=0)
             duration_min = _parse_duration(duration_str)
             end_dt = start_dt + timedelta(minutes=duration_min)
 
@@ -179,6 +216,10 @@ def generate_ics(itinerary: dict, thread_id: str = "voyagerai") -> str:
             desc_parts = []
             if cost is not None:
                 desc_parts.append(f"Cost: ${cost}")
+            if slot.get("why"):
+                desc_parts.append(f"Note: {slot['why']}")
+            if slot.get("book"):
+                desc_parts.append(f"Booking: {slot['book']}")
             if transport:
                 desc_parts.append(f"Transport: {transport}")
             if accommodation:

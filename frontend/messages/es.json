@@ -187,7 +187,6 @@
     "tips": "Consejos",
     "closeDayDetails": "Cerrar detalles del día",
     "dailyCostSummary": "Costo diario",
-    "viewDetails": "Ver detalles",
     "loadingDescription": "Cargando descripción...",
     "viewOnMaps": "Ver en Google Maps",
     "total": "Total",
@@ -231,7 +230,9 @@
       "changed": "Día {day} {slot}: «{activity}» → «{detail}»",
       "moved": "«{activity}» movido al día {day} {slot} (desde {detail})",
       "cost": "Coste total: {before} → {after}"
-    }
+    },
+    "dayByDay": "Día a día",
+    "viewFull": "Ver todo →"
   },
   "comparison": {
     "title": "Comparar Planes",

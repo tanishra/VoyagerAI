@@ -10,6 +10,12 @@ class Activity(BaseModel):
     location: str
     cost_usd: int
     duration: str
+    # Optional enrichments — emitted by the itinerary pipeline when grounded
+    # (local start time, why-this-slot note, booking hint, meal suggestion).
+    time: str | None = None
+    why: str | None = None
+    book: str | None = None
+    food: str | None = None
 
 
 class DayPlan(BaseModel):
@@ -22,6 +28,9 @@ class DayPlan(BaseModel):
     accommodation: str
     daily_cost_usd: int
     tips: list[str] = Field(default_factory=list)
+    # Optional enrichments — day weather chip + total walking estimate.
+    weather: str | None = None
+    walking_km: float | None = None
 
 
 class Itinerary(BaseModel):

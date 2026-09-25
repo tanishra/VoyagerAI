@@ -29,108 +29,47 @@ const makeDays = (): DayPlan[] => [
   }),
 ];
 
-describe('TimelineView', () => {
-  it('renders all day bars with day number and theme', () => {
+describe('TimelineView (day summary rows)', () => {
+  it('renders one row per day with number and theme', () => {
     render(<TimelineView days={makeDays()} destination="Tokyo" onDayClick={vi.fn()} />);
     expect(screen.getByText(/Day 1 — Arrival/)).toBeInTheDocument();
     expect(screen.getByText(/Day 2 — Temples/)).toBeInTheDocument();
   });
 
-  it('shows color dots for morning, afternoon, evening', () => {
-    const { container } = render(<TimelineView days={makeDays()} destination="Tokyo" onDayClick={vi.fn()} />);
-    const dots = container.querySelectorAll('.rounded-full');
-    // 2 days × 3 dots each = 6 color dots (plus 2 day markers = 8 total rounded-full)
-    expect(dots.length).toBeGreaterThanOrEqual(6);
+  it('compresses the day into a morning → afternoon → evening route line', () => {
+    render(<TimelineView days={makeDays()} destination="Tokyo" onDayClick={vi.fn()} />);
+    expect(
+      screen.getByText('Hotel check-in → Shibuya Crossing → Ramen dinner')
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText('Senso-ji Temple → Ueno Park → Izakaya night')
+    ).toBeInTheDocument();
   });
 
-  it('shows daily cost badge', () => {
+  it('shows the daily cost badge', () => {
     render(<TimelineView days={makeDays()} destination="Tokyo" onDayClick={vi.fn()} />);
     expect(screen.getByText(/35/)).toBeInTheDocument();
     expect(screen.getByText(/40/)).toBeInTheDocument();
   });
 
-  it('clicking a day bar expands it showing activity blocks', () => {
-    render(<TimelineView days={makeDays()} destination="Tokyo" onDayClick={vi.fn()} />);
-    expect(screen.queryByText('Hotel check-in')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByText(/Day 1 — Arrival/));
-    expect(screen.getByText('Hotel check-in')).toBeInTheDocument();
-    expect(screen.getByText('Shibuya Crossing')).toBeInTheDocument();
-    expect(screen.getByText('Ramen dinner')).toBeInTheDocument();
-  });
-
-  it('clicking an expanded day collapses it', () => {
-    render(<TimelineView days={makeDays()} destination="Tokyo" onDayClick={vi.fn()} />);
-    fireEvent.click(screen.getByText(/Day 1 — Arrival/));
-    expect(screen.getByText('Hotel check-in')).toBeInTheDocument();
-    fireEvent.click(screen.getByText(/Day 1 — Arrival/));
-    expect(screen.queryByText('Hotel check-in')).not.toBeInTheDocument();
-  });
-
-  it('only one day expanded at a time', () => {
-    render(<TimelineView days={makeDays()} destination="Tokyo" onDayClick={vi.fn()} />);
-    fireEvent.click(screen.getByText(/Day 1 — Arrival/));
-    expect(screen.getByText('Hotel check-in')).toBeInTheDocument();
-    fireEvent.click(screen.getByText(/Day 2 — Temples/));
-    expect(screen.queryByText('Hotel check-in')).not.toBeInTheDocument();
-    expect(screen.getByText('Senso-ji Temple')).toBeInTheDocument();
-  });
-
-  it('expanded view shows location for each activity', () => {
-    render(<TimelineView days={makeDays()} destination="Tokyo" onDayClick={vi.fn()} />);
-    fireEvent.click(screen.getByText(/Day 1 — Arrival/));
-    expect(screen.getByText('Tokyo Station')).toBeInTheDocument();
-    expect(screen.getByText('Shibuya')).toBeInTheDocument();
-    expect(screen.getByText('Ichiran')).toBeInTheDocument();
-  });
-
-  it('expanded view shows duration for each activity', () => {
-    render(<TimelineView days={makeDays()} destination="Tokyo" onDayClick={vi.fn()} />);
-    fireEvent.click(screen.getByText(/Day 1 — Arrival/));
-    expect(screen.getAllByText('1h').length).toBe(2);
-    expect(screen.getByText('2h')).toBeInTheDocument();
-  });
-
-  it('View Details button calls onDayClick', () => {
+  it('clicking a day row fires onDayClick with that day', () => {
     const onDayClick = vi.fn();
     render(<TimelineView days={makeDays()} destination="Tokyo" onDayClick={onDayClick} />);
-    fireEvent.click(screen.getByText(/Day 1 — Arrival/));
-    fireEvent.click(screen.getByText('View Details'));
+    fireEvent.click(screen.getByText(/Day 2 — Temples/));
     expect(onDayClick).toHaveBeenCalledTimes(1);
+    expect(onDayClick).toHaveBeenCalledWith(expect.objectContaining({ day: 2 }));
+  });
+
+  it('View full opens at the first day', () => {
+    const onDayClick = vi.fn();
+    render(<TimelineView days={makeDays()} destination="Tokyo" onDayClick={onDayClick} />);
+    fireEvent.click(screen.getByText(/View full/));
     expect(onDayClick).toHaveBeenCalledWith(expect.objectContaining({ day: 1 }));
   });
 
-  it('transport indicator shows correct text', () => {
-    render(<TimelineView days={makeDays()} destination="Tokyo" onDayClick={vi.fn()} />);
-    fireEvent.click(screen.getByText(/Day 1 — Arrival/));
-    expect(screen.getAllByText('Train').length).toBe(2);
-  });
-
-  it('activeDay prop controls expanded day (controlled mode)', () => {
-    render(<TimelineView days={makeDays()} destination="Tokyo" onDayClick={vi.fn()} activeDay={2} />);
-    expect(screen.queryByText('Hotel check-in')).not.toBeInTheDocument();
-    expect(screen.getByText('Senso-ji Temple')).toBeInTheDocument();
-  });
-
-  it('activeDay null collapses all days', () => {
-    render(<TimelineView days={makeDays()} destination="Tokyo" onDayClick={vi.fn()} activeDay={null} />);
-    expect(screen.queryByText('Hotel check-in')).not.toBeInTheDocument();
-    expect(screen.queryByText('Senso-ji Temple')).not.toBeInTheDocument();
-  });
-
-  it('onDayExpand callback fires when day is toggled', () => {
-    const onDayExpand = vi.fn();
-    render(<TimelineView days={makeDays()} destination="Tokyo" onDayClick={vi.fn()} onDayExpand={onDayExpand} />);
-    fireEvent.click(screen.getByText(/Day 1 — Arrival/));
-    expect(onDayExpand).toHaveBeenCalledWith(1);
-    fireEvent.click(screen.getByText(/Day 1 — Arrival/));
-    expect(onDayExpand).toHaveBeenCalledWith(null);
-  });
-
-  it('works without activeDay/onDayExpand (uncontrolled mode)', () => {
-    render(<TimelineView days={makeDays()} destination="Tokyo" onDayClick={vi.fn()} />);
-    fireEvent.click(screen.getByText(/Day 1 — Arrival/));
-    expect(screen.getByText('Hotel check-in')).toBeInTheDocument();
-    fireEvent.click(screen.getByText(/Day 1 — Arrival/));
-    expect(screen.queryByText('Hotel check-in')).not.toBeInTheDocument();
+  it('skips missing slots in the route line', () => {
+    const days = [makeDay({ afternoon: {} as DayPlan['afternoon'] })];
+    render(<TimelineView days={days} destination="Tokyo" onDayClick={vi.fn()} />);
+    expect(screen.getByText('Hotel check-in → Ramen dinner')).toBeInTheDocument();
   });
 });

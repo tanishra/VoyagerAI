@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import useSWR from 'swr';
 import { motion, AnimatePresence } from 'framer-motion';
-import { MapPin, Clock, ChevronDown } from 'lucide-react';
+import { MapPin, Clock, ChevronDown, Ticket } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import dynamic from 'next/dynamic';
 import type { TimeSlot } from '@/lib/types';
@@ -77,6 +77,7 @@ export default function ActivityCard({ slot, slotKey, destination, currency: pro
           <div className="flex-1 min-w-0 space-y-0.5">
             <p className={`text-[10px] font-medium uppercase tracking-widest ${SLOT_COLORS[slotKey]}`}>
               {t(slotKey)}
+              {slot.time && <span className="ml-1.5 font-mono normal-case tracking-normal">{slot.time}</span>}
             </p>
             <p className="text-sm font-medium text-foreground truncate">{slot.activity}</p>
             <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
@@ -98,6 +99,15 @@ export default function ActivityCard({ slot, slotKey, destination, currency: pro
                 </span>
               )}
             </div>
+            {slot.why && (
+              <p className="text-xs text-accent-foreground">{slot.why}</p>
+            )}
+            {slot.book && (
+              <p className="text-[10px] uppercase tracking-widest text-muted-foreground flex items-center gap-1">
+                <Ticket className="w-3 h-3" />
+                {slot.book}
+              </p>
+            )}
           </div>
 
           {/* Expand chevron */}
