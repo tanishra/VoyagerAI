@@ -18,9 +18,11 @@ export function stripStructuredTags(text: string): string {
   // Remove complete blocks first
   result = result.replace(/<comparison>[\s\S]*?<\/comparison>/g, '');
   result = result.replace(/<itinerary>[\s\S]*?<\/itinerary>/g, '');
+  result = result.replace(/<clarify_answers>[\s\S]*?<\/clarify_answers>/g, '');
   // Remove partial blocks (opening tag without closing — during streaming)
   result = result.replace(/<comparison>[\s\S]*$/g, '');
   result = result.replace(/<itinerary>[\s\S]*$/g, '');
+  result = result.replace(/<clarify_answers>[\s\S]*$/g, '');
   // Untagged plan prose: when 2+ "X Plan" tier headers appear, the plans are
   // rendered as a card — truncate the prose at the first tier header.
   const tierHeaders = result.match(/^\s*(?:#{1,4}\s*|\*\*)?\s*(?:budget|balanced|premium|luxury|economy|standard)\s+plan\b/gim);

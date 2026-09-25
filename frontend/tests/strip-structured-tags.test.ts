@@ -36,6 +36,11 @@ describe('stripStructuredTags', () => {
     expect(stripStructuredTags(text)).toBe(text);
   });
 
+  it('strips clarify_answers blocks from user messages', () => {
+    const text = 'Destination: Delhi; Trip length: 3 days\n<clarify_answers>{"destination":"delhi","total_days":"3"}</clarify_answers>';
+    expect(stripStructuredTags(text)).toBe('Destination: Delhi; Trip length: 3 days');
+  });
+
   it('returns plain text unchanged', () => {
     const text = 'Just a normal chat reply about Tokyo.';
     expect(stripStructuredTags(text)).toBe(text);

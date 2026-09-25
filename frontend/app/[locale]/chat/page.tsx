@@ -323,7 +323,7 @@ export default function ChatPage() {
     const userMessage: ChatMessage = {
       id: `user-${Date.now()}`,
       role: 'user',
-      content: text,
+      content: stripStructuredTags(text),
       attachments: pendingAttachments.length > 0 ? pendingAttachments : undefined,
     };
     setMessages((prev) => [...prev, userMessage]);
@@ -1247,7 +1247,7 @@ export default function ChatPage() {
         const userMessage: ChatMessage = {
           id: `replay-${msg.id}`,
           role: 'user',
-          content: msg.content,
+          content: stripStructuredTags(msg.content),
         };
         setMessages((prev) => [...prev, userMessage]);
 
