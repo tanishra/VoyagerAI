@@ -142,7 +142,8 @@
     "feedbackCommentPlaceholder": "बताएं क्या गलत हुआ...",
     "feedbackSubmit": "प्रतिक्रिया भेजें",
     "feedbackThanks": "आपकी प्रतिक्रिया के लिए धन्यवाद!",
-    "feedbackError": "प्रतिक्रिया भेजने में विफल"
+    "feedbackError": "प्रतिक्रिया भेजने में विफल",
+    "errorHistoryLoad": "यह बातचीत लोड नहीं हो सकी। कृपया पुनः प्रयास करें।"
   },
   "status": {
     "researching": "शोध कर रहे हैं",

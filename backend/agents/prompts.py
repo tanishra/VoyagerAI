@@ -62,6 +62,19 @@ logger = logging.getLogger("travel_agent.prompts")
 _USER_INSTRUCTIONS_MAX = 2000
 _LEARNED_PREFS_MAX = 3000
 
+# Legacy timezone names some browsers/OSes still report (missing from minimal
+# tzdata installs). Map to the current IANA name before ZoneInfo lookup.
+_TZ_ALIASES = {
+    "Asia/Calcutta": "Asia/Kolkata",
+    "Asia/Katmandu": "Asia/Kathmandu",
+    "Asia/Rangoon": "Asia/Yangon",
+    "Asia/Saigon": "Asia/Ho_Chi_Minh",
+    "US/Pacific": "America/Los_Angeles",
+    "US/Mountain": "America/Denver",
+    "US/Central": "America/Chicago",
+    "US/Eastern": "America/New_York",
+}
+
 # Order matters: "A$" must be checked before "$" or an AUD amount would be
 # misread as USD.
 _CURRENCY_SYMBOL_TO_CODE: list[tuple[str, str]] = [
@@ -208,7 +221,7 @@ def build_chat_agent_prompt(
     # Inject current date/time in user's timezone
     if timezone:
         try:
-            tz = ZoneInfo(timezone)
+            tz = ZoneInfo(_TZ_ALIASES.get(timezone, timezone))
             now = datetime.now(tz)
             date_str = now.strftime("%A, %B %d, %Y at %I:%M %p")
             offset = now.strftime("%z")

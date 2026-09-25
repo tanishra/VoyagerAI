@@ -142,7 +142,8 @@
     "feedbackCommentPlaceholder": "Cuéntanos qué salió mal...",
     "feedbackSubmit": "Enviar comentario",
     "feedbackThanks": "¡Gracias por tu comentario!",
-    "feedbackError": "Error al enviar comentario"
+    "feedbackError": "Error al enviar comentario",
+    "errorHistoryLoad": "No se pudo cargar esta conversación. Inténtalo de nuevo."
   },
   "status": {
     "researching": "Investigando",

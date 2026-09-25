@@ -142,7 +142,8 @@
     "feedbackCommentPlaceholder": "何が悪かったか教えてください...",
     "feedbackSubmit": "フィードバックを送信",
     "feedbackThanks": "フィードバックありがとうございます！",
-    "feedbackError": "フィードバックの送信に失敗しました"
+    "feedbackError": "フィードバックの送信に失敗しました",
+    "errorHistoryLoad": "この会話を読み込めませんでした。もう一度お試しください。"
   },
   "status": {
     "researching": "調査中",

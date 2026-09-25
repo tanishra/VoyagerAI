@@ -142,7 +142,8 @@
     "feedbackCommentPlaceholder": "Tell us what went wrong...",
     "feedbackSubmit": "Submit feedback",
     "feedbackThanks": "Thanks for your feedback!",
-    "feedbackError": "Failed to submit feedback"
+    "feedbackError": "Failed to submit feedback",
+    "errorHistoryLoad": "Could not load this conversation. Please try again."
   },
   "status": {
     "researching": "Researching",

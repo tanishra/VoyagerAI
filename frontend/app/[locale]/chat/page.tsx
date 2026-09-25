@@ -158,7 +158,7 @@ export default function ChatPage() {
   } = useThreads({
     threadId, setThreadId, abortRef, sessionResetRef, setMessages,
     setBranches, setActiveBranchIndex, setEditingMessageId, setEditContent,
-    setError, setSidebarOpen, resetStreamAccumulators, resetGenerationUI,
+    setError, setSidebarOpen, resetStreamAccumulators, resetGenerationUI, t,
   });
 
   useEffect(() => {
@@ -182,6 +182,33 @@ export default function ChatPage() {
         setThreads(prev => mergeThreads(prev, res.threads));
         setHasMoreThreads(res.has_more);
       });
+
+      // Restore history for the persisted thread — threadId survives reloads
+      // via localStorage but messages start empty, so hydrate them here.
+      if (threadId) {
+        setLoadingHistory(true);
+        try {
+          const { messages: history, failed } = await getThreadHistory(threadId);
+          if (cancelled) return;
+          if (failed) {
+            setError(t('errorHistoryLoad'));
+            return;
+          }
+          setMessages(history.map((msg, i) => ({
+            id: `restored-${i}`,
+            role: msg.role,
+            content: stripStructuredTags(msg.content),
+            itinerary: msg.itinerary,
+            comparison: msg.comparison,
+            clarify: msg.clarify,
+            activity: msg.activity,
+            images: msg.images,
+            charts: msg.charts,
+          })));
+        } finally {
+          if (!cancelled) setLoadingHistory(false);
+        }
+      }
     });
     return () => { cancelled = true; };
   }, []);
@@ -926,7 +953,11 @@ export default function ChatPage() {
 
     setLoadingHistory(true);
     try {
-      const history = await getThreadHistory(threadId, checkpointId);
+      const { messages: history, failed } = await getThreadHistory(threadId, checkpointId);
+      if (failed) {
+        setError(t('errorHistoryLoad'));
+        return;
+      }
       const historyMessages: ChatMessage[] = history.map((msg, i) => ({
         id: `branch-${i}`,
         role: msg.role,

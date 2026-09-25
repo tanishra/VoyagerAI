@@ -25,6 +25,7 @@ interface ThreadDeps {
   setEditingMessageId: (id: string | null) => void;
   setEditContent: (c: string) => void;
   setError: (e: string | null) => void;
+  t: (key: string) => string;
   setSidebarOpen: (open: boolean) => void;
   resetStreamAccumulators: () => void;
   resetGenerationUI: () => void;
@@ -38,7 +39,7 @@ export function useThreads(deps: ThreadDeps) {
   const {
     threadId, setThreadId, abortRef, sessionResetRef, setMessages,
     setBranches, setActiveBranchIndex, setEditingMessageId, setEditContent,
-    setError, setSidebarOpen, resetStreamAccumulators, resetGenerationUI,
+    setError, setSidebarOpen, resetStreamAccumulators, resetGenerationUI, t,
   } = deps;
 
   const [threads, setThreads] = useState<ThreadMeta[]>([]);
@@ -85,7 +86,12 @@ export function useThreads(deps: ThreadDeps) {
       // storage unavailable
     }
 
-    const history = await getThreadHistory(selectedThreadId);
+    const { messages: history, failed } = await getThreadHistory(selectedThreadId);
+    if (failed) {
+      setLoadingHistory(false);
+      setError(t('errorHistoryLoad'));
+      return;
+    }
     const historyMessages: ChatMessage[] = history.map((msg, i) => ({
       id: `history-${i}`,
       role: msg.role,
@@ -104,7 +110,7 @@ export function useThreads(deps: ThreadDeps) {
     setLoadingHistory(false);
   }, [threadId, abortRef, setThreadId, setBranches, setActiveBranchIndex,
       setEditingMessageId, setEditContent, setSidebarOpen, setMessages, setError,
-      resetStreamAccumulators]);
+      resetStreamAccumulators, t]);
 
   const handleDeleteThread = useCallback(async (threadIdToDelete: string) => {
     const ok = await deleteThread(threadIdToDelete);

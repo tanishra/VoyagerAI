@@ -142,7 +142,8 @@
     "feedbackCommentPlaceholder": "Sagen Sie uns, was schiefgelaufen ist...",
     "feedbackSubmit": "Feedback senden",
     "feedbackThanks": "Danke für Ihr Feedback!",
-    "feedbackError": "Feedback konnte nicht gesendet werden"
+    "feedbackError": "Feedback konnte nicht gesendet werden",
+    "errorHistoryLoad": "Diese Unterhaltung konnte nicht geladen werden. Bitte versuche es erneut."
   },
   "status": {
     "researching": "Recherchieren",

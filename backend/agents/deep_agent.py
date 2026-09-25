@@ -372,6 +372,23 @@ async def create_checkpointer():
         return MemorySaver()
 
 
+def _semantic_index_config():
+    """Vector index config when embeddings are usable, else None.
+
+    Semantic search needs langchain-openai + OPENAI_API_KEY. Without them the
+    store constructor raises and the whole store falls back to memory — even
+    though all callers only use get/put. Returning None keeps a working
+    (non-semantic) store instead of a dead one.
+    """
+    try:
+        import langchain_openai  # noqa: F401
+    except ImportError:
+        return None
+    if not os.getenv("OPENAI_API_KEY"):
+        return None
+    return {"dims": 1536, "embed": "openai:text-embedding-3-small"}
+
+
 def _pg_store_connection():
     """Open a dedicated psycopg connection for a PostgresStore instance.
 
@@ -397,11 +414,11 @@ def create_pg_semantic_store():
     from pg_store import _conninfo
 
     conn = _pg_store_connection()
-    store = _resilient_store_class()(
-        conn=conn,
-        conninfo=_conninfo(),
-        index={"dims": 1536, "embed": "openai:text-embedding-3-small"},
-    )
+    index = _semantic_index_config()
+    kwargs = {"conn": conn, "conninfo": _conninfo()}
+    if index:
+        kwargs["index"] = index
+    store = _resilient_store_class()(**kwargs)
     store.setup()
     return store
 
@@ -431,10 +448,11 @@ def create_redis_store() -> RedisStore:
     global _store
     if _store is None:
         conn = RedisConnectionFactory.get_redis_connection(settings.REDIS_URL)
-        candidate = RedisStore(
-            conn=conn,
-            index={"dims": 1536, "embed": "openai:text-embedding-3-small"},
-        )
+        index = _semantic_index_config()
+        kwargs = {"conn": conn}
+        if index:
+            kwargs["index"] = index
+        candidate = RedisStore(**kwargs)
         try:
             candidate.setup()
         except Exception as exc:

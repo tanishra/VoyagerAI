@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { getThreadHistory, type ThreadMessage } from '@/lib/threads-api';
+import { getThreadHistory } from '@/lib/threads-api';
 import ItineraryCard from '@/components/ItineraryCard';
 import type { Itinerary } from '@/lib/types';
 import { Loader2, ArrowLeft, Printer } from 'lucide-react';
@@ -19,7 +19,7 @@ export default function ExportPage() {
 
   useEffect(() => {
     if (!threadId) return;
-    getThreadHistory(threadId).then((messages: ThreadMessage[]) => {
+    getThreadHistory(threadId).then(({ messages }) => {
       for (let i = messages.length - 1; i >= 0; i--) {
         if (messages[i].itinerary) {
           setItinerary(messages[i].itinerary!);

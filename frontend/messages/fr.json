@@ -142,7 +142,8 @@
     "feedbackCommentPlaceholder": "Dites-nous ce qui n'a pas fonctionné...",
     "feedbackSubmit": "Envoyer le commentaire",
     "feedbackThanks": "Merci pour votre commentaire !",
-    "feedbackError": "Échec de l'envoi du commentaire"
+    "feedbackError": "Échec de l'envoi du commentaire",
+    "errorHistoryLoad": "Impossible de charger cette conversation. Veuillez réessayer."
   },
   "status": {
     "researching": "Recherche",

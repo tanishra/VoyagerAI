@@ -73,7 +73,14 @@ export async function listThreads(offset: number = 0): Promise<ThreadListRespons
   }
 }
 
-export async function getThreadHistory(threadId: string, checkpointId?: string): Promise<ThreadMessage[]> {
+export interface ThreadHistoryResult {
+  messages: ThreadMessage[];
+  /** True when the server/cache could not provide history — callers should
+   *  surface an error instead of silently rendering an empty conversation. */
+  failed: boolean;
+}
+
+export async function getThreadHistory(threadId: string, checkpointId?: string): Promise<ThreadHistoryResult> {
   try {
     const url = new URL(`${API_URL}/threads/${threadId}/history`);
     if (checkpointId) {
@@ -84,16 +91,22 @@ export async function getThreadHistory(threadId: string, checkpointId?: string):
     });
     if (res.status === 401) {
       window.location.href = '/login';
-      return [];
+      return { messages: [], failed: true };
     }
-    if (!res.ok) return [];
+    if (!res.ok) {
+      // Server reachable but no usable history (404/503) — try the offline
+      // cache once before reporting failure.
+      const cached = await getCachedThreadHistory(threadId);
+      return { messages: cached, failed: cached.length === 0 };
+    }
     const messages = await res.json();
     // Write-through cache: store history in IndexedDB for offline access
     putThreadHistory(threadId, messages).catch(() => {});
-    return messages;
+    return { messages, failed: false };
   } catch {
     // Network failure — fall back to cached history
-    return getCachedThreadHistory(threadId);
+    const cached = await getCachedThreadHistory(threadId);
+    return { messages: cached, failed: cached.length === 0 };
   }
 }
 
