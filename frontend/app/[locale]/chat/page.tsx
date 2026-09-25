@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useCallback, useEffect } from 'react';
+import dynamic from 'next/dynamic';
 import Image from 'next/image';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Send, Square, RotateCcw, Globe, Search, ShieldAlert, ListChecks, Loader2, PanelLeft, ChevronDown, ChevronLeft, ChevronRight, Clock, Check, Pencil, X, Paperclip, FileText, Info } from 'lucide-react';
@@ -19,9 +20,7 @@ import SuggestionPrompts from '@/components/SuggestionPrompts';
 import CopyButton, { buildCopyContent } from '@/components/CopyButton';
 import ItineraryCard from '@/components/ItineraryCard';
 import GeneratedImageCard from '@/components/GeneratedImageCard';
-import GeneratedChartCard from '@/components/GeneratedChartCard';
 import OfflineBanner from '@/components/OfflineBanner';
-import ActivityPanel from '@/components/ActivityPanel';
 import GenerationStatus from '@/components/GenerationStatus';
 import ComparisonView from './ComparisonView';
 import ClarifyCard from './ClarifyCard';
@@ -39,6 +38,15 @@ import type { ChatMessage, ClarifyData, ComparisonData, Itinerary, BranchInfo, G
 import { useStreamAccumulators } from '@/hooks/chat/useStreamAccumulators';
 import { useGenerationProgress } from '@/hooks/chat/useGenerationProgress';
 import { useThreads, mergeThreads, THREAD_STORAGE_KEY } from '@/hooks/chat/useThreads';
+
+// Lazy: the chart card pulls in Recharts (~heavy) and the activity panel is
+// only needed while a run is in progress — neither belongs in the initial
+// bundle. Behaviour is identical once loaded.
+const GeneratedChartCard = dynamic(() => import('@/components/GeneratedChartCard'), {
+  ssr: false,
+  loading: () => <div className="h-40 rounded-xl bg-muted animate-pulse mt-2" />,
+});
+const ActivityPanel = dynamic(() => import('@/components/ActivityPanel'), { ssr: false });
 
 const TOOL_LABEL_KEYS: Record<string, string> = {
   researcher: 'researching',

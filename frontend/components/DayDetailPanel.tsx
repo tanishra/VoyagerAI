@@ -10,6 +10,7 @@ import { useLocale } from '@/lib/useLocale';
 import { formatCurrency } from '@/lib/format';
 import { asCurrency } from '@/lib/currency';
 import { useCurrency } from '@/lib/useCurrency';
+import { weatherCategory } from '@/lib/weather';
 import ActivityCard from './ActivityCard';
 
 const ItineraryMap = dynamic(() => import('./ItineraryMap'), { ssr: false });
@@ -296,10 +297,14 @@ export default function DayDetailPanel({ days, destination, currency: itineraryC
                     <Home className="w-3 h-3 shrink-0" />
                     {day.accommodation ?? t('na')}
                   </p>
-                  {day.weather && (
+                  {/* Localized chip when structured forecast data exists;
+                      legacy plain-text `weather` otherwise. */}
+                  {(day.weather_meta || day.weather) && (
                     <p className="flex items-center gap-1.5 text-muted-foreground">
                       <Sun className="w-3 h-3 shrink-0" />
-                      {day.weather}
+                      {day.weather_meta && Number.isFinite(day.weather_meta.tmax)
+                        ? `${Math.round(day.weather_meta.tmax)}°C ${t(`weatherConditions.${weatherCategory(day.weather_meta.code)}`)}${day.weather_meta.precip != null ? ` · ${t('rainChance', { prob: Math.round(day.weather_meta.precip) })}` : ''}`
+                        : day.weather}
                     </p>
                   )}
                   {day.morning?.food || day.afternoon?.food || day.evening?.food ? (

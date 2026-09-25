@@ -3,13 +3,27 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from datetime import datetime, timedelta, timezone
+
+import pytest
 
 import weather_service
 
 # conftest stubs weather_service.enrich_itinerary_weather for the whole suite;
 # this module tests the real implementation, so bind it before the patch.
 _enrich = weather_service.enrich_itinerary_weather
+
+
+@pytest.fixture(autouse=True)
+def _no_redis(monkeypatch):
+    """Keep tests hermetic — no real Redis client is ever opened."""
+    async def _none():
+        return None
+
+    monkeypatch.setattr(weather_service, "_get_redis", _none)
+    weather_service._redis = None
+    weather_service._redis_retry_after = 0.0
 
 
 def _reset_memo():
@@ -99,6 +113,63 @@ class TestFetchDailyForecast:
         assert len(calls) == 1
 
 
+class _FakeRedis:
+    def __init__(self, data=None):
+        self.data = dict(data or {})
+
+    async def get(self, key):
+        return self.data.get(key)
+
+    async def set(self, key, value, ex=None):
+        self.data[key] = value
+
+
+class TestRedisCache:
+    def test_redis_hit_skips_http(self, monkeypatch):
+        _reset_memo()
+        seed = {"2026-09-25": {"tmax": 20.0, "precip_prob": 10, "code": 0}}
+        fake = _FakeRedis({"weather:geo:48.9,2.4": json.dumps(seed)})
+
+        async def _redis():
+            return fake
+
+        monkeypatch.setattr(weather_service, "_get_redis", _redis)
+        _mock_client(monkeypatch, raises=True)  # must not be reached
+        out = asyncio.run(weather_service.fetch_daily_forecast(48.85, 2.35))
+        assert out["2026-09-25"]["tmax"] == 20.0
+
+    def test_fetch_writes_through_to_redis(self, monkeypatch):
+        _reset_memo()
+        fake = _FakeRedis()
+
+        async def _redis():
+            return fake
+
+        monkeypatch.setattr(weather_service, "_get_redis", _redis)
+        _mock_client(monkeypatch, _payload(["2026-09-25"]))
+        asyncio.run(weather_service.fetch_daily_forecast(48.85, 2.35))
+        stored = json.loads(fake.data["weather:geo:48.9,2.4"])
+        assert stored["2026-09-25"]["code"] == 61
+
+    def test_redis_error_falls_back_to_http(self, monkeypatch):
+        _reset_memo()
+
+        class _BrokenRedis:
+            async def get(self, key):
+                raise RuntimeError("redis down")
+
+            async def set(self, *a, **k):
+                raise RuntimeError("redis down")
+
+        async def _redis():
+            return _BrokenRedis()
+
+        monkeypatch.setattr(weather_service, "_get_redis", _redis)
+        _mock_client(monkeypatch, _payload(["2026-09-25"]))
+        out = asyncio.run(weather_service.fetch_daily_forecast(48.85, 2.35))
+        assert out["2026-09-25"]["tmax"] == 24.3
+
+
 class TestEnrichItineraryWeather:
     def test_real_weather_applied(self, monkeypatch):
         _reset_memo()
@@ -107,6 +178,8 @@ class TestEnrichItineraryWeather:
         it = _itinerary([today])
         asyncio.run(_enrich(it))
         assert it["days"][0]["weather"] == "24°C rain · rain 70%"
+        meta = it["days"][0]["weather_meta"]
+        assert meta["tmax"] == 24.3 and meta["code"] == 61 and meta["precip"] == 70
 
     def test_no_date_keeps_model_text(self, monkeypatch):
         _reset_memo()
@@ -114,6 +187,7 @@ class TestEnrichItineraryWeather:
         it = _itinerary([None])
         asyncio.run(_enrich(it))
         assert it["days"][0]["weather"] == "AI guess"
+        assert "weather_meta" not in it["days"][0]
 
     def test_out_of_window_keeps_model_text(self, monkeypatch):
         _reset_memo()

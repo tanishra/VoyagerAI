@@ -347,6 +347,45 @@ class TestExportEndpoints:
         assert "Eiffel Tower" in body or "Morning Activity" in body or "Check-in" in body
 
 
+class TestMarkdownMapLinks:
+    """Per-day route links + structured clash lines in the markdown export."""
+
+    def test_day_route_link_with_coords(self):
+        from main import _itinerary_to_markdown
+
+        it = _make_itinerary()
+        it["days"][0]["morning"].update({"lat": 48.85, "lng": 2.35})
+        it["days"][0]["evening"].update({"lat": 48.87, "lng": 2.33})
+        md = _itinerary_to_markdown(it)
+        assert "https://www.google.com/maps/dir/48.85,2.35/48.87,2.33/" in md
+
+    def test_single_coord_search_link(self):
+        from main import _itinerary_to_markdown
+
+        it = _make_itinerary()
+        it["days"][0]["morning"].update({"lat": 48.85, "lng": 2.35})
+        md = _itinerary_to_markdown(it)
+        assert "maps/search/?api=1&query=48.85,2.35" in md
+        assert "maps/dir" not in md
+
+    def test_no_coords_no_map_line(self):
+        from main import _itinerary_to_markdown
+
+        md = _itinerary_to_markdown(_make_itinerary())
+        assert "**Map:**" not in md
+
+    def test_clash_lines_and_legacy_warnings(self):
+        from main import _itinerary_to_markdown
+
+        it = _make_itinerary()
+        it["schedule_clashes"] = [
+            {"day": 1, "prev": "Museum", "next": "Dinner", "time": "17:00"}
+        ]
+        md = _itinerary_to_markdown(it)
+        assert "'Museum' may overlap 'Dinner' at 17:00" in md
+        assert "Pickpockets near tourist spots" in md  # legacy strings kept
+
+
 class TestCsrfQueryParam:
     """Mutations may supply the CSRF token as a query param — custom headers
     force a CORS preflight that some hosting proxies break (see withAuthParams)."""

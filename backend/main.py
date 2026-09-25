@@ -3017,6 +3017,22 @@ def _itinerary_to_markdown(itinerary: dict) -> str:
         lines.append(f"**Transport:** {day.get('transport', 'N/A')}")
         lines.append(f"**Accommodation:** {day.get('accommodation', 'N/A')}")
         lines.append(f"**Daily Cost:** ${day.get('daily_cost_usd', 'N/A')}")
+        # Route link — one multi-stop Google Maps URL per day when the slots
+        # carry coordinates (single point → search link; none → no line).
+        coords = [
+            (s["lat"], s["lng"])
+            for slot_name in ("morning", "afternoon", "evening")
+            if isinstance((s := day.get(slot_name)), dict)
+            and isinstance(s.get("lat"), (int, float))
+            and isinstance(s.get("lng"), (int, float))
+        ]
+        if len(coords) >= 2:
+            route = "/".join(f"{lat},{lng}" for lat, lng in coords)
+            lines.append(f"**Map:** [Day route](https://www.google.com/maps/dir/{route}/)")
+        elif coords:
+            lines.append(
+                f"**Map:** [Location](https://www.google.com/maps/search/?api=1&query={coords[0][0]},{coords[0][1]})"
+            )
         tips = day.get("tips", [])
         if tips:
             lines.append("**Tips:**")
@@ -3024,10 +3040,17 @@ def _itinerary_to_markdown(itinerary: dict) -> str:
                 lines.append(f"- {tip}")
         lines.append("")
     warnings = itinerary.get("warnings", [])
-    if warnings:
+    clashes = itinerary.get("schedule_clashes", [])
+    if warnings or clashes:
         lines.append("## ⚠ Warnings")
         for w in warnings:
             lines.append(f"- {w}")
+        for c in clashes:
+            if isinstance(c, dict):
+                lines.append(
+                    f"- Day {c.get('day', '?')}: '{c.get('prev', '?')}' may overlap "
+                    f"'{c.get('next', '?')}' at {c.get('time', '?')}"
+                )
         lines.append("")
     packing = itinerary.get("packing_essentials", [])
     if packing:

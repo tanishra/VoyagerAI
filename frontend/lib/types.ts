@@ -31,6 +31,10 @@ export interface DayPlan {
   tips: string[];
   // Optional enrichments (phase 2): day weather chip + total walking distance.
   weather?: string;
+  // Structured real-forecast data (Open-Meteo) — present alongside `weather`
+  // when the day's date fell inside the forecast window. Lets the UI render
+  // a localized chip; `weather` stays the plain-text fallback.
+  weather_meta?: { tmax: number; code: number | null; precip: number | null };
   walking_km?: number;
   // Calendar date "YYYY-MM-DD" — only present when the user stated trip dates.
   date?: string;
@@ -53,6 +57,9 @@ export interface Itinerary {
   best_season_note?: string;
   days: DayPlan[];
   warnings?: string[];
+  // Structured schedule-overlap records — the card renders a localized
+  // "may overlap" warning per entry in the same ⚠ block.
+  schedule_clashes?: ScheduleClash[];
   packing_essentials?: string[];
   // Set when a research specialist failed during generation — the plan was
   // built on partial live data; UI shows a limited-data badge.
@@ -74,6 +81,14 @@ export interface EditChange {
   detail?: string;
   before?: number;
   after?: number;
+}
+
+// One schedule overlap: `prev` (running long) bleeds into `next` at `time`.
+export interface ScheduleClash {
+  day?: number;
+  prev?: string;
+  next?: string;
+  time?: string;
 }
 
 export interface CostBreakdown {

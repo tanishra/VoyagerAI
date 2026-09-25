@@ -155,22 +155,23 @@ _SLOT_DEFAULT_START = {"morning": (9, 0), "afternoon": (13, 0), "evening": (19, 
 _MAX_CLASH_MESSAGES = 5
 
 
-def detect_schedule_clashes(itinerary: dict) -> list[str]:
+def detect_schedule_clashes(itinerary: dict) -> list[dict]:
     """Flag consecutive slots whose computed intervals overlap.
 
     Slots with no parseable ``time`` get the iCal default start (9/13/19h) so
-    the check still runs on partial data. Informational only — returns plain
-    strings destined for ``itinerary["warnings"]``, not validator Issues
-    (clashes are not a reason to retry generation). Never raises.
+    the check still runs on partial data. Returns structured
+    ``{day, prev, next, time}`` dicts for ``itinerary["schedule_clashes"]`` —
+    the frontend renders localized text.
+    Informational only, not validator Issues (clashes are not a reason to
+    retry generation). Never raises.
     """
     from ical_generator import _parse_duration, _parse_slot_time
 
-    messages: list[str] = []
+    clashes: list[dict] = []
     try:
         for day in itinerary.get("days") or []:
             if not isinstance(day, dict):
                 continue
-            day_n = day.get("day", "?")
             prev: tuple[str, float] | None = None  # (label, end_minutes)
             for slot_key in _SLOT_ORDER:
                 slot = day.get(slot_key)
@@ -183,15 +184,16 @@ def detect_schedule_clashes(itinerary: dict) -> list[str]:
                 label = str(slot["activity"]).strip()
                 time_str = slot.get("time") or f"{start_h}:{start_m:02d}"
                 if prev is not None and start < prev[1]:
-                    messages.append(
-                        f"Day {day_n}: '{prev[0]}' may overlap '{label}' at {time_str}"
-                    )
-                    if len(messages) >= _MAX_CLASH_MESSAGES:
-                        return messages
+                    clashes.append({
+                        "day": day.get("day"), "prev": prev[0],
+                        "next": label, "time": str(time_str),
+                    })
+                    if len(clashes) >= _MAX_CLASH_MESSAGES:
+                        return clashes
                 prev = (label, max(prev[1], end) if prev else end)
     except Exception:
         logger.warning("Schedule clash detection failed", exc_info=True)
-    return messages
+    return clashes
 
 
 def validate_comparison(

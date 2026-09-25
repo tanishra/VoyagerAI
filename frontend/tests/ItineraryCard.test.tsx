@@ -1,5 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+// Imported before ItineraryCard so the next/dynamic mock below can hand the
+// real components back synchronously (bindings must be initialized before
+// ItineraryCard's module body calls dynamic()).
+import RealDayDetailPanel from '@/components/DayDetailPanel';
+import RealItineraryEditor from '@/components/ItineraryEditor';
 import ItineraryCard from '@/components/ItineraryCard';
 import type { Itinerary } from '@/lib/types';
 
@@ -25,7 +30,16 @@ const { MockMap } = vi.hoisted(() => {
 });
 
 vi.mock('next/dynamic', () => ({
-  default: () => MockMap,
+  // Dispatch on the loader's source — ItineraryCard lazy-loads the map,
+  // day panel and editor. The map stays mocked; panel/editor resolve to
+  // the real modules synchronously so the tests stay sync.
+  default: (loader: () => Promise<unknown>) => {
+    const src = String(loader);
+    if (src.includes('ItineraryMap')) return MockMap;
+    if (src.includes('DayDetailPanel')) return RealDayDetailPanel;
+    if (src.includes('ItineraryEditor')) return RealItineraryEditor;
+    return () => null;
+  },
 }));
 
 vi.mock('@/components/ItineraryMap', () => ({
@@ -100,6 +114,16 @@ describe('ItineraryCard', () => {
     render(<ItineraryCard itinerary={makeItinerary()} threadId="t1" />);
     expect(screen.getByText(/Monsoon season in June-July/)).toBeInTheDocument();
     expect(screen.getByText(/Trains stop at midnight/)).toBeInTheDocument();
+  });
+
+  it('renders localized schedule clashes in the warning block', () => {
+    const itinerary = makeItinerary({
+      schedule_clashes: [{ day: 2, prev: 'Museum', next: 'Dinner', time: '17:00' }],
+    });
+    render(<ItineraryCard itinerary={itinerary} threadId="t1" />);
+    expect(screen.getByText(/'Museum' may overlap 'Dinner' at 17:00/)).toBeInTheDocument();
+    // Legacy string warnings still render alongside.
+    expect(screen.getByText(/Monsoon season in June-July/)).toBeInTheDocument();
   });
 
   it('shows packing essentials in non-print mode', () => {

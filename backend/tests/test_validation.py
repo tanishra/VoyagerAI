@@ -165,7 +165,9 @@ class TestScheduleClashes:
         )]}
         msgs = detect_schedule_clashes(it)
         assert len(msgs) == 1
-        assert "Day 1" in msgs[0] and "Museum" in msgs[0] and "Lunch" in msgs[0]
+        c = msgs[0]
+        assert c["day"] == 1 and c["prev"] == "Museum" and c["next"] == "Lunch"
+        assert c["time"] == "12:00"
 
     def test_no_overlap_no_message(self):
         from agents.validation import detect_schedule_clashes

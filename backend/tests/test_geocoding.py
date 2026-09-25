@@ -617,7 +617,7 @@ class TestDerivedMetrics:
         assert enriched["days"][0]["walking_km"] == 3.2
 
     @pytest.mark.asyncio
-    async def test_clash_warning_appended(self):
+    async def test_clash_recorded(self):
         from agents.deep_agent import _enrich_itinerary_with_coordinates
 
         itinerary = _make_itinerary()
@@ -631,8 +631,11 @@ class TestDerivedMetrics:
         with patch("agents.deep_agent.geocode", new=mock_geocode):
             enriched = await _enrich_itinerary_with_coordinates(itinerary)
 
-        warnings = enriched.get("warnings", [])
-        assert any("may overlap" in w for w in warnings)
+        clashes = enriched.get("schedule_clashes", [])
+        assert len(clashes) == 1
+        assert clashes[0]["day"] == 1 and clashes[0]["time"] == "13:00"
+        # Legacy warning strings stay untouched — structured field only.
+        assert not any("may overlap" in w for w in enriched.get("warnings", []))
 
     @pytest.mark.asyncio
     async def test_no_clash_no_warning(self):
@@ -646,4 +649,5 @@ class TestDerivedMetrics:
         with patch("agents.deep_agent.geocode", new=mock_geocode):
             enriched = await _enrich_itinerary_with_coordinates(itinerary)
 
+        assert "schedule_clashes" not in enriched
         assert not any("may overlap" in w for w in enriched.get("warnings", []))

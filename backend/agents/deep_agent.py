@@ -1410,20 +1410,14 @@ async def _enrich_itinerary_with_coordinates(itinerary: dict) -> dict:
         except Exception:
             logger.warning("Weather enrichment skipped", exc_info=True)
 
-        # Schedule sanity — informational warnings on the card, never a
-        # generation retry.
+        # Schedule sanity — structured clash records; the card renders
+        # localized ⚠ lines. Informational only, never a generation retry.
         try:
             from agents.validation import detect_schedule_clashes
 
             clashes = detect_schedule_clashes(enriched)
             if clashes:
-                warnings = enriched.get("warnings")
-                if not isinstance(warnings, list):
-                    warnings = []
-                    enriched["warnings"] = warnings
-                for msg in clashes:
-                    if msg not in warnings:
-                        warnings.append(msg)
+                enriched["schedule_clashes"] = clashes
         except Exception:
             logger.warning("Clash detection skipped", exc_info=True)
 

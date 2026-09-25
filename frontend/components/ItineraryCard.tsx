@@ -12,13 +12,15 @@ import { formatCurrency } from '@/lib/format';
 import { asCurrency } from '@/lib/currency';
 import { fetchWikimediaImage } from '@/lib/wikimedia';
 import { staticDayMapUrl } from '@/lib/staticMap';
-import DayDetailPanel from './DayDetailPanel';
 import TimelineView from './TimelineView';
 import BudgetStatus from './BudgetStatus';
 import { useCurrency } from '@/lib/useCurrency';
-import ItineraryEditor from './ItineraryEditor';
 
+// Lazy: the map, per-day panel and editor are heavy and only needed on
+// interaction — keep them out of the initial chat bundle.
 const ItineraryMap = dynamic(() => import('./ItineraryMap'), { ssr: false });
+const DayDetailPanel = dynamic(() => import('./DayDetailPanel'), { ssr: false });
+const ItineraryEditor = dynamic(() => import('./ItineraryEditor'), { ssr: false });
 
 /** Per-day static map image for the print/export view — the interactive map
  * can't be captured by window.print. Renders nothing without an API key,
@@ -53,6 +55,7 @@ export default function ItineraryCard({ itinerary, threadId, printMode = false, 
   const locale = useLocale();
   const days = itinerary.days ?? [];
   const warnings = itinerary.warnings ?? [];
+  const clashes = itinerary.schedule_clashes ?? [];
   const cost: number | null = itinerary.estimated_total_cost_usd ?? null;
   const totalDays = itinerary.total_days ?? days.length;
 
@@ -362,10 +365,15 @@ export default function ItineraryCard({ itinerary, threadId, printMode = false, 
             )}
           </div>
         )}
-        {warnings.length > 0 && (
+        {(warnings.length > 0 || clashes.length > 0) && (
           <div className="text-xs space-y-1 pt-2 border-t border-border">
             {warnings.map((w, i) => (
               <p key={i} className="text-accent-foreground">⚠ {w}</p>
+            ))}
+            {clashes.map((c, i) => (
+              <p key={`clash-${i}`} className="text-accent-foreground">
+                ⚠ {t('clashWarning', { day: c.day ?? '—', prev: c.prev ?? '—', next: c.next ?? '—', time: c.time ?? '—' })}
+              </p>
             ))}
           </div>
         )}

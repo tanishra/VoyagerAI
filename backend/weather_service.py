@@ -16,6 +16,35 @@ import httpx
 
 logger = logging.getLogger("travel_agent.weather")
 
+# Redis cache layer — survives restarts; mem dict stays as fallback.
+_redis = None
+_redis_retry_after = 0.0
+_REDIS_RETRY_WINDOW_S = 60.0
+
+
+async def _get_redis():
+    """Lazy Redis client with a broken-window retry. None when unavailable."""
+    global _redis, _redis_retry_after
+    if _redis is not None:
+        return _redis
+    if time.monotonic() < _redis_retry_after:
+        return None
+    try:
+        from redis.asyncio import Redis
+
+        from config.settings import settings
+
+        r = Redis.from_url(
+            settings.REDIS_URL, decode_responses=True,
+            socket_connect_timeout=2, socket_timeout=2,
+        )
+        await r.ping()
+        _redis = r
+        return r
+    except Exception:  # noqa: BLE001
+        _redis_retry_after = time.monotonic() + _REDIS_RETRY_WINDOW_S
+        return None
+
 _FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
 _FORECAST_DAYS = 16
 _TIMEOUT_S = 5.0
@@ -68,6 +97,22 @@ async def fetch_daily_forecast(lat: float, lng: float) -> dict[str, dict]:
     if cached and time.time() - cached[0] < _CACHE_TTL_S:
         return cached[1]
 
+    # Redis survives restarts — mem memo dies with the process.
+    rkey = f"weather:geo:{key[0]},{key[1]}"
+    r = await _get_redis()
+    if r is not None:
+        try:
+            import json
+
+            raw = await r.get(rkey)
+            if raw:
+                data = json.loads(raw)
+                if isinstance(data, dict):
+                    _memo[key] = (time.time(), data)
+                    return data
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Weather Redis get failed: %s", exc)
+
     try:
         async with httpx.AsyncClient(timeout=_TIMEOUT_S) as client:
             resp = await client.get(
@@ -104,6 +149,13 @@ async def fetch_daily_forecast(lat: float, lng: float) -> dict[str, dict]:
 
     if out:
         _memo[key] = (time.time(), out)
+        if r is not None:
+            try:
+                import json
+
+                await r.set(rkey, json.dumps(out), ex=int(_CACHE_TTL_S))
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Weather Redis set failed: %s", exc)
     return out
 
 
@@ -168,6 +220,13 @@ async def enrich_itinerary_weather(itinerary: dict) -> dict:
             chip = _format_chip(entry)
             if chip:
                 day["weather"] = chip
+                # Structured copy lets the frontend render a localized chip;
+                # `weather` stays as the plain-text fallback.
+                day["weather_meta"] = {
+                    "tmax": entry.get("tmax"),
+                    "code": entry.get("code"),
+                    "precip": entry.get("precip_prob"),
+                }
                 updated += 1
         if updated:
             logger.info("Real weather applied to %d days", updated)

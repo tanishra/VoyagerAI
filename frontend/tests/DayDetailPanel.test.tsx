@@ -108,6 +108,22 @@ describe('DayDetailPanel', () => {
     // Days 2 and 3 are unactivated → shimmer placeholders.
     expect(container.querySelectorAll('.shimmer').length).toBe(2);
   });
+
+  it('renders a localized weather chip from weather_meta', () => {
+    const d: DayPlan[] = [{
+      ...makeDay(1, 'Arrival'),
+      weather: '24°C rain · rain 70%',
+      weather_meta: { tmax: 24.3, code: 61, precip: 70 },
+    }];
+    render(<DayDetailPanel days={d} destination="Tokyo" initialDay={1} onClose={vi.fn()} />);
+    expect(screen.getByText(/24°C Rain · rain 70%/)).toBeInTheDocument();
+  });
+
+  it('falls back to the plain weather string without weather_meta', () => {
+    const d: DayPlan[] = [{ ...makeDay(1, 'Arrival'), weather: 'Sunny spells' }];
+    render(<DayDetailPanel days={d} destination="Tokyo" initialDay={1} onClose={vi.fn()} />);
+    expect(screen.getByText('Sunny spells')).toBeInTheDocument();
+  });
 });
 
 describe('DayDetailPanel — long trips (>8 days)', () => {
