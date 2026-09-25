@@ -5,12 +5,13 @@ import { useState, useRef, useEffect } from 'react';
 import { useTranslations } from 'next-intl';
 import dynamic from 'next/dynamic';
 import useSWR from 'swr';
-import type { Itinerary } from '@/lib/types';
+import type { Itinerary, DayPlan } from '@/lib/types';
 import { createShare, exportItinerary } from '@/lib/share-api';
 import { useLocale } from '@/lib/useLocale';
 import { formatCurrency } from '@/lib/format';
 import { asCurrency } from '@/lib/currency';
 import { fetchWikimediaImage } from '@/lib/wikimedia';
+import { staticDayMapUrl } from '@/lib/staticMap';
 import DayDetailPanel from './DayDetailPanel';
 import TimelineView from './TimelineView';
 import BudgetStatus from './BudgetStatus';
@@ -18,6 +19,27 @@ import { useCurrency } from '@/lib/useCurrency';
 import ItineraryEditor from './ItineraryEditor';
 
 const ItineraryMap = dynamic(() => import('./ItineraryMap'), { ssr: false });
+
+/** Per-day static map image for the print/export view — the interactive map
+ * can't be captured by window.print. Renders nothing without an API key,
+ * slot coordinates, or on load error (print looks exactly like before). */
+function PrintDayMap({ day }: { day: DayPlan }) {
+  const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+  if (!apiKey) return null;
+  const url = staticDayMapUrl(day, apiKey);
+  if (!url) return null;
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={url}
+      alt={`Map for day ${day.day}`}
+      className="w-full h-24 object-cover rounded-md mt-1.5 border border-border"
+      onError={(e) => {
+        (e.target as HTMLImageElement).style.display = 'none';
+      }}
+    />
+  );
+}
 
 interface ItineraryCardProps {
   itinerary: Itinerary;
@@ -290,6 +312,7 @@ export default function ItineraryCard({ itinerary, threadId, printMode = false, 
                 <p className="font-medium text-foreground">
                   {t('dayN', { n: day.day })} — {day.theme ?? t('dayN', { n: day.day })}
                 </p>
+                <PrintDayMap day={day} />
                 <p className="text-muted-foreground text-xs mt-0.5">
                   {(['morning', 'afternoon', 'evening'] as const).map((k) => {
                     const slot = day[k];

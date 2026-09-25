@@ -34,8 +34,34 @@ export default function ExportPage() {
 
   useEffect(() => {
     if (!loading && itinerary && !error) {
-      const timer = setTimeout(() => window.print(), 500);
-      return () => clearTimeout(timer);
+      // Wait for images (banner + per-day static maps) to settle before
+      // printing so they don't come out blank — capped at 3s so a slow
+      // image can't block the print dialog.
+      const imgs = Array.from(document.querySelectorAll<HTMLImageElement>('main img'));
+      const settled = Promise.allSettled(
+        imgs.map((img) =>
+          img.complete
+            ? Promise.resolve()
+            : new Promise<void>((resolve) => {
+                img.addEventListener('load', () => resolve(), { once: true });
+                img.addEventListener('error', () => resolve(), { once: true });
+              })
+        )
+      );
+      let printed = false;
+      const doPrint = () => {
+        if (printed) return;
+        printed = true;
+        window.print();
+      };
+      const timer = setTimeout(() => {
+        settled.then(doPrint);
+      }, 300);
+      const cap = setTimeout(doPrint, 3000);
+      return () => {
+        clearTimeout(timer);
+        clearTimeout(cap);
+      };
     }
   }, [loading, itinerary, error]);
 

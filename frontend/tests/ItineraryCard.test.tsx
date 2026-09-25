@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import ItineraryCard from '@/components/ItineraryCard';
 import type { Itinerary } from '@/lib/types';
@@ -253,5 +253,48 @@ describe('edit changes strip (U5)', () => {
   it('hidden when edit_changes absent', () => {
     render(<ItineraryCard itinerary={makeItinerary()} threadId="t1" />);
     expect(screen.queryByText(/adjusted your edits/i)).not.toBeInTheDocument();
+  });
+});
+
+describe('print static day maps (P10)', () => {
+  const KEY = 'NEXT_PUBLIC_GOOGLE_MAPS_API_KEY';
+  const orig = process.env[KEY];
+
+  beforeEach(() => {
+    process.env[KEY] = 'test-key';
+  });
+  afterEach(() => {
+    if (orig === undefined) delete process.env[KEY];
+    else process.env[KEY] = orig;
+  });
+
+  const withCoords = () => {
+    const it = makeItinerary();
+    it.days[0].morning = { ...it.days[0].morning, lat: 35.68, lng: 139.69 };
+    it.days[0].afternoon = { ...it.days[0].afternoon, lat: 35.66, lng: 139.7 };
+    it.days[0].evening = { ...it.days[0].evening, lat: 35.67, lng: 139.71 };
+    // day 2 keeps no coords
+    return it;
+  };
+
+  it('renders a static map image per day that has coordinates', () => {
+    render(<ItineraryCard itinerary={withCoords()} threadId="t1" printMode />);
+    const img = screen.getByAltText('Map for day 1');
+    expect(img).toHaveAttribute('src', expect.stringContaining('staticmap'));
+    expect(img.getAttribute('src')).toContain('label%3A1');
+    expect(img.getAttribute('src')).toContain('label%3A3');
+    // day 2 has no coords → no map
+    expect(screen.queryByAltText('Map for day 2')).not.toBeInTheDocument();
+  });
+
+  it('renders no static maps without an API key', () => {
+    delete process.env[KEY];
+    render(<ItineraryCard itinerary={withCoords()} threadId="t1" printMode />);
+    expect(screen.queryByAltText('Map for day 1')).not.toBeInTheDocument();
+  });
+
+  it('renders no static maps in non-print mode', () => {
+    render(<ItineraryCard itinerary={withCoords()} threadId="t1" />);
+    expect(screen.queryByAltText('Map for day 1')).not.toBeInTheDocument();
   });
 });

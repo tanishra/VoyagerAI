@@ -72,6 +72,24 @@ describe('ActivityCard', () => {
     expect(screen.getByAltText('Senso-ji Temple')).toBeInTheDocument();
   });
 
+  it('falls back to the destination photo when the activity image misses', () => {
+    setMock('activity-image:Senso-ji Temple:Asakusa:Tokyo', { data: null, isLoading: false });
+    setMock('wikimedia:Tokyo', { data: 'https://example.com/tokyo-dest.jpg', isLoading: false });
+    render(<ActivityCard slot={makeSlot()} slotKey="morning" destination="Tokyo" />);
+    const img = screen.getByAltText('Senso-ji Temple');
+    expect(img).toHaveAttribute('src', 'https://example.com/tokyo-dest.jpg');
+  });
+
+  it('uses the destination photo for the expanded image too', () => {
+    setMock('activity-image:Senso-ji Temple:Asakusa:Tokyo', { data: null, isLoading: false });
+    setMock('wikimedia:Tokyo', { data: 'https://example.com/tokyo-dest.jpg', isLoading: false });
+    render(<ActivityCard slot={makeSlot()} slotKey="morning" destination="Tokyo" />);
+    fireEvent.click(screen.getByRole('button'));
+    const imgs = screen.getAllByAltText('Senso-ji Temple');
+    expect(imgs.length).toBe(2); // thumbnail + expanded
+    expect(imgs[1]).toHaveAttribute('src', 'https://example.com/tokyo-dest.jpg');
+  });
+
   it('shows MapPin fallback when no image found', () => {
     setMock('activity-image:Senso-ji Temple:Asakusa:Tokyo', { data: null, isLoading: false });
     const { container } = render(<ActivityCard slot={makeSlot()} slotKey="morning" destination="Tokyo" />);

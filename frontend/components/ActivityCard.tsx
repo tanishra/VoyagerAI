@@ -11,7 +11,7 @@ import { useLocale } from '@/lib/useLocale';
 import { formatCurrency } from '@/lib/format';
 import { useCurrency } from '@/lib/useCurrency';
 import type { Currency } from '@/lib/currency';
-import { fetchActivityImage } from '@/lib/wikimedia';
+import { fetchActivityImage, fetchWikimediaImage } from '@/lib/wikimedia';
 import { fetchWikipediaDescription } from '@/lib/wikipedia';
 
 const ItineraryMap = dynamic(() => import('./ItineraryMap'), { ssr: false });
@@ -42,6 +42,15 @@ export default function ActivityCard({ slot, slotKey, destination, currency: pro
     { revalidateOnFocus: false, dedupingInterval: 600000 }
   );
 
+  // No activity photo → borrow the destination photo already fetched for the
+  // card banner (same SWR key → deduped). Icon only when even that misses.
+  const { data: destImage } = useSWR(
+    !imageLoading && !imageUrl ? `wikimedia:${destination}` : null,
+    () => fetchWikimediaImage(destination),
+    { revalidateOnFocus: false, dedupingInterval: 600000 }
+  );
+  const displayImage = imageUrl ?? destImage ?? null;
+
   const { data: description, isLoading: descLoading } = useSWR(
     expanded ? `wikipedia:${slot.activity}` : null,
     () => fetchWikipediaDescription(slot.activity),
@@ -65,9 +74,9 @@ export default function ActivityCard({ slot, slotKey, destination, currency: pro
           <div className="w-16 h-16 rounded-lg overflow-hidden shrink-0 bg-muted flex items-center justify-center">
             {imageLoading ? (
               <div className="w-full h-full animate-pulse bg-muted" />
-            ) : imageUrl ? (
+            ) : displayImage ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={imageUrl} alt={slot.activity} className="w-full h-full object-cover" />
+              <img src={displayImage} alt={slot.activity} className="w-full h-full object-cover" />
             ) : (
               <MapPin className="w-6 h-6 text-muted-foreground" />
             )}
@@ -129,9 +138,9 @@ export default function ActivityCard({ slot, slotKey, destination, currency: pro
           >
             <div className="px-2 pb-2 space-y-3">
               {/* Full image */}
-              {imageUrl && (
+              {displayImage && (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={imageUrl} alt={slot.activity} className="w-full h-32 rounded-lg object-cover" />
+                <img src={displayImage} alt={slot.activity} className="w-full h-32 rounded-lg object-cover" />
               )}
 
               {/* Wikipedia description */}
