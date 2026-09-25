@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeAll } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import DayDetailPanel from '@/components/DayDetailPanel';
 import type { DayPlan } from '@/lib/types';
 
@@ -52,13 +52,27 @@ describe('DayDetailPanel', () => {
     expect(screen.getAllByText('Daily Cost').length).toBe(3);
   });
 
-  it('renders one map per day scoped to that day', () => {
+  it('mounts only the initial day map; others activate on scroll', async () => {
+    const { MockIntersectionObserver } = await import('./setup');
+    MockIntersectionObserver.instances.length = 0;
     render(<DayDetailPanel days={days} destination="Tokyo" initialDay={1} onClose={vi.fn()} />);
-    const maps = screen.getAllByTestId('itinerary-map');
-    expect(maps).toHaveLength(3);
+    // Only day 1's map mounts on open — the rest lazy-mount on intersection.
+    let maps = screen.getAllByTestId('itinerary-map');
+    expect(maps).toHaveLength(1);
     expect(maps[0].getAttribute('data-days')).toBe('1');
-    expect(maps[1].getAttribute('data-days')).toBe('2');
-    expect(maps[2].getAttribute('data-days')).toBe('3');
+
+    const io = MockIntersectionObserver.instances.at(-1);
+    act(() => io?.triggerAll());
+    await screen.findAllByTestId('itinerary-map');
+    maps = screen.getAllByTestId('itinerary-map');
+    expect(maps).toHaveLength(3);
+  });
+
+  it('pill click activates that day map immediately', () => {
+    render(<DayDetailPanel days={days} destination="Tokyo" initialDay={1} onClose={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Day 3' }));
+    const maps = screen.getAllByTestId('itinerary-map');
+    expect(maps.map((m) => m.getAttribute('data-days')).sort()).toEqual(['1', '3']);
   });
 
   it('renders a pill per day and pill click scrolls to that day', () => {

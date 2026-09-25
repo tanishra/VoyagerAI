@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { mergeThreads } from '@/hooks/chat/useThreads';
 import { useGenerationProgress } from '@/hooks/chat/useGenerationProgress';

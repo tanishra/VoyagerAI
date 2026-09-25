@@ -61,6 +61,24 @@ def _guess_timezone(destination: str) -> str:
     return "UTC"
 
 
+_DAY_DATE_RE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})$")
+
+
+def _parse_day_date(date_str: str | None) -> tuple[int, int, int] | None:
+    """Parse a day.date 'YYYY-MM-DD' -> (y, m, d). None when absent/invalid."""
+    if not date_str:
+        return None
+    m = _DAY_DATE_RE.match(date_str.strip())
+    if not m:
+        return None
+    try:
+        from datetime import date
+        d = date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+        return d.year, d.month, d.day
+    except ValueError:
+        return None
+
+
 _TIME_24H_RE = re.compile(r"^(\d{1,2}):(\d{2})")
 _TIME_AMPM_RE = re.compile(r"^(\d{1,2})(?::(\d{2}))?\s*(am|pm)", re.IGNORECASE)
 
@@ -185,7 +203,11 @@ def generate_ics(itinerary: dict, thread_id: str = "voyagerai") -> str:
 
     for day in days:
         day_num = day.get("day", 1)
-        day_date = today + timedelta(days=day_num - 1)
+        parsed_date = _parse_day_date(day.get("date"))
+        if parsed_date is not None:
+            day_date = datetime(*parsed_date, tzinfo=timezone.utc)
+        else:
+            day_date = today + timedelta(days=day_num - 1)
         transport = day.get("transport", "")
         accommodation = day.get("accommodation", "")
         tips = day.get("tips", [])

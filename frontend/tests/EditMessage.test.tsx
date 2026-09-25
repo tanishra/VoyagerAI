@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
-import React, { useState } from 'react';
+import React from 'react';
 import { Pencil, X, Check } from 'lucide-react';
 import type { ChatMessage } from '@/lib/types';
 

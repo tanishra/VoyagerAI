@@ -2,11 +2,39 @@ import '@testing-library/jest-dom/vitest';
 import React from 'react';
 import { vi } from 'vitest';
 
+// Inert by default (component IO logic runs only when a test fires
+// intersections); instances captured so tests can trigger callbacks.
 class MockIntersectionObserver {
-  observe = vi.fn();
-  unobserve = vi.fn();
-  disconnect = vi.fn();
+  static instances: MockIntersectionObserver[] = [];
+
+  private cb: IntersectionObserverCallback;
+  private elements = new Set<Element>();
+
+  constructor(cb: IntersectionObserverCallback) {
+    this.cb = cb;
+    MockIntersectionObserver.instances.push(this);
+  }
+
+  observe = (el: Element) => {
+    this.elements.add(el);
+  };
+  unobserve = (el: Element) => {
+    this.elements.delete(el);
+  };
+  disconnect = () => {
+    this.elements.clear();
+  };
+
+  // Test helper: fire the callback for observed elements.
+  triggerAll(isIntersecting = true) {
+    const entries = [...this.elements].map(
+      (target) => ({ target, isIntersecting }) as IntersectionObserverEntry
+    );
+    this.cb(entries, this as unknown as IntersectionObserver);
+  }
 }
+
+export { MockIntersectionObserver };
 
 Object.defineProperty(window, 'IntersectionObserver', {
   writable: true,

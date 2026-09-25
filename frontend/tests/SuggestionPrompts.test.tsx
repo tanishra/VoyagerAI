@@ -3,7 +3,7 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { createRef } from 'react';
 import SuggestionPrompts from '@/components/SuggestionPrompts';
 
-function makeT(prefix = 'cat'): (key: string) => string {
+function makeT(): (key: string) => string {
   return (key: string) => {
     const map: Record<string, string> = {
       greeting: 'Plan your next adventure',

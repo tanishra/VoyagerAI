@@ -32,6 +32,8 @@ export interface DayPlan {
   // Optional enrichments (phase 2): day weather chip + total walking distance.
   weather?: string;
   walking_km?: number;
+  // Calendar date "YYYY-MM-DD" — only present when the user stated trip dates.
+  date?: string;
 }
 
 export interface Itinerary {

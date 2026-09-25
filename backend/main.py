@@ -3011,7 +3011,9 @@ def _itinerary_to_markdown(itinerary: dict) -> str:
         for slot_name in ("morning", "afternoon", "evening"):
             slot = day.get(slot_name)
             if slot:
-                lines.append(f"**{slot_name.title()}:** {slot.get('activity', '—')} at {slot.get('location', '—')} (${slot.get('cost_usd', 0)}, {slot.get('duration', '')})")
+                time_part = f"{slot['time']} " if slot.get("time") else ""
+                why_part = f" — {slot['why']}" if slot.get("why") else ""
+                lines.append(f"**{slot_name.title()}:** {time_part}{slot.get('activity', '—')} at {slot.get('location', '—')} (${slot.get('cost_usd', 0)}, {slot.get('duration', '')}){why_part}")
         lines.append(f"**Transport:** {day.get('transport', 'N/A')}")
         lines.append(f"**Accommodation:** {day.get('accommodation', 'N/A')}")
         lines.append(f"**Daily Cost:** ${day.get('daily_cost_usd', 'N/A')}")

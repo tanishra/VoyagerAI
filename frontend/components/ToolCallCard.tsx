@@ -15,7 +15,6 @@ export default function ToolCallCard({ tool }: ToolCallCardProps) {
   const [expanded, setExpanded] = useState(false);
   const isRunning = tool.status === 'running';
   const isError = tool.status === 'error';
-  const isDone = tool.status === 'done';
 
   const durationMs =
     tool.started_at && tool.ended_at

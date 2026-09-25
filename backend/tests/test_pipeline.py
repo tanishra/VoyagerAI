@@ -1124,3 +1124,10 @@ class TestEnrichmentFields:
         """The repair prompt must tell the model to keep enrichment fields."""
         assert "walking_km" in pipeline_module._EDIT_FIX_PROMPT
         assert "time, why, book, food" in pipeline_module._EDIT_FIX_PROMPT
+
+    def test_itinerary_day_date_field(self):
+        """Optional calendar date — emitted only when the user stated dates."""
+        from agents.pipeline import ItineraryDay
+        d = ItineraryDay(day=1, date="2026-03-10").model_dump()
+        assert d["date"] == "2026-03-10"
+        assert ItineraryDay(day=2).model_dump()["date"] is None

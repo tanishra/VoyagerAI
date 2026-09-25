@@ -12,7 +12,6 @@ interface TokenCounterProps {
 }
 
 export default function TokenCounter({
-  usage,
   totalInputTokens,
   totalOutputTokens,
   isStreaming,

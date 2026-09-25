@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Image from 'next/image';
 import { motion } from 'framer-motion';
 import { Download, Eye, EyeOff } from 'lucide-react';
 import type { GeneratedImage } from '@/lib/types';
@@ -27,9 +28,12 @@ export default function GeneratedImageCard({ image }: GeneratedImageCardProps) {
       className="mt-3 overflow-hidden rounded-xl border border-border bg-card"
     >
       <div className="relative">
-        <img
+        <Image
           src={image.data_url}
           alt={image.alt}
+          width={800}
+          height={600}
+          unoptimized
           className={`w-full object-cover transition-all duration-300 ${
             expanded ? 'max-h-[600px]' : 'max-h-[300px]'
           }`}

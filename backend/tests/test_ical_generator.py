@@ -6,6 +6,7 @@ from ical_generator import (
     _escape_ical,
     _fold_line,
     _guess_timezone,
+    _parse_day_date,
     _parse_duration,
     _parse_slot_time,
     generate_ics,
@@ -177,3 +178,30 @@ class TestSlotTime:
         ics = generate_ics(itinerary)
         assert "Note: Beat the crowds" in ics
         assert "Booking: Entry 10 EUR" in ics
+
+
+class TestDayDate:
+    """Phase 2: day.date ('YYYY-MM-DD') drives real calendar dates."""
+
+    def test_parse_day_date_valid(self):
+        assert _parse_day_date("2026-03-10") == (2026, 3, 10)
+
+    def test_parse_day_date_invalid(self):
+        assert _parse_day_date("10/03/2026") is None
+        assert _parse_day_date("2026-13-40") is None
+        assert _parse_day_date(None) is None
+        assert _parse_day_date("") is None
+
+    def test_ics_uses_real_dates_when_present(self):
+        itinerary = _make_itinerary(days=1)
+        itinerary["days"][0]["date"] = "2026-03-10"
+        ics = generate_ics(itinerary)
+        assert "20260310T090000" in ics
+
+    def test_ics_falls_back_to_today_plus_n(self):
+        ics = generate_ics(_make_itinerary(days=2))
+        from datetime import datetime, timedelta, timezone
+        today = datetime.now(timezone.utc).strftime("%Y%m%d")
+        tomorrow = (datetime.now(timezone.utc) + timedelta(days=1)).strftime("%Y%m%d")
+        assert f"{today}T090000" in ics
+        assert f"{tomorrow}T090000" in ics

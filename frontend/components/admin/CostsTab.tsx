@@ -92,7 +92,6 @@ export function CostsTab() {
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchStats(period);
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchFeedback();
   }, [period, fetchStats, fetchFeedback]);
 

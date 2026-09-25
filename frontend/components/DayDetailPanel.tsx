@@ -36,6 +36,12 @@ export default function DayDetailPanel({ days, destination, currency: itineraryC
   const currency = asCurrency(itineraryCurrency) ?? preferredCurrency;
   const scrollRef = useRef<HTMLDivElement>(null);
   const [activeDay, setActiveDay] = useState(initialDay ?? days[0]?.day ?? 1);
+  // Maps mount lazily — one google.maps.Map per day section is too heavy to
+  // create all at once; a day's map activates when its section scrolls into
+  // view (or is the initially-opened day), then stays mounted.
+  const [activatedDays, setActivatedDays] = useState<Set<number>>(
+    () => new Set([initialDay ?? days[0]?.day ?? 1])
+  );
 
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
@@ -66,7 +72,10 @@ export default function DayDetailPanel({ days, destination, currency: itineraryC
         for (const e of entries) {
           if (e.isIntersecting) {
             const n = Number((e.target as HTMLElement).dataset.day);
-            if (n) setActiveDay(n);
+            if (n) {
+              setActiveDay(n);
+              setActivatedDays((prev) => (prev.has(n) ? prev : new Set(prev).add(n)));
+            }
           }
         }
       },
@@ -78,6 +87,7 @@ export default function DayDetailPanel({ days, destination, currency: itineraryC
 
   const jumpTo = (n: number) => {
     setActiveDay(n);
+    setActivatedDays((prev) => (prev.has(n) ? prev : new Set(prev).add(n)));
     const el = scrollRef.current?.querySelector(`[data-day="${n}"]`);
     if (typeof el?.scrollIntoView === 'function') {
       el.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -153,6 +163,7 @@ export default function DayDetailPanel({ days, destination, currency: itineraryC
                   <p className="text-sm font-semibold text-foreground">
                     {t('dayN', { n: day.day })}
                     {day.theme ? ` — ${day.theme}` : ''}
+                    {day.date ? <span className="text-muted-foreground font-normal"> · {day.date}</span> : null}
                   </p>
                   {day.daily_cost_usd != null && (
                     <span className="text-xs text-muted-foreground font-mono tabular-nums">
@@ -161,15 +172,21 @@ export default function DayDetailPanel({ days, destination, currency: itineraryC
                   )}
                 </div>
 
-                {/* Per-day map — this day's markers only */}
-                <div className="rounded-lg overflow-hidden border border-border mb-1">
-                  <ItineraryMap
-                    days={[day]}
-                    destination={destination}
-                    currency={currency}
-                    activeDay={day.day}
-                  />
-                </div>
+                {/* Per-day map — this day's markers only; mounts lazily on
+                    first scroll-into-view so the panel doesn't spin up N
+                    map instances at once. */}
+                {activatedDays.has(day.day) ? (
+                  <div className="rounded-lg overflow-hidden border border-border mb-1">
+                    <ItineraryMap
+                      days={[day]}
+                      destination={destination}
+                      currency={currency}
+                      activeDay={day.day}
+                    />
+                  </div>
+                ) : (
+                  <div className="rounded-lg border border-border bg-muted/30 h-[120px] mb-1" aria-hidden />
+                )}
 
                 {/* Activity cards */}
                 <div className="py-1 space-y-2">

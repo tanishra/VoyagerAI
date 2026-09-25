@@ -1,8 +1,9 @@
 'use client';
 
 import { useState, useRef, useCallback, useEffect } from 'react';
+import Image from 'next/image';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Send, Square, RotateCcw, Globe, Search, ShieldAlert, ListChecks, Loader2, PanelLeft, ChevronDown, ChevronLeft, ChevronRight, Clock, Sparkles, Copy, Check, Pencil, X, Paperclip, FileText, Info } from 'lucide-react';
+import { Send, Square, RotateCcw, Globe, Search, ShieldAlert, ListChecks, Loader2, PanelLeft, ChevronDown, ChevronLeft, ChevronRight, Clock, Check, Pencil, X, Paperclip, FileText, Info } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useLocale } from '@/lib/useLocale';
 import { streamChat, cancelStream, regenerateStream, editStream, editItinerary } from '@/lib/chat-api';
@@ -34,7 +35,7 @@ import { useCurrency } from '@/lib/useCurrency';
 import { stripStructuredTags } from '@/lib/utils';
 import { deriveStage, deriveStageDetail } from '@/lib/stage';
 import { uploadFile, type UploadedFile } from '@/lib/upload-api';
-import type { ChatMessage, ClarifyData, ComparisonData, Itinerary, ActivityData, BranchInfo, GeneratedImage, GeneratedChart } from '@/lib/types';
+import type { ChatMessage, ClarifyData, ComparisonData, Itinerary, BranchInfo, GeneratedImage, GeneratedChart } from '@/lib/types';
 import { useStreamAccumulators } from '@/hooks/chat/useStreamAccumulators';
 import { useGenerationProgress } from '@/hooks/chat/useGenerationProgress';
 import { useThreads, mergeThreads, THREAD_STORAGE_KEY } from '@/hooks/chat/useThreads';
@@ -129,8 +130,7 @@ export default function ChatPage() {
   const [editContent, setEditContent] = useState('');
   const [reconnecting, setReconnecting] = useState<{ attempt: number; max: number } | null>(null);
   const [lastSentMessage, setLastSentMessage] = useState<{ message: string; attachments?: UploadedFile[] } | null>(null);
-  const lastRegenerateRef = useRef(false);
-  const lastEditRef = useRef<{ threadId: string; message: string } | null>(null);
+
 
   const throttledStreamingText = useThrottledValue(streamingText, loading || regenerating);
 
@@ -146,7 +146,7 @@ export default function ChatPage() {
     hasMoreThreads, setHasMoreThreads,
     loadingMore, loadingHistory, setLoadingHistory,
     handleNewChat, handleSelectThread, handleDeleteThread, handleTogglePin,
-    handleLoadMore, refreshThreads,
+    handleLoadMore,
   } = useThreads({
     threadId, setThreadId, abortRef, sessionResetRef, setMessages,
     setBranches, setActiveBranchIndex, setEditingMessageId, setEditContent,
@@ -581,7 +581,7 @@ export default function ChatPage() {
     handleSend(lastSentMessage.message);
   }, [loading, handleSend, lastSentMessage]);
 
-  const handleEditItinerary = useCallback(async (modifiedItinerary: Itinerary, messageId?: string) => {
+  const handleEditItinerary = useCallback(async (modifiedItinerary: Itinerary) => {
     if (!threadId) return;
     setLoading(true);
     setError(null);
@@ -721,7 +721,7 @@ export default function ChatPage() {
             accumulatedCharts = [...accumulatedCharts, chart];
             setStreamingCharts(accumulatedCharts);
           },
-          onThreadId: (tid) => {
+          onThreadId: () => {
             if (sessionResetRef.current) return;
           },
           onStatus: (status) => {
@@ -1687,10 +1687,13 @@ export default function ChatPage() {
                     <div className="flex flex-wrap gap-2 mb-2">
                       {msg.attachments.map(att => (
                         att.content_type.startsWith('image/') ? (
-                          <img
+                          <Image
                             key={att.file_id}
                             src={att.data_url}
                             alt={att.filename}
+                            width={200}
+                            height={200}
+                            unoptimized
                             className="max-w-[200px] max-h-[200px] rounded-lg object-cover"
                           />
                         ) : (
@@ -1744,7 +1747,7 @@ export default function ChatPage() {
                         onSelect={handleSelectPlan}
                       />
                     )}
-                    {msg.itinerary && <ItineraryCard itinerary={msg.itinerary} threadId={threadId ?? undefined} onEditItinerary={(modified) => handleEditItinerary(modified, msg.id)} />}
+                    {msg.itinerary && <ItineraryCard itinerary={msg.itinerary} threadId={threadId ?? undefined} onEditItinerary={(modified) => handleEditItinerary(modified)} />}
                     {msg.clarify && <ClarifyCard data={msg.clarify} onSend={handleClarifySend} disabled={loading || regenerating} />}
                     {msg.images && msg.images.map((img, i) => (
                       <GeneratedImageCard key={i} image={img} />
@@ -1889,7 +1892,7 @@ export default function ChatPage() {
                 {streamingComparison && <ComparisonView data={streamingComparison} onSelect={handleSelectPlan} />}
                 {streamingClarify && <ClarifyCard data={streamingClarify} onSend={handleClarifySend} disabled={loading || regenerating} />}
                 {buildingItinerary && !streamingItinerary && <ItinerarySkeleton />}
-                {streamingItinerary && <ItineraryCard itinerary={streamingItinerary} threadId={threadId ?? undefined} onEditItinerary={(modified) => handleEditItinerary(modified, undefined)} />}
+                {streamingItinerary && <ItineraryCard itinerary={streamingItinerary} threadId={threadId ?? undefined} onEditItinerary={(modified) => handleEditItinerary(modified)} />}
                 {streamingImages.map((img, i) => (
                   <GeneratedImageCard key={i} image={img} />
                 ))}

@@ -75,7 +75,6 @@ function SubagentEntry({
   hasNested,
   nested,
   progressMap,
-  isStreaming,
   index,
 }: {
   tc: ToolCallEntry;

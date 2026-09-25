@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import { X, FileText } from 'lucide-react';
 import type { UploadedFile } from '@/lib/upload-api';
 
@@ -14,9 +15,12 @@ export default function FilePreview({ file, onRemove }: FilePreviewProps) {
   return (
     <div className="relative group shrink-0">
       {isImage ? (
-        <img
+        <Image
           src={file.data_url}
           alt={file.filename}
+          width={64}
+          height={64}
+          unoptimized
           className="w-16 h-16 rounded-lg object-cover border border-border"
         />
       ) : (

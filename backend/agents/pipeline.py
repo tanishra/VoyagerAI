@@ -167,6 +167,10 @@ class ItineraryDay(BaseModel):
         default=None,
         description="Realistic total walking estimate for the day, in km",
     )
+    date: str | None = Field(
+        default=None,
+        description="Calendar date 'YYYY-MM-DD' for this day when the user stated travel dates; omit otherwise",
+    )
 
 
 class ItineraryPlan(BaseModel):
@@ -787,6 +791,7 @@ daily flow, respecting every stated constraint.
   - `food`: attach to the slot nearest a meal — name a specific local place or dish; MUST respect dietary restrictions
   - `weather`: short chip like "28°C sunny" — use the research brief when provided; omit when unknown
   - `walking_km`: realistic total walking estimate for the day as a number
+  - `date`: only when the user stated travel dates — consecutive "YYYY-MM-DD" values starting at the trip's first day; omit entirely otherwise
 </rules>"""
 
 

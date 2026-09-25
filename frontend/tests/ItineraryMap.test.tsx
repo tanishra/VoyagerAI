@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, act } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 
 vi.mock('swr', () => ({
   default: (key: string | null) => {
@@ -27,14 +27,23 @@ const googleStub = {
       getZoom = mockMap.getZoom;
       setZoom = mockMap.setZoom;
     },
-    Marker: class MockMarker {
-      options: unknown;
-      setMap = mockMarker.setMap;
-      addListener = mockMarker.addListener;
-      constructor(opts: unknown) {
-        this.options = opts;
-        markerInstances.push(this);
-      }
+    marker: {
+      PinElement: class MockPinElement {
+        element: { style: Record<string, string> };
+        constructor(public spec: unknown) {
+          this.element = { style: {} };
+        }
+      },
+      AdvancedMarkerElement: class MockAdvancedMarker {
+        options: unknown;
+        map: unknown;
+        addListener = mockMarker.addListener;
+        constructor(opts: unknown) {
+          this.options = opts;
+          this.map = (opts as { map?: unknown }).map;
+          markerInstances.push(this);
+        }
+      },
     },
     Polyline: class MockPolyline {
       setMap = mockPolyline.setMap;
@@ -72,7 +81,7 @@ vi.mock('@googlemaps/js-api-loader', () => ({
   }),
 }));
 
-import ItineraryMap, { extractMarkers, markerIcon } from '@/components/ItineraryMap';
+import ItineraryMap, { extractMarkers, pinSpec } from '@/components/ItineraryMap';
 import type { DayPlan } from '@/lib/types';
 
 const daysWithCoords: DayPlan[] = [
@@ -220,11 +229,24 @@ describe('approximate pins (geo_approx)', () => {
     expect(markers[1].approximate).toBe(false);
   });
 
-  it('markerIcon renders semi-transparent pin when approximate', () => {
-    (window as unknown as { google: unknown }).google = googleStub;
-    const approx = markerIcon(1, true);
-    expect(approx.fillOpacity).toBeLessThan(1);
-    const exact = markerIcon(1, false);
-    expect(exact.fillOpacity).toBe(1);
+  it('pinSpec colors pins by slot with a slot-number glyph', () => {
+    const p1 = pinSpec(1);
+    expect(p1.background).toBe('#b8402e');
+    expect(p1.glyph).toBe('1');
+    expect(pinSpec(2).glyph).toBe('2');
+  });
+
+  it('approximate slots get a dimmed pin element', async () => {
+    const approxDays: DayPlan[] = [{
+      ...daysWithCoords[0],
+      morning: { ...daysWithCoords[0].morning, geo_approx: true },
+    }];
+    render(<ItineraryMap days={approxDays} destination="Paris, France" />);
+    await vi.waitFor(() => expect(markerInstances.length).toBe(3));
+    const pins = markerInstances.map(
+      (m) => (m.options as { content: { style: Record<string, string> } }).content
+    );
+    expect(pins[0].style.opacity).toBe('0.4');
+    expect(pins[1].style.opacity).toBeUndefined();
   });
 });

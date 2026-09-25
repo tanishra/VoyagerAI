@@ -68,3 +68,45 @@ class TestRedisFallback:
         assert asyncio.run(s.pop("p1")) == {"kind": "comparison", "data": {"x": 1}}
         # First failure set a retry window
         assert s._redis_retry_after > 0
+
+
+class TestDurableTier:
+    """Thread-state keys write through to the durable DB (SQLite in tests —
+    PG pool is broken by conftest) so a Redis flush doesn't orphan history,
+    export, or share lookups."""
+
+    def test_thread_state_survives_fresh_store(self):
+        """Simulates Redis flush + process restart: a brand-new store with
+        empty memory still resolves the record via the durable tier."""
+        s = _store()
+        asyncio.run(s.set_thread_state("t-dur", "latest_itinerary", {"days": [1, 2]}))
+        s2 = _store()
+        assert asyncio.run(s2.get_thread_state("t-dur", "latest_itinerary")) == {"days": [1, 2]}
+
+    def test_durable_expiry_returns_none(self):
+        """Rows past their TTL are treated as gone (and lazily deleted)."""
+        s = _store()
+        asyncio.run(s.set_thread_state("t-exp", "latest_comparison", {"v": 1}))
+        # Expire the durable row directly
+        from pg_store import get_durable_db
+
+        async def _expire():
+            db = await get_durable_db()
+            await db.execute(
+                "UPDATE payload_thread_state SET expires_at = ? WHERE thread_id = ? AND key = ?",
+                (time.time() - 1, "t-exp", "latest_comparison"),
+            )
+            await db.commit()
+        asyncio.run(_expire())
+        s2 = _store()
+        assert asyncio.run(s2.get_thread_state("t-exp", "latest_comparison")) is None
+
+    def test_durable_failure_falls_back_to_memory(self, monkeypatch):
+        """If the durable tier is down, Redis/mem behavior is unchanged."""
+        async def _no_db():
+            return None
+        import pg_store
+        monkeypatch.setattr(pg_store, "get_durable_db", _no_db)
+        s = _store()
+        asyncio.run(s.set_thread_state("t-mem", "constraints", {"days": 5}))
+        assert asyncio.run(s.get_thread_state("t-mem", "constraints")) == {"days": 5}

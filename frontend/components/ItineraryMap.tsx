@@ -33,9 +33,13 @@ const CHART_HEX: Record<number, string> = {
   3: '#c29438',
 };
 
-// Material "place" teardrop glyph — scaled to roughly the old 28px DOM pin.
-const PIN_PATH =
-  'M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z';
+// js-api-loader warns when setOptions() is invoked more than once — every
+// mounted map used to call it. Options are identical per page, so gate it.
+let optionsConfigured = false;
+
+// AdvancedMarkerElement needs a Map ID; DEMO_MAP_ID works without one (no
+// cloud styling — we don't use any). Override via env for a real Map ID.
+const MAP_ID = process.env.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID ?? 'DEMO_MAP_ID';
 
 interface MapMarker {
   lat: number;
@@ -101,16 +105,19 @@ async function geocodeDay(day: DayPlan): Promise<DayPlan> {
 }
 
 // Approximate pins render semi-transparent — visibly less certain than exact.
-export function markerIcon(slotIndex: number, approximate = false): google.maps.Symbol {
+export function pinSpec(slotIndex: number): {
+  background: string;
+  borderColor: string;
+  glyphColor: string;
+  glyph: string;
+  scale: number;
+} {
   return {
-    path: PIN_PATH,
-    fillColor: CHART_HEX[slotIndex] ?? CHART_HEX[1],
-    fillOpacity: approximate ? 0.35 : 1,
-    strokeColor: '#ffffff',
-    strokeWeight: 2,
-    scale: 1.5,
-    anchor: new google.maps.Point(12, 22),
-    labelOrigin: new google.maps.Point(12, 9),
+    background: CHART_HEX[slotIndex] ?? CHART_HEX[1],
+    borderColor: '#ffffff',
+    glyphColor: '#ffffff',
+    glyph: String(slotIndex),
+    scale: 1.15,
   };
 }
 
@@ -120,7 +127,7 @@ export default function ItineraryMap({ days, destination, currency, activeDay, o
   const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<google.maps.Map | null>(null);
-  const markersRef = useRef<google.maps.Marker[]>([]);
+  const markersRef = useRef<google.maps.marker.AdvancedMarkerElement[]>([]);
   const polylinesRef = useRef<google.maps.Polyline[]>([]);
   const infoWindowRef = useRef<google.maps.InfoWindow | null>(null);
   const observerRef = useRef<ResizeObserver | null>(null);
@@ -180,11 +187,15 @@ export default function ItineraryMap({ days, destination, currency, activeDay, o
       if (!cancelled) setMapFailed(true);
     }, 10000);
 
-    setOptions({ key: apiKey, v: 'weekly' });
-    importLibrary('maps')
+    if (!optionsConfigured) {
+      setOptions({ key: apiKey, v: 'weekly' });
+      optionsConfigured = true;
+    }
+    Promise.all([importLibrary('maps'), importLibrary('marker')])
       .then(() => {
         if (cancelled || !mapContainerRef.current) return;
         const map = new google.maps.Map(mapContainerRef.current, {
+          mapId: MAP_ID,
           center:
             currentMarkers.length > 0
               ? { lat: currentMarkers[0].lat, lng: currentMarkers[0].lng }
@@ -218,7 +229,7 @@ export default function ItineraryMap({ days, destination, currency, activeDay, o
       clearTimeout(failTimer);
       observerRef.current?.disconnect();
       observerRef.current = null;
-      markersRef.current.forEach((m) => m.setMap(null));
+      markersRef.current.forEach((m) => { m.map = null; });
       markersRef.current = [];
       polylinesRef.current.forEach((p) => p.setMap(null));
       polylinesRef.current = [];
@@ -235,7 +246,7 @@ export default function ItineraryMap({ days, destination, currency, activeDay, o
     const map = mapRef.current;
     if (!map || currentMarkers.length === 0) return;
 
-    markersRef.current.forEach((m) => m.setMap(null));
+    markersRef.current.forEach((m) => { m.map = null; });
     markersRef.current = [];
     polylinesRef.current.forEach((p) => p.setMap(null));
     polylinesRef.current = [];
@@ -244,11 +255,12 @@ export default function ItineraryMap({ days, destination, currency, activeDay, o
     infoWindowRef.current = infoWindow;
 
     for (const m of currentMarkers) {
-      const marker = new google.maps.Marker({
+      const pin = new google.maps.marker.PinElement(pinSpec(m.slotIndex));
+      if (m.approximate) pin.element.style.opacity = '0.4';
+      const marker = new google.maps.marker.AdvancedMarkerElement({
         position: { lat: m.lat, lng: m.lng },
         map,
-        icon: markerIcon(m.slotIndex, m.approximate),
-        label: { text: String(m.slotIndex), color: '#ffffff', fontSize: '11px', fontWeight: 'bold' },
+        content: pin.element,
       });
 
       marker.addListener('click', () => {

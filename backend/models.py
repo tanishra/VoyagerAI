@@ -31,6 +31,8 @@ class DayPlan(BaseModel):
     # Optional enrichments — day weather chip + total walking estimate.
     weather: str | None = None
     walking_km: float | None = None
+    # Calendar date "YYYY-MM-DD" — set only when the user stated trip dates.
+    date: str | None = None
 
 
 class Itinerary(BaseModel):

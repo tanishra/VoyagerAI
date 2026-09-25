@@ -139,7 +139,7 @@ function DroppableSlot({
   );
 }
 
-export default function ItineraryEditor({ itinerary, threadId: _threadId, onClose, onSave }: ItineraryEditorProps) {
+export default function ItineraryEditor({ itinerary, onClose, onSave }: ItineraryEditorProps) {
   const t = useTranslations('itinerary');
   const locale = useLocale();
   const [preferredCurrency] = useCurrency();

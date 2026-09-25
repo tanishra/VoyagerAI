@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { Copy, Check } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import type { Itinerary, PlanItineraryStub, ComparisonData, DayPlan } from '@/lib/types';
+import type { Itinerary, PlanItineraryStub, ComparisonData } from '@/lib/types';
 import { getStoredCurrency, CURRENCY_SYMBOLS } from '@/lib/currency';
 
 function getCurrencySymbol(): string {

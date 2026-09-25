@@ -51,7 +51,6 @@ export default function ActivityPanel({
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setExpanded(true);
     } else if (isStreaming && hasText && !prevHasText.current) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setExpanded(false);
     }
     prevHasText.current = hasText;

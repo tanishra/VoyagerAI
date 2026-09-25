@@ -24,7 +24,6 @@ function formatRelativeTime(timestamp: number): string {
 }
 
 function groupThreadsByDate(threads: ThreadMeta[]): { label: string; threads: ThreadMeta[] }[] {
-  const now = Date.now() / 1000;
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const todayStartTs = today.getTime() / 1000;
   const yesterdayStartTs = todayStartTs - 86400;
@@ -118,7 +117,6 @@ export default function ThreadSidebar({
   onDelete,
   onNewChat,
   onLoadMore,
-  onClose,
   onTogglePin,
   user,
 }: ThreadSidebarProps) {

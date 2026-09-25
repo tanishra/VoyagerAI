@@ -292,3 +292,25 @@ class TestEnrichmentFields:
         )
         assert day.weather == "28°C sunny"
         assert day.walking_km == 5.5
+
+    def test_day_plan_date_optional(self, sample_activity_dict):
+        day = DayPlan(
+            day=1,
+            theme="T",
+            morning=Activity(**sample_activity_dict),
+            afternoon=Activity(**sample_activity_dict),
+            evening=Activity(**sample_activity_dict),
+            transport="Bus",
+            accommodation="Hotel",
+            daily_cost_usd=100,
+            date="2026-03-10",
+        )
+        assert day.date == "2026-03-10"
+        day2 = DayPlan(
+            day=1, theme="T",
+            morning=Activity(**sample_activity_dict),
+            afternoon=Activity(**sample_activity_dict),
+            evening=Activity(**sample_activity_dict),
+            transport="Bus", accommodation="Hotel", daily_cost_usd=100,
+        )
+        assert day2.date is None

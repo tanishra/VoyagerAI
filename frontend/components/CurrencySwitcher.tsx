@@ -3,13 +3,11 @@
 import { useState, useRef, useEffect } from 'react';
 import { Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useLocale } from '@/lib/useLocale';
 import { useCurrency } from '@/lib/useCurrency';
 import { SUPPORTED_CURRENCIES, CURRENCY_SYMBOLS, CURRENCY_NAMES, type Currency } from '@/lib/currency';
 
 export default function CurrencySwitcher() {
   const [open, setOpen] = useState(false);
-  const locale = useLocale();
   const [currency, setCurrency] = useCurrency();
   const ref = useRef<HTMLDivElement>(null);
 

@@ -225,6 +225,17 @@ CREATE TABLE IF NOT EXISTS observability_errors (
 CREATE INDEX IF NOT EXISTS idx_obs_errors_thread ON observability_errors(thread_id);
 CREATE INDEX IF NOT EXISTS idx_obs_errors_timestamp ON observability_errors(timestamp DESC);
 CREATE INDEX IF NOT EXISTS idx_obs_errors_expires ON observability_errors(expires_at);
+
+-- PayloadStore per-thread state (latest_itinerary, latest_comparison,
+-- constraints, payload replay records) — durable copy so Redis loss
+-- doesn't orphan exports/shares while checkpoints survive.
+CREATE TABLE IF NOT EXISTS payload_thread_state (
+    thread_id TEXT NOT NULL,
+    key TEXT NOT NULL,
+    data TEXT,
+    expires_at DOUBLE PRECISION,
+    PRIMARY KEY (thread_id, key)
+);
 """
 
 _pool = None
@@ -343,7 +354,8 @@ async def cleanup_expired_pg() -> int:
     total = 0
     try:
         for table in ("shares", "sessions", "research_cache", "files",
-                      "observability_events", "observability_errors", "observability_sessions"):
+                      "observability_events", "observability_errors", "observability_sessions",
+                      "payload_thread_state"):
             total += await pg_execute(f"DELETE FROM {table} WHERE expires_at < $1", (now,))
         total += await pg_execute("DELETE FROM rate_limits WHERE timestamp < $1", (now - 3600,))
         if total > 0:
@@ -388,6 +400,7 @@ _PK: dict[str, str | tuple[str, ...]] = {
     "files": "file_id",
     "observability_sessions": "thread_id",
     "rate_limits": ("key", "timestamp"),
+    "payload_thread_state": ("thread_id", "key"),
 }
 
 _OR_REPLACE_RE = re.compile(
