@@ -298,9 +298,11 @@ async def get_pg_pool():
             # Health probe + schema init in one shot — a DB that can't take
             # DDL is useless to us anyway.
             await conn.execute("SELECT 1")
-            await conn.execute(_SCHEMA_SQL)
+            # Multi-statement DDL needs the simple query protocol — psycopg3
+            # rejects multiple commands inside a prepared statement.
+            await conn.execute(_SCHEMA_SQL, prepare=False)
             await conn.execute(
-                "INSERT INTO schema_migrations (version, applied_at) VALUES ($1, $2) "
+                "INSERT INTO schema_migrations (version, applied_at) VALUES (%s, %s) "
                 "ON CONFLICT (version) DO NOTHING",
                 (_SCHEMA_VERSION, time.time()),
             )
