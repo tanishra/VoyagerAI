@@ -44,6 +44,7 @@ from agents.deep_agent import (
     edit_chat_agent,
     edit_itinerary_agent,
     regenerate_chat_agent,
+    user_memory_namespace,
 )
 from agents.prompts import (
     _parse_learned_preferences_to_dict,
@@ -1587,7 +1588,12 @@ async def get_preferences(request: Request, user: dict = Depends(get_current_use
     logger.info("GET /preferences user=%s locale=%s", user_id, locale)
     try:
         store = get_redis_file_store()
-        item = store.get((user_id,), "/preferences.md")
+        # Agent writes land under the hashed namespace; raw user_id is the
+        # legacy location kept as a read fallback — only reachable for
+        # dotless ids (store rejects '.' in labels).
+        item = store.get((user_memory_namespace(user_id),), "/preferences.md")
+        if item is None and "." not in user_id:
+            item = store.get((user_id,), "/preferences.md")
     except Exception:  # noqa: BLE001 (intentional fallback handler)
         logger.warning("Preferences store unavailable — returning empty preferences")
         return JSONResponse({"user_instructions": "", "learned_preferences": {}}, status_code=503)
@@ -1634,10 +1640,14 @@ async def put_preferences(request: Request, user: dict = Depends(get_current_use
         return {"status": "error", "user_id": user_id, "error": "Invalid JSON body"}
     user_text = _sanitize_instructions(payload.get("user_instructions", ""))
 
-    # Fetch existing content to preserve learned_preferences
+    # Fetch existing content to preserve learned_preferences — new hashed
+    # namespace first, legacy raw-user_id namespace as fallback.
     try:
         store = get_redis_file_store()
-        existing_item = store.get((user_id,), "/preferences.md")
+        ns = user_memory_namespace(user_id)
+        existing_item = store.get((ns,), "/preferences.md")
+        if existing_item is None and "." not in user_id:
+            existing_item = store.get((user_id,), "/preferences.md")
     except Exception:  # noqa: BLE001 (intentional fallback handler)
         logger.warning("Preferences store unavailable — preferences not saved")
         return {"status": "error", "user_id": user_id, "error": "Preferences store unavailable"}
@@ -1651,7 +1661,7 @@ async def put_preferences(request: Request, user: dict = Depends(get_current_use
     content = f"<user_instructions>\n{user_text}\n</user_instructions>\n\n<learned_preferences>\n{existing_learned_text}\n</learned_preferences>"
 
     try:
-        store.put((user_id,), "/preferences.md", {"content": content, "encoding": "utf-8"})
+        store.put((ns,), "/preferences.md", {"content": content, "encoding": "utf-8"})
     except Exception:  # noqa: BLE001 (intentional fallback handler)
         logger.warning("Preferences store unavailable — preferences not saved")
         return {"status": "error", "user_id": user_id, "error": "Preferences store unavailable"}

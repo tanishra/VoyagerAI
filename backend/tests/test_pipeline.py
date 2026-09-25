@@ -1131,3 +1131,60 @@ class TestEnrichmentFields:
         d = ItineraryDay(day=1, date="2026-03-10").model_dump()
         assert d["date"] == "2026-03-10"
         assert ItineraryDay(day=2).model_dump()["date"] is None
+
+
+class TestSavedPreferencesInjection:
+    """_saved_preferences_text feeds pipeline task text (PF2)."""
+
+    def _seed(self, monkeypatch, user_id="prefs@example.com", content=None):
+        from langgraph.store.memory import InMemoryStore
+
+        from agents.deep_agent import user_memory_namespace
+
+        store = InMemoryStore()
+        if content is not None:
+            store.put((user_memory_namespace(user_id),), "/preferences.md", {"content": content})
+        monkeypatch.setattr(
+            pipeline_tools_module, "get_redis_file_store", lambda: store, raising=False
+        )
+        monkeypatch.setattr(
+            "agents.deep_agent.get_redis_file_store", lambda: store
+        )
+        return store
+
+    def test_returns_prefs_when_seeded(self, monkeypatch):
+        self._seed(
+            monkeypatch,
+            content="<user_instructions>\nNo museums.\n</user_instructions>\n\n"
+            "<learned_preferences>\ntravel_style: relaxed\n</learned_preferences>",
+        )
+        set_pipeline_context(user_id="prefs@example.com")
+        text = pipeline_module._saved_preferences_text()
+        assert "No museums." in text
+        assert "travel_style: relaxed" in text
+
+    def test_legacy_namespace_fallback(self, monkeypatch):
+        # Legacy raw-id namespace — only valid for dotless ids (store rejects
+        # '.' in namespace labels; real emails could never write this path).
+        from langgraph.store.memory import InMemoryStore
+
+        store = InMemoryStore()
+        store.put(("dev@localhost",), "/preferences.md", {"content": "Legacy pref line"})
+        monkeypatch.setattr("agents.deep_agent.get_redis_file_store", lambda: store)
+        set_pipeline_context(user_id="dev@localhost")
+        assert "Legacy pref line" in pipeline_module._saved_preferences_text()
+
+    def test_empty_without_user_id(self, monkeypatch):
+        self._seed(monkeypatch, content="<user_instructions>\nHi\n</user_instructions>")
+        set_pipeline_context(user_id=None)
+        pipeline_tools_module._pipeline_user_id.set("")
+        assert pipeline_module._saved_preferences_text() == ""
+
+    def test_empty_on_store_error(self, monkeypatch):
+        class _Broken:
+            def get(self, *a, **k):
+                raise RuntimeError("store down")
+
+        monkeypatch.setattr("agents.deep_agent.get_redis_file_store", lambda: _Broken())
+        set_pipeline_context(user_id="prefs@example.com")
+        assert pipeline_module._saved_preferences_text() == ""

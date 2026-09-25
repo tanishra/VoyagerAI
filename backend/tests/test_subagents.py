@@ -121,8 +121,11 @@ class TestConstraintAnalyzerPrompt:
         for check in ("Budget", "Dietary", "Accessibility", "Group composition", "Travel style"):
             assert check in CONSTRAINT_ANALYZER_SYSTEM_PROMPT
 
-    def test_reads_preferences_file(self):
-        assert "/memories/preferences.md" in CONSTRAINT_ANALYZER_SYSTEM_PROMPT
+    def test_preferences_injected_in_task(self):
+        # Specialists are compiled bare — no file tools — so prefs arrive in
+        # the task text, not via read_file.
+        assert "Saved user preferences are included in the task" in CONSTRAINT_ANALYZER_SYSTEM_PROMPT
+        assert "read /memories" not in CONSTRAINT_ANALYZER_SYSTEM_PROMPT.lower()
 
     def test_budget_math(self):
         assert "per-day maximum" in CONSTRAINT_ANALYZER_SYSTEM_PROMPT

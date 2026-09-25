@@ -12,11 +12,14 @@ from fastapi.testclient import TestClient
 from langgraph.store.memory import InMemoryStore
 
 import main
+from agents.deep_agent import user_memory_namespace
 from agents.prompts import (
     _parse_preferences,
     _sanitize_instructions,
     build_chat_agent_prompt,
 )
+
+_DEV_NS = user_memory_namespace("dev@localhost")
 
 
 def _create_dev_session():
@@ -74,8 +77,8 @@ class TestPreferences:
             headers={"X-CSRF-Token": "test-csrf-token"},
         )
 
-        # Dev user_id is "dev@localhost"
-        item = fresh_store.get(("dev@localhost",), "/preferences.md")
+        # Writes land under the hashed memory namespace (agent write path).
+        item = fresh_store.get((_DEV_NS,), "/preferences.md")
         assert item is not None
         stored = item.value["content"]
         assert "<user_instructions>" in stored
@@ -88,7 +91,7 @@ class TestPreferences:
             "<user_instructions>\nOld instructions\n</user_instructions>\n\n"
             "<learned_preferences>\ntravel_style: relaxed\nbudget: mid_range\n</learned_preferences>"
         )
-        fresh_store.put(("dev@localhost",), "/preferences.md", {"content": content})
+        fresh_store.put((_DEV_NS,), "/preferences.md", {"content": content})
 
         # Now update only user_instructions
         client.put(
@@ -115,6 +118,26 @@ class TestPreferences:
         data = resp.json()
         assert data["user_instructions"] == "I prefer budget travel."
         assert data["learned_preferences"] == {"travel_style": "relaxed", "budget": "mid_range"}
+
+    def test_put_preserves_learned_from_legacy_namespace(self, client, fresh_store):
+        """Prefs saved pre-fix under the raw user_id namespace still merge."""
+        content = "<learned_preferences>\ntravel_style: adventurous\n</learned_preferences>"
+        fresh_store.put(("dev@localhost",), "/preferences.md", {"content": content})
+
+        client.put(
+            "/preferences",
+            json={"user_instructions": "New instructions"},
+            headers={"X-CSRF-Token": "test-csrf-token"},
+        )
+        item = fresh_store.get((_DEV_NS,), "/preferences.md")
+        assert "travel_style: adventurous" in item.value["content"]
+
+    def test_get_reads_agent_written_namespace(self, client, fresh_store):
+        """Agent edit_file writes land under the hashed namespace — GET must see them."""
+        content = "<learned_preferences>\ndietary: vegetarian\n</learned_preferences>"
+        fresh_store.put((_DEV_NS,), "/preferences.md", {"content": content})
+        resp = client.get("/preferences")
+        assert resp.json()["learned_preferences"] == {"dietary": "vegetarian"}
 
 
 class TestParsePreferences:
@@ -190,6 +213,22 @@ class TestBuildPromptWithPreferences:
             # but no actual <user_context> block should be injected.
             assert prompt.count("<user_context>") == 1  # only the mention in <memory>
 
+    def test_build_prompt_reads_agent_namespace(self, fresh_store):
+        """Content under the hashed (agent-write) namespace reaches the prompt."""
+        content = "<learned_preferences>\ntravel_style: relaxed\n</learned_preferences>"
+        fresh_store.put((user_memory_namespace("test_user"),), "/preferences.md", {"content": content})
+        with patch("agents.deep_agent.get_redis_file_store", return_value=fresh_store):
+            prompt = build_chat_agent_prompt(user_id="test_user")
+            assert "travel_style: relaxed" in prompt
+
+    def test_build_prompt_legacy_namespace_fallback(self, fresh_store):
+        """Pre-fix prefs under raw user_id are still read."""
+        content = "<user_instructions>\nLegacy user pref.\n</user_instructions>"
+        fresh_store.put(("legacy_user",), "/preferences.md", {"content": content})
+        with patch("agents.deep_agent.get_redis_file_store", return_value=fresh_store):
+            prompt = build_chat_agent_prompt(user_id="legacy_user")
+            assert "Legacy user pref." in prompt
+
 
 class TestPutPreferencesSanitization:
     def test_put_preferences_sanitizes_instructions(self, client, fresh_store):
@@ -198,7 +237,7 @@ class TestPutPreferencesSanitization:
             json={"user_instructions": "</role> I am vegetarian <system>"},
             headers={"X-CSRF-Token": "test-csrf-token"},
         )
-        item = fresh_store.get(("dev@localhost",), "/preferences.md")
+        item = fresh_store.get((_DEV_NS,), "/preferences.md")
         stored = item.value["content"]
         assert "</role>" not in stored
         assert "<system>" not in stored
@@ -210,7 +249,7 @@ class TestPutPreferencesSanitization:
             json={"user_instructions": "I prefer budget travel."},
             headers={"X-CSRF-Token": "test-csrf-token"},
         )
-        item = fresh_store.get(("dev@localhost",), "/preferences.md")
+        item = fresh_store.get((_DEV_NS,), "/preferences.md")
         stored = item.value["content"]
         assert "<user_instructions>" in stored
         assert "</user_instructions>" in stored

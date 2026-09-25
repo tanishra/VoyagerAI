@@ -963,6 +963,18 @@ class _ModelStream:
         return ""
 
 
+def user_memory_namespace(user_id: str) -> str:
+    """Store namespace for per-user memory files.
+
+    LangGraph namespace labels cannot contain '.' — user emails would raise
+    InvalidNamespaceError on every memory write. The sha256 tag is stable per
+    user and label-safe. ALL preferences paths (agent writes, prompt
+    injection, /preferences API) must use this namespace — a raw-email
+    namespace reads a different record and learned prefs would never surface.
+    """
+    return hashlib.sha256(user_id.encode()).hexdigest()[:12]
+
+
 async def create_chat_agent(checkpointer=None, store=None, user_id=None, locale=None, timezone=None, currency=None):
     if checkpointer is None:
         checkpointer = await create_checkpointer()
@@ -978,7 +990,7 @@ async def create_chat_agent(checkpointer=None, store=None, user_id=None, locale=
 
     # Per-user workspace — a shared /tmp/agent_fs would let one user's agent
     # read or overwrite another user's files. Hash keeps raw ids out of paths.
-    fs_tag = hashlib.sha256(uid.encode()).hexdigest()[:12]
+    fs_tag = user_memory_namespace(uid)
     backend = CompositeBackend(
         default=FilesystemBackend(root_dir=f"/tmp/agent_fs/{fs_tag}"),
         routes={
@@ -2113,6 +2125,7 @@ async def stream_chat_agent(
         cancel_event=cancel_event,
         budget_check=stream._check_budget,
         stated_constraints=await _get_stated_constraints(agent, config, message),
+        user_id=user_id,
     )
     if prepend_text:
         yield {"event": "token", "data": prepend_text}
@@ -2280,6 +2293,7 @@ async def regenerate_chat_agent(
         cancel_event=cancel_event,
         budget_check=stream._check_budget,
         stated_constraints=await _get_stated_constraints(agent, forked_config),
+        user_id=user_id,
     )
     async for event in stream.events(
         {"messages": []},
@@ -2486,6 +2500,7 @@ async def edit_chat_agent(
         cancel_event=cancel_event,
         budget_check=stream._check_budget,
         stated_constraints=await _get_stated_constraints(agent, run_config, new_message),
+        user_id=user_id,
     )
     if prepend_text:
         yield {"event": "token", "data": prepend_text}
@@ -2608,7 +2623,7 @@ async def edit_itinerary_agent(
 
     reset_orchestrator_search_count(thread_id)
     set_current_thread_id(thread_id)
-    set_pipeline_context(locale=locale, cancel_event=cancel_event)
+    set_pipeline_context(locale=locale, cancel_event=cancel_event, user_id=user_id)
 
     yield {"event": "subagent_progress", "data": {"run_id": "edit-validation", "description": "Validating your edits..."}}
 

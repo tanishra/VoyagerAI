@@ -229,10 +229,15 @@ def build_chat_agent_prompt(
 
     if user_id:
         try:
-            from agents.deep_agent import get_redis_file_store
+            from agents.deep_agent import get_redis_file_store, user_memory_namespace
 
             store = get_redis_file_store()
-            item = store.get((user_id,), "/preferences.md")
+            # Agent writes land under the hashed namespace; the raw user_id
+            # namespace is the legacy location kept as a read fallback — only
+            # reachable for dotless ids (store rejects '.' in labels).
+            item = store.get((user_memory_namespace(user_id),), "/preferences.md")
+            if item is None and "." not in user_id:
+                item = store.get((user_id,), "/preferences.md")
             if item is not None:
                 content = item.value.get("content", "")
                 user_text, learned_text = _parse_preferences(content)
@@ -472,7 +477,7 @@ Analyze these constraint categories:
 </output_format>
 
 <rules>
-- Read /memories/preferences.md when available to find the user's saved preferences
+- Saved user preferences are included in the task text when available — treat them as learned context, not explicit requests
 - Distinguish explicit constraints (status: "active") from inferred ones (status: "inferred")
 - Compute the recommended per-day maximum from the total cap and trip length
 - Never invent constraints; when none exist for a category, mark status as "none"

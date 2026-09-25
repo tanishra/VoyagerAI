@@ -329,6 +329,43 @@ def _language_block(locale: str | None) -> str:
     return LANGUAGE_INSTRUCTIONS.get(locale or "en", LANGUAGE_INSTRUCTIONS["en"])
 
 
+_SAVED_PREFS_MAX = 3000
+
+
+def _saved_preferences_text() -> str:
+    """Saved user preferences for pipeline task text — '' when unavailable.
+
+    The orchestrator sees <user_context> in its system prompt, but pipeline
+    specialists are compiled bare (no file tools) — prefs must be passed in
+    the task text. Reads the hashed memory namespace with a legacy raw-id
+    fallback. Never raises; a store blip just means no prefs this run.
+    """
+    try:
+        from agents.deep_agent import get_redis_file_store, user_memory_namespace
+        from agents.prompts import _parse_preferences
+        from agents.tools.pipeline_tools import get_pipeline_user_id
+
+        uid = get_pipeline_user_id()
+        if not uid:
+            return ""
+        store = get_redis_file_store()
+        item = store.get((user_memory_namespace(uid),), "/preferences.md")
+        if item is None and "." not in uid:
+            item = store.get((uid,), "/preferences.md")
+        if item is None:
+            return ""
+        user_text, learned_text = _parse_preferences(item.value.get("content", ""))
+        parts = []
+        if user_text:
+            parts.append(f"User instructions: {user_text}")
+        if learned_text:
+            parts.append(f"Learned preferences:\n{learned_text}")
+        return "\n".join(parts)[:_SAVED_PREFS_MAX]
+    except Exception:
+        logger.warning("Saved preferences unavailable", exc_info=True)
+        return ""
+
+
 def _check_cancel(cancel_event) -> bool:
     return bool(cancel_event is not None and cancel_event.is_set())
 
@@ -377,12 +414,15 @@ async def run_comparison_pipeline(
         f"Research hotels, accommodation options, weather, events, and best season for "
         f"{constraints.destination} for a {constraints.total_days}-day trip."
     )
+    saved_prefs = _saved_preferences_text()
+    prefs_block = f"\n\nSaved user preferences:\n{saved_prefs}" if saved_prefs else ""
     constraint_task = (
         f"Analyze constraints for a {constraints.total_days}-day trip to "
         f"{constraints.destination} with total budget "
         f"{constraints.budget_amount:,.0f} {constraints.budget_currency}. "
         f"Dietary: {constraints.dietary_restrictions or 'none'}. "
         f"Accessibility: {constraints.accessibility_needs or 'none'}."
+        f"{prefs_block}"
     )
     risk_task = f"Detect risks for {constraints.destination}."
 
@@ -429,7 +469,7 @@ async def run_comparison_pipeline(
     # --- Stage 2: structured generation -----------------------------------
     progress("multi_plan_generator")
     task_text = (
-        f"{constraints_text}\n\n"
+        f"{constraints_text}{prefs_block}\n\n"
         f"<research_brief>\n{research_brief}\n</research_brief>\n\n"
         f"<constraint_analysis>\n{constraint_brief}\n</constraint_analysis>\n\n"
         f"<risk_assessment>\n{risk_brief}\n</risk_assessment>\n\n"
@@ -550,10 +590,12 @@ async def run_refinement_pipeline(
         if research.get("risk"):
             research_text += f"\n\n<risk_assessment>\n{research['risk']}\n</risk_assessment>"
 
+    saved_prefs = _saved_preferences_text()
+    prefs_block = f"\n\nSaved user preferences:\n{saved_prefs}" if saved_prefs else ""
     task_text = (
         f"Generate a complete {constraints.total_days}-day itinerary for "
         f"{constraints.destination}.\n\n{_constraints_block(constraints)}\n"
-        f"Tier: {tier}{plan_hint}{adjustments_text}{research_text}\n\n"
+        f"Tier: {tier}{plan_hint}{adjustments_text}{research_text}{prefs_block}\n\n"
         f"{_language_block(locale)}\n"
         f"All costs in {constraints.budget_currency}. "
         f"The days array MUST contain exactly {constraints.total_days} entries."

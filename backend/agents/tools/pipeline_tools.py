@@ -65,6 +65,7 @@ __all__ = [
     "PIPELINE_TOOL_NAMES",
     "get_latest_comparison",
     "get_pipeline_tools",
+    "get_pipeline_user_id",
     "is_pipeline_tool",
     "pop_payload",
     "set_pipeline_context",
@@ -85,6 +86,15 @@ _pipeline_budget_check: contextvars.ContextVar[Callable[[], bool] | None] = cont
 _pipeline_stated: contextvars.ContextVar[dict | None] = contextvars.ContextVar(
     "pipeline_stated", default=None
 )
+# User identity for the current stream — the pipeline reads saved
+# preferences from the per-user memory namespace when set.
+_pipeline_user_id: contextvars.ContextVar[str] = contextvars.ContextVar(
+    "pipeline_user_id", default=""
+)
+
+
+def get_pipeline_user_id() -> str:
+    return _pipeline_user_id.get()
 # Last constraints the pipeline ran with — refine_itinerary reuses them so
 # the orchestrator doesn't have to re-state every field on tier selection.
 # Stored per-thread in payload_store (Redis + TTL) so restarts don't lose them.
@@ -104,6 +114,7 @@ def set_pipeline_context(
     cancel_event: asyncio.Event | None = None,
     budget_check: Callable[[], bool] | None = None,
     stated_constraints: dict | None = None,
+    user_id: str | None = None,
 ) -> None:
     """Bind pipeline context for the current stream (called once per request)."""
     if locale:
@@ -111,6 +122,8 @@ def set_pipeline_context(
     _pipeline_cancel.set(cancel_event)
     _pipeline_budget_check.set(budget_check)
     _pipeline_stated.set(stated_constraints)
+    if user_id:
+        _pipeline_user_id.set(user_id)
 
 
 def get_pipeline_tools() -> list:
