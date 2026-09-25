@@ -57,6 +57,14 @@ def _fast_redis_fail(monkeypatch):
     except Exception:  # noqa: BLE001, S110
         pass
 
+    # Stub external weather calls — enrichment must never hit Open-Meteo in tests.
+    # Tests exercising weather_service itself import the real function directly.
+    import weather_service
+
+    async def _no_weather(it):
+        return it
+    monkeypatch.setattr(weather_service, "enrich_itinerary_weather", _no_weather)
+
     # Reset shared SQLite connection — close the orphaned conn's worker thread
     # instead of just dropping the reference (dead-loop postings otherwise warn)
     import sqlite_fallback

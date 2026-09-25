@@ -25,10 +25,19 @@ def _no_google_key(monkeypatch):
 
 
 @pytest.fixture
-def fresh_cache():
-    """A GeocodeCache with no Redis connection — uses in-memory fallback."""
+def fresh_cache(monkeypatch):
+    """A GeocodeCache with no Redis and no SQLite — in-memory only.
+
+    The shared dev SQLite file can carry rows written by earlier runs
+    (write-through stores), which makes HTTP-call-count assertions flaky.
+    """
     cache = GeocodeCache()
     cache._redis = None
+
+    async def _no_sqlite():
+        return None
+
+    monkeypatch.setattr("geocode_cache.get_sqlite_connection", _no_sqlite)
     return cache
 
 
@@ -553,3 +562,88 @@ class TestEnrichItinerary:
 
         # Should return the original itinerary (no coords)
         assert "lat" not in enriched["days"][0]["morning"]
+
+
+class TestDerivedMetrics:
+    """walking_km + clash warnings computed inside coordinate enrichment."""
+
+    @pytest.mark.asyncio
+    async def test_walking_km_computed_from_exact_coords(self):
+        from agents.deep_agent import _enrich_itinerary_with_coordinates
+
+        itinerary = _make_itinerary()
+        itinerary["days"][0]["walking_km"] = 99.9  # model guess — must be overwritten
+
+        coords = {"Eiffel Tower, Paris": {"lat": 48.858, "lng": 2.294},
+                  "Louvre, Paris": {"lat": 48.861, "lng": 2.336},
+                  "Dinner, Paris": {"lat": 48.87, "lng": 2.33}}
+
+        async def mock_geocode(query):
+            for k, v in coords.items():
+                if query.startswith(k.split(",")[0]):
+                    return v
+            return {"lat": 48.85, "lng": 2.35}  # destination centroid
+
+        # Give each slot a distinct location matching a coord above
+        for slot_key, loc in (("morning", "Eiffel Tower"),
+                              ("afternoon", "Louvre"),
+                              ("evening", "Dinner")):
+            itinerary["days"][0][slot_key]["location"] = loc
+            itinerary["days"][0][slot_key]["activity"] = loc
+
+        with patch("agents.deep_agent.geocode", new=mock_geocode):
+            enriched = await _enrich_itinerary_with_coordinates(itinerary)
+
+        km = enriched["days"][0]["walking_km"]
+        assert km != 99.9
+        # ~3 km straight-line × 1.3 detour ≈ 4 km
+        assert 2 < km < 8
+
+    @pytest.mark.asyncio
+    async def test_walking_km_keeps_llm_value_when_approx_only(self):
+        from agents.deep_agent import _enrich_itinerary_with_coordinates
+
+        itinerary = _make_itinerary()
+        itinerary["days"][0]["walking_km"] = 3.2
+
+        async def mock_geocode(query):
+            if query == "Paris, France":
+                return {"lat": 48.85, "lng": 2.35}
+            return None  # every slot query misses → all approx pins
+
+        with patch("agents.deep_agent.geocode", new=mock_geocode):
+            enriched = await _enrich_itinerary_with_coordinates(itinerary)
+
+        assert enriched["days"][0]["walking_km"] == 3.2
+
+    @pytest.mark.asyncio
+    async def test_clash_warning_appended(self):
+        from agents.deep_agent import _enrich_itinerary_with_coordinates
+
+        itinerary = _make_itinerary()
+        day = itinerary["days"][0]
+        day["morning"].update({"time": "09:00", "duration": "6h"})
+        day["afternoon"].update({"time": "13:00", "duration": "1h"})
+
+        async def mock_geocode(query):
+            return {"lat": 48.85, "lng": 2.35}
+
+        with patch("agents.deep_agent.geocode", new=mock_geocode):
+            enriched = await _enrich_itinerary_with_coordinates(itinerary)
+
+        warnings = enriched.get("warnings", [])
+        assert any("may overlap" in w for w in warnings)
+
+    @pytest.mark.asyncio
+    async def test_no_clash_no_warning(self):
+        from agents.deep_agent import _enrich_itinerary_with_coordinates
+
+        itinerary = _make_itinerary()
+
+        async def mock_geocode(query):
+            return {"lat": 48.85, "lng": 2.35}
+
+        with patch("agents.deep_agent.geocode", new=mock_geocode):
+            enriched = await _enrich_itinerary_with_coordinates(itinerary)
+
+        assert not any("may overlap" in w for w in enriched.get("warnings", []))

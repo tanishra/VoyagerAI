@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Bus, Home, Lightbulb, Sun, Utensils } from 'lucide-react';
+import { X, Bus, Home, Lightbulb, Sun, Utensils, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import dynamic from 'next/dynamic';
 import type { DayPlan } from '@/lib/types';
@@ -29,16 +29,25 @@ const SLOTS = [
   { key: 'evening' as const, labelKey: 'evening' as const },
 ];
 
+// Trips longer than this mount each day's full content (map + cards +
+// logistics) lazily as it nears the viewport — a 14-day panel otherwise
+// renders every heavy section on open.
+const LAZY_CONTENT_DAYS = 8;
+
 export default function DayDetailPanel({ days, destination, currency: itineraryCurrency, initialDay, onClose }: DayDetailPanelProps) {
   const t = useTranslations('itinerary');
   const locale = useLocale();
   const [preferredCurrency] = useCurrency();
   const currency = asCurrency(itineraryCurrency) ?? preferredCurrency;
   const scrollRef = useRef<HTMLDivElement>(null);
+  const pillStripRef = useRef<HTMLDivElement>(null);
+  const [canScrollPills, setCanScrollPills] = useState(false);
   const [activeDay, setActiveDay] = useState(initialDay ?? days[0]?.day ?? 1);
-  // Maps mount lazily — one google.maps.Map per day section is too heavy to
-  // create all at once; a day's map activates when its section scrolls into
-  // view (or is the initially-opened day), then stays mounted.
+  const isLongTrip = days.length > LAZY_CONTENT_DAYS;
+  // Maps (and, on long trips, whole day sections) mount lazily — one
+  // google.maps.Map per day section is too heavy to create all at once; a
+  // day's content activates when its section nears the viewport (or is the
+  // initially-opened day), then stays mounted.
   const [activatedDays, setActivatedDays] = useState<Set<number>>(
     () => new Set([initialDay ?? days[0]?.day ?? 1])
   );
@@ -83,6 +92,46 @@ export default function DayDetailPanel({ days, destination, currency: itineraryC
     );
     root.querySelectorAll('[data-day]').forEach((el) => io.observe(el));
     return () => io.disconnect();
+  }, [days]);
+
+  // Prefetch observer — mounts a day's content ~a viewport before the user
+  // reaches it, so lazy sections never flash blank while scrolling.
+  useEffect(() => {
+    if (!isLongTrip) return;
+    const root = scrollRef.current;
+    if (!root || typeof IntersectionObserver === 'undefined') return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) {
+          if (!e.isIntersecting) continue;
+          const n = Number((e.target as HTMLElement).dataset.day);
+          if (n) setActivatedDays((prev) => (prev.has(n) ? prev : new Set(prev).add(n)));
+        }
+      },
+      { root, rootMargin: '80% 0px' }
+    );
+    root.querySelectorAll('[data-day]').forEach((el) => io.observe(el));
+    return () => io.disconnect();
+  }, [days, isLongTrip]);
+
+  // Keep the active pill visible in the horizontal strip.
+  useEffect(() => {
+    const el = pillStripRef.current?.querySelector(`[data-pill="${activeDay}"]`);
+    if (typeof el?.scrollIntoView === 'function') {
+      el.scrollIntoView({ inline: 'nearest', block: 'nearest' });
+    }
+  }, [activeDay]);
+
+  // Show strip arrows only when the pills actually overflow.
+  useEffect(() => {
+    const el = pillStripRef.current;
+    if (!el) return;
+    const update = () => setCanScrollPills(el.scrollWidth > el.clientWidth + 1);
+    update();
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
   }, [days]);
 
   const jumpTo = (n: number) => {
@@ -133,22 +182,46 @@ export default function DayDetailPanel({ days, destination, currency: itineraryC
           </div>
 
           {/* Pinned day pills */}
-          <div className="px-4 py-2 border-b border-border shrink-0 bg-card flex gap-1.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-            {days.map((d) => (
+          <div className="flex items-center border-b border-border shrink-0 bg-card">
+            {canScrollPills && (
               <button
-                key={d.day}
-                onClick={() => jumpTo(d.day)}
-                aria-label={t('dayN', { n: d.day })}
-                className={`shrink-0 px-3 py-1.5 rounded-full border text-xs font-mono transition-colors cursor-pointer ${
-                  activeDay === d.day
-                    ? 'bg-primary text-primary-foreground border-primary'
-                    : 'border-border hover:bg-muted'
-                }`}
+                onClick={() => pillStripRef.current?.scrollBy({ left: -160, behavior: 'smooth' })}
+                className="shrink-0 p-1.5 text-muted-foreground hover:text-foreground cursor-pointer"
+                aria-label={t('prevDays')}
               >
-                {d.day}
-                <span className="hidden sm:inline text-muted-foreground"> · {d.theme?.split(' ')[0]}</span>
+                <ChevronLeft className="w-4 h-4" />
               </button>
-            ))}
+            )}
+            <div
+              ref={pillStripRef}
+              className="flex-1 px-4 py-2 flex gap-1.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            >
+              {days.map((d) => (
+                <button
+                  key={d.day}
+                  data-pill={d.day}
+                  onClick={() => jumpTo(d.day)}
+                  aria-label={t('dayN', { n: d.day })}
+                  className={`shrink-0 px-3 py-1.5 rounded-full border text-xs font-mono transition-colors cursor-pointer ${
+                    activeDay === d.day
+                      ? 'bg-primary text-primary-foreground border-primary'
+                      : 'border-border hover:bg-muted'
+                  }`}
+                >
+                  {d.day}
+                  <span className="hidden sm:inline text-muted-foreground"> · {d.theme?.split(' ')[0]}</span>
+                </button>
+              ))}
+            </div>
+            {canScrollPills && (
+              <button
+                onClick={() => pillStripRef.current?.scrollBy({ left: 160, behavior: 'smooth' })}
+                className="shrink-0 p-1.5 text-muted-foreground hover:text-foreground cursor-pointer"
+                aria-label={t('nextDays')}
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            )}
           </div>
 
           {/* Scrollable day sections */}
@@ -172,6 +245,13 @@ export default function DayDetailPanel({ days, destination, currency: itineraryC
                   )}
                 </div>
 
+                {/* Long trips: mount a day's heavy content only once it nears
+                    the viewport — the header + a sized shell keep scroll-spy
+                    and jumpTo working before activation. */}
+                {isLongTrip && !activatedDays.has(day.day) ? (
+                  <div className="rounded-lg border border-border bg-muted/30 min-h-[420px] mb-1 shimmer" aria-hidden />
+                ) : (
+                <>
                 {/* Per-day map — this day's markers only; mounts lazily on
                     first scroll-into-view so the panel doesn't spin up N
                     map instances at once. */}
@@ -185,7 +265,7 @@ export default function DayDetailPanel({ days, destination, currency: itineraryC
                     />
                   </div>
                 ) : (
-                  <div className="rounded-lg border border-border bg-muted/30 h-[120px] mb-1" aria-hidden />
+                  <div className="rounded-lg border border-border bg-muted/30 h-[120px] mb-1 shimmer" aria-hidden />
                 )}
 
                 {/* Activity cards */}
@@ -252,6 +332,8 @@ export default function DayDetailPanel({ days, destination, currency: itineraryC
                     {day.daily_cost_usd != null ? formatCurrency(day.daily_cost_usd, locale, undefined, currency) : t('na')}
                   </span>
                 </div>
+                </>
+                )}
               </section>
             ))}
           </div>

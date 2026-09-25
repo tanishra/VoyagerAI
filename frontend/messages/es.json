@@ -186,6 +186,8 @@
     "mapForDay": "Mapa para el Día {day} en {destination}",
     "tips": "Consejos",
     "closeDayDetails": "Cerrar detalles del día",
+    "prevDays": "Días anteriores",
+    "nextDays": "Días siguientes",
     "dailyCostSummary": "Costo diario",
     "loadingDescription": "Cargando descripción...",
     "viewOnMaps": "Ver en Google Maps",

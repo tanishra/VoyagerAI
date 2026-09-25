@@ -150,3 +150,52 @@ class TestValidateComparison:
     def test_never_raises_on_garbage(self):
         assert validate_comparison(None, _constraints())
         assert validate_comparison({"plans": "x"}, None)
+
+
+class TestScheduleClashes:
+    def _day(self, n, **slots):
+        return {"day": n, **slots}
+
+    def test_overlap_flagged(self):
+        from agents.validation import detect_schedule_clashes
+        it = {"days": [self._day(
+            1,
+            morning={"activity": "Museum", "time": "09:00", "duration": "4h"},
+            afternoon={"activity": "Lunch", "time": "12:00", "duration": "1h"},
+        )]}
+        msgs = detect_schedule_clashes(it)
+        assert len(msgs) == 1
+        assert "Day 1" in msgs[0] and "Museum" in msgs[0] and "Lunch" in msgs[0]
+
+    def test_no_overlap_no_message(self):
+        from agents.validation import detect_schedule_clashes
+        it = {"days": [self._day(
+            1,
+            morning={"activity": "Museum", "time": "09:00", "duration": "2h"},
+            afternoon={"activity": "Lunch", "time": "13:00", "duration": "1h"},
+        )]}
+        assert detect_schedule_clashes(it) == []
+
+    def test_missing_times_use_defaults(self):
+        from agents.validation import detect_schedule_clashes
+        it = {"days": [self._day(
+            1,
+            morning={"activity": "Long tour", "duration": "6h"},
+            afternoon={"activity": "Lunch", "duration": "1h"},
+        )]}
+        # 9:00 + 6h = 15:00 vs afternoon default 13:00 → overlap
+        assert len(detect_schedule_clashes(it)) == 1
+
+    def test_days_are_independent(self):
+        from agents.validation import detect_schedule_clashes
+        it = {"days": [
+            self._day(1, evening={"activity": "Late show", "time": "22:00", "duration": "4h"}),
+            self._day(2, morning={"activity": "Early start", "time": "06:00", "duration": "1h"}),
+        ]}
+        assert detect_schedule_clashes(it) == []
+
+    def test_never_raises_on_garbage(self):
+        from agents.validation import detect_schedule_clashes
+        assert detect_schedule_clashes({"days": "not-a-list"}) == []
+        assert detect_schedule_clashes({}) == []
+        assert detect_schedule_clashes({"days": [{"day": 1, "morning": "x"}]}) == []

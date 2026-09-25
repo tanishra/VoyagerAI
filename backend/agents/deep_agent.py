@@ -1289,8 +1289,48 @@ def _extract_chat_itinerary(state: dict) -> dict | None:
     return None
 
 
+def _haversine_km(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+    """Great-circle distance in km between two points."""
+    import math
+
+    r = 6371.0
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dp = math.radians(lat2 - lat1)
+    dl = math.radians(lng2 - lng1)
+    a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
+    return 2 * r * math.asin(math.sqrt(a))
+
+
+_WALK_DETOUR_FACTOR = 1.3  # straight-line → street walking approximation
+
+
+def _compute_walking_km(enriched: dict) -> None:
+    """Overwrite day.walking_km with a measured estimate when ≥2 slots in the
+    day got exact (non-approximate) coordinates. Days without enough real
+    pins keep the model's estimate. Mutates in place; never raises."""
+    try:
+        for day in enriched.get("days") or []:
+            if not isinstance(day, dict):
+                continue
+            pts: list[tuple[float, float]] = []
+            for slot_key in ("morning", "afternoon", "evening"):
+                slot = day.get(slot_key)
+                if not isinstance(slot, dict) or slot.get("geo_approx"):
+                    continue
+                lat, lng = slot.get("lat"), slot.get("lng")
+                if isinstance(lat, (int, float)) and isinstance(lng, (int, float)):
+                    pts.append((lat, lng))
+            if len(pts) < 2:
+                continue
+            straight = sum(_haversine_km(*pts[i], *pts[i + 1]) for i in range(len(pts) - 1))
+            day["walking_km"] = round(straight * _WALK_DETOUR_FACTOR, 1)
+    except Exception:
+        logger.warning("walking_km computation failed", exc_info=True)
+
+
 async def _enrich_itinerary_with_coordinates(itinerary: dict) -> dict:
-    """Attach lat/lng coordinates to each activity in an itinerary dict.
+    """Attach lat/lng + derived metrics (walking km, real weather, clash
+    warnings) to each activity/day in an itinerary dict.
 
     Geocodes morning/afternoon/evening locations via Nominatim (with Redis
     caching). Mutates a copy — never the original dict. If geocoding fails
@@ -1357,6 +1397,35 @@ async def _enrich_itinerary_with_coordinates(itinerary: dict) -> dict:
         )
         for loc in missed_locations:
             logger.debug("geocode miss: %s", loc)
+
+        _compute_walking_km(enriched)
+
+        # Real forecast overwrites the model's weather prose for days whose
+        # date falls inside Open-Meteo's 16-day window; everything else keeps
+        # the generated text.
+        try:
+            from weather_service import enrich_itinerary_weather
+
+            enriched = await enrich_itinerary_weather(enriched)
+        except Exception:
+            logger.warning("Weather enrichment skipped", exc_info=True)
+
+        # Schedule sanity — informational warnings on the card, never a
+        # generation retry.
+        try:
+            from agents.validation import detect_schedule_clashes
+
+            clashes = detect_schedule_clashes(enriched)
+            if clashes:
+                warnings = enriched.get("warnings")
+                if not isinstance(warnings, list):
+                    warnings = []
+                    enriched["warnings"] = warnings
+                for msg in clashes:
+                    if msg not in warnings:
+                        warnings.append(msg)
+        except Exception:
+            logger.warning("Clash detection skipped", exc_info=True)
 
         return enriched
     except Exception:

@@ -186,6 +186,8 @@
     "mapForDay": "{day}日目の地図 — {destination}",
     "tips": "ヒント",
     "closeDayDetails": "日の詳細を閉じる",
+    "prevDays": "前の日",
+    "nextDays": "次の日",
     "dailyCostSummary": "1日の費用",
     "loadingDescription": "説明を読み込み中...",
     "viewOnMaps": "Google Mapsで見る",

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeAll } from 'vitest';
+import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import DayDetailPanel from '@/components/DayDetailPanel';
 import type { DayPlan } from '@/lib/types';
@@ -99,5 +99,70 @@ describe('DayDetailPanel', () => {
     render(<DayDetailPanel days={days} destination="Tokyo" initialDay={1} onClose={onClose} />);
     fireEvent.click(screen.getByLabelText('Close day details'));
     expect(onClose).toHaveBeenCalled();
+  });
+
+  it('lazy map placeholder shows a shimmer while the map mounts', () => {
+    const { container } = render(
+      <DayDetailPanel days={days} destination="Tokyo" initialDay={1} onClose={vi.fn()} />
+    );
+    // Days 2 and 3 are unactivated → shimmer placeholders.
+    expect(container.querySelectorAll('.shimmer').length).toBe(2);
+  });
+});
+
+describe('DayDetailPanel — long trips (>8 days)', () => {
+  const longDays = Array.from({ length: 12 }, (_, i) => makeDay(i + 1, `Theme ${i + 1}`));
+
+  it('mounts only the initial day content; other sections stay as shells', () => {
+    render(<DayDetailPanel days={longDays} destination="Tokyo" initialDay={1} onClose={vi.fn()} />);
+    // Every section/header exists…
+    expect(screen.getByText(/Day 12 — Theme 12/)).toBeInTheDocument();
+    // …but only day 1's content (map + cards) mounted.
+    expect(screen.getAllByTestId('itinerary-map')).toHaveLength(1);
+    expect(screen.getAllByText('Daily Cost')).toHaveLength(1);
+  });
+
+  it('scrolling near a day mounts its content via the prefetch observer', async () => {
+    const { MockIntersectionObserver } = await import('./setup');
+    MockIntersectionObserver.instances.length = 0;
+    render(<DayDetailPanel days={longDays} destination="Tokyo" initialDay={1} onClose={vi.fn()} />);
+    // Second observer = prefetch (80% margin) — firing it mounts everything.
+    act(() => MockIntersectionObserver.instances.at(-1)?.triggerAll());
+    expect(screen.getAllByText('Daily Cost')).toHaveLength(12);
+    expect(screen.getAllByTestId('itinerary-map')).toHaveLength(12);
+  });
+});
+
+describe('DayDetailPanel — pill strip arrows', () => {
+  let scrollW: PropertyDescriptor | undefined;
+  let clientW: PropertyDescriptor | undefined;
+
+  beforeAll(() => {
+    scrollW = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollWidth');
+    clientW = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'clientWidth');
+  });
+
+  afterEach(() => {
+    if (scrollW) Object.defineProperty(HTMLElement.prototype, 'scrollWidth', scrollW);
+    else delete (HTMLElement.prototype as never)['scrollWidth'];
+    if (clientW) Object.defineProperty(HTMLElement.prototype, 'clientWidth', clientW);
+    else delete (HTMLElement.prototype as never)['clientWidth'];
+  });
+
+  it('shows arrows only when the strip overflows and scrolls on click', () => {
+    render(<DayDetailPanel days={days} destination="Tokyo" initialDay={1} onClose={vi.fn()} />);
+    // No overflow in jsdom → no arrows.
+    expect(screen.queryByLabelText('Previous days')).not.toBeInTheDocument();
+
+    Object.defineProperty(HTMLElement.prototype, 'scrollWidth', { configurable: true, get: () => 600 });
+    Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, get: () => 200 });
+    const scrollBy = vi.fn();
+    Object.defineProperty(HTMLElement.prototype, 'scrollBy', { configurable: true, value: scrollBy });
+
+    render(<DayDetailPanel days={days} destination="Tokyo" initialDay={1} onClose={vi.fn()} />);
+    fireEvent.click(screen.getAllByLabelText('Next days')[0]);
+    expect(scrollBy).toHaveBeenCalledWith(expect.objectContaining({ left: 160 }));
+    fireEvent.click(screen.getAllByLabelText('Previous days')[0]);
+    expect(scrollBy).toHaveBeenCalledWith(expect.objectContaining({ left: -160 }));
   });
 });

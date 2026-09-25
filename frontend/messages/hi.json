@@ -186,6 +186,8 @@
     "mapForDay": "दिन {day} का नक्शा — {destination}",
     "tips": "सुझाव",
     "closeDayDetails": "दिन विवरण बंद करें",
+    "prevDays": "पिछले दिन",
+    "nextDays": "अगले दिन",
     "dailyCostSummary": "दैनिक लागत",
     "loadingDescription": "विवरण लोड हो रहा है...",
     "viewOnMaps": "Google Maps पर देखें",
