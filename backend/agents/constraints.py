@@ -34,9 +34,83 @@ class TripConstraints(BaseModel):
     accessibility_needs: list[str] = Field(default_factory=list)
 
 
+# Native digit scripts → ASCII so every downstream regex sees plain digits.
+_DIGIT_TRANSLATE = str.maketrans({
+    **{chr(0x0966 + i): str(i) for i in range(10)},   # Devanagari ०-९
+    **{chr(0xFF10 + i): str(i) for i in range(10)},   # Full-width ０-９
+    **{chr(0x0660 + i): str(i) for i in range(10)},   # Arabic-Indic ٠-٩
+})
+
+
+def normalize_digits(text: str) -> str:
+    """Map Devanagari/full-width/Arabic-Indic digits to ASCII in-place."""
+    return text.translate(_DIGIT_TRANSLATE)
+
+
 _DAYS_BEFORE_RE = re.compile(r"(\d{1,2})\s*[-\u2013]?\s*day", re.IGNORECASE)
 _DAYS_AFTER_RE = re.compile(r"\b(?:for|of|about|around)\s+(\d{1,2})\s+days\b", re.IGNORECASE)
 _WEEK_RE = re.compile(r"\b(?:a|an|one|1)\s+week\b|\b(\d{1,2})\s+weeks?\b", re.IGNORECASE)
+
+# Numeral words per locale (en/es/fr/de/hi/ja) — value -> alternation source.
+_NUM_WORDS: dict[int, str] = {
+    1: r"one|a|an|un|una|une|ein|eine|einem|einer|एक|一",
+    2: r"two|dos|deux|zwei|दो|二",
+    3: r"three|tres|trois|drei|तीन|三",
+    4: r"four|cuatro|quatre|vier|चार|四",
+    5: r"five|cinco|cinq|fünf|पांच|पाँच|五",
+    6: r"six|seis|sechs|छह|छः|六",
+    7: r"seven|siete|sept|sieben|सात|七",
+    8: r"eight|ocho|huit|acht|आठ|八",
+    9: r"nine|nueve|neuf|neun|नौ|九",
+    10: r"ten|diez|dix|zehn|दस|十",
+}
+
+# Unit nouns per locale -> day multiplier. Longer/prefix-sharing alternatives
+# FIRST (weekends? before weeks?) so "weekend" can't match the "week" prefix;
+# multi-char CJK alternatives before single-char (日間 before 週).
+_UNIT_WORDS: list[tuple[str, int]] = [
+    (r"fortnights?", 14),
+    (r"weekends?", 2),
+    (r"日間|days?|días?|jours?|tage?|दिन", 1),
+    (r"週間|weeks?|semanas?|semaines?|wochen?|woche|हफ्ता|हफ्ते|सप्ताह|週", 7),
+    (r"ヶ月|か月|箇月|months?|mes(?:es)?|mois|monate?|monat|महीना|महीने|माह", 30),
+]
+
+# Bare slang that implies a number without one ("a fortnight away" still → 14;
+# bare "weekend" is more often a date than a duration, so it stays out).
+_BARE_SLANG_RE = re.compile(r"\bfortnights?\b", re.IGNORECASE)
+
+_NUMERAL_ALT = r"\d{1,2}|" + "|".join(w for w in _NUM_WORDS.values())
+_UNIT_ALT = "|".join(u for u, _ in _UNIT_WORDS)
+_DURATION_RE = re.compile(
+    rf"(?P<num>{_NUMERAL_ALT})\s*(?P<unit>{_UNIT_ALT})",
+    re.IGNORECASE,
+)
+_NUM_LOOKUP = {
+    word: value
+    for value, alt in _NUM_WORDS.items()
+    for word in alt.split("|")
+}
+_UNIT_RES = [(re.compile(rf"(?:{alt})\Z", re.IGNORECASE), mult) for alt, mult in _UNIT_WORDS]
+
+
+def _multilingual_days(text: str) -> int | None:
+    """Scan for '<numeral> <day/week/month noun>' in any supported language."""
+    for m in _DURATION_RE.finditer(text):
+        raw_num = m.group("num")
+        n = int(raw_num) if raw_num.isdigit() else _NUM_LOOKUP.get(raw_num.lower())
+        if n is None:
+            continue
+        mult = next(
+            (mult for unit_re, mult in _UNIT_RES if unit_re.match(m.group("unit"))),
+            1,
+        )
+        days = n * mult
+        if 0 < days <= 30:
+            return days
+    if _BARE_SLANG_RE.search(text):
+        return 14
+    return None
 
 
 def extract_stated_days(text: str | None) -> int | None:
@@ -50,6 +124,7 @@ def extract_stated_days(text: str | None) -> int | None:
     if not text:
         return None
     try:
+        text = normalize_digits(text)
         m = _DAYS_BEFORE_RE.search(text) or _DAYS_AFTER_RE.search(text)
         if m:
             days = int(m.group(1))
@@ -61,9 +136,9 @@ def extract_stated_days(text: str | None) -> int | None:
             days = weeks * 7
             if 0 < days <= 30:
                 return days
+        return _multilingual_days(text)
     except (ValueError, AttributeError):
         return None
-    return None
 
 
 _CLARIFY_ANSWERS_RE = re.compile(r"<clarify_answers>([\s\S]*?)</clarify_answers>")
@@ -108,6 +183,7 @@ def parse_budget_range(value) -> tuple[float | None, float | None]:
     if value is None:
         return (None, None)
     text = value if isinstance(value, str) else ", ".join(str(v) for v in value)
+    text = normalize_digits(text)
     nums = []
     for m in _NUMBER_RE.finditer(text):
         try:

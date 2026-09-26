@@ -10,6 +10,8 @@ import asyncio
 import json
 from typing import ClassVar
 
+import pytest
+
 import agents.deep_agent as deep_agent_module
 import agents.pipeline as pipeline_module
 import agents.tools.pipeline_tools as pipeline_tools_module
@@ -971,6 +973,27 @@ class TestFillStatedClarifyAnswers:
         )
         assert found.get("budget_amount") in (None, 25000)
         assert found["budget_max"] == 60000
+
+    @pytest.mark.parametrize("value,expected", [
+        ("1 week", 7),      # the "1 week" -> 1 day bug
+        ("a week", 7),
+        ("2 semanas", 14),
+        ("一週間", 7),
+        ("7", 7),
+        ("7 days", 7),
+        ("२ सप्ताह", 14),
+    ])
+    def test_days_answer_parsed_as_duration(self, value, expected):
+        """Clarify 'total_days' answers go through duration parsing — '1 week'
+        must become 7, not 1."""
+        from agents.deep_agent import _fill_stated
+        found: dict = {}
+        _fill_stated(
+            found,
+            f'Trip length: {value}\n'
+            f'<clarify_answers>{{"total_days": "{value}"}}</clarify_answers>',
+        )
+        assert found["days"] == expected
 
 
 class TestEnrichmentFields:

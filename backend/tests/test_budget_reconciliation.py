@@ -139,6 +139,11 @@ class TestExtractStatedCurrencyAndBudget:
     def test_extract_budget_none(self):
         assert self.extract_stated_budget("no numbers here") is None
 
+    def test_extract_budget_native_digits(self):
+        assert self.extract_stated_budget("₹५०,०००") == (50000.0, "INR")
+        assert self.extract_stated_budget("５０００円") == (5000.0, "JPY")
+        assert self.extract_stated_currency("₹५०,०००") == "INR"
+
 
 class TestReconcileComparisonBudgets:
     def test_each_plan_reconciled(self):

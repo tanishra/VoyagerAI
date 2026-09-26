@@ -1688,10 +1688,13 @@ def _fill_stated(found: dict, content) -> None:
     from agents.constraints import (
         extract_clarify_answers,
         extract_stated_days,
+        normalize_digits,
         parse_budget_range,
         strip_clarify_answers,
     )
     from agents.prompts import extract_stated_currency
+
+    content = normalize_digits(content)
 
     # Clarify-card replies carry an authoritative field->answer map; use it
     # before regexes so localized headers and range values can't confuse them.
@@ -1708,9 +1711,12 @@ def _fill_stated(found: dict, content) -> None:
                 if cur:
                     found["budget_currency"] = cur
         elif key in ("total_days", "days", "duration"):
-            m = re.search(r"\d+", str(val))
-            if m:
-                found.setdefault("days", int(m.group(0)))
+            days_val = extract_stated_days(str(val))
+            if days_val is None:
+                m = re.search(r"\d+", str(val))
+                days_val = int(m.group(0)) if m else None
+            if days_val is not None and 0 < days_val <= 30:
+                found.setdefault("days", days_val)
         elif val:
             found.setdefault(key, val)
     content = strip_clarify_answers(content)

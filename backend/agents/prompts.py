@@ -100,10 +100,15 @@ def extract_stated_currency(text: str | None) -> str | None:
     if not text:
         return None
     try:
+        from agents.constraints import normalize_digits
+        text = normalize_digits(text)
         for symbol, code in _CURRENCY_SYMBOL_TO_CODE:
             idx = text.find(symbol)
             if idx != -1 and re.search(r"\d", text[idx: idx + 20]):
                 return code
+        # Japanese suffix form: "5000円".
+        if re.search(r"\d[\d,]*\s*円", text):
+            return "JPY"
         match = _CURRENCY_CODE_RE.search(text)
         if match:
             return match.group(1).upper()
@@ -123,6 +128,8 @@ def extract_stated_budget(text: str | None) -> tuple[float, str] | None:
     if not text:
         return None
     try:
+        from agents.constraints import normalize_digits
+        text = normalize_digits(text)
         for symbol, code in _CURRENCY_SYMBOL_TO_CODE:
             for m in re.finditer(re.escape(symbol), text):
                 tail = text[m.end():m.end() + 15].strip()
@@ -131,6 +138,11 @@ def extract_stated_budget(text: str | None) -> tuple[float, str] | None:
                     amount = float(amt_match.group(0).replace(",", ""))
                     if amount > 0:
                         return amount, code
+        m = re.search(r"([\d][\d,]*(?:\.\d+)?)\s*円", text)
+        if m:
+            amount = float(m.group(1).replace(",", ""))
+            if amount > 0:
+                return amount, "JPY"
         for m in re.finditer(r"([\d][\d,]*(?:\.\d+)?)\s*(USD|INR|EUR|JPY|GBP|AUD)\b", text, re.IGNORECASE):
             amount = float(m.group(1).replace(",", ""))
             if amount > 0:
@@ -358,7 +370,7 @@ If any required field is missing, stay in conversation mode and call the `ask_cl
 
 Clarification replies carry a machine-readable record of every answered field — treat it as authoritative. NEVER ask a field the user already answered (from an earlier card or from free text); `ask_clarifying_questions` automatically drops already-answered questions and reports which required fields are still missing — ask exactly those remaining ones.
 
-Every question MUST have a clear `header` (2–3 word tab label, e.g. "Trip budget", "Travel style") and a specific `question` that names the trip context (e.g. "What is your total budget for the 5-day Delhi trip?"). Provide 3–5 concrete options for any field where sensible presets exist — travel_style: relaxed/balanced/adventurous; group_type: solo/couple/family/friends; budget_currency: USD/INR/EUR/JPY/GBP/AUD; total_days: common trip lengths; budget_amount: concrete total-budget ranges in the trip's likely currency (e.g. "Under ₹25,000", "₹25,000–₹60,000", "₹60,000–₹1,00,000", "₹1,00,000+") — NEVER vague tiers like "Shoestring"/"Mid-range"/"Luxury"; the user must see real amounts. Leave options empty ONLY for truly free-text fields like destination — the UI adds an "Other" input automatically regardless. Do NOT guess or invent values.
+Every question MUST have a clear `header` (2–3 word tab label, e.g. "Trip budget", "Travel style") and a specific `question` that names the trip context (e.g. "What is your total budget for the 5-day Delhi trip?"). Provide 3–5 concrete options for any field where sensible presets exist — travel_style: relaxed/balanced/adventurous; group_type: solo/couple/family/friends; budget_currency: USD/INR/EUR/JPY/GBP/AUD; total_days: common trip lengths with plain-number option values (e.g. "3", "7" — never words); budget_amount: concrete total-budget ranges in the trip's likely currency (e.g. "Under ₹25,000", "₹25,000–₹60,000", "₹60,000–₹1,00,000", "₹1,00,000+") — NEVER vague tiers like "Shoestring"/"Mid-range"/"Luxury"; the user must see real amounts. Leave options empty ONLY for truly free-text fields like destination — the UI adds an "Other" input automatically regardless. Do NOT guess or invent values.
 
 CRITICAL: NEVER write clarifying questions as plain text. Asking questions in prose is a failure mode — the user cannot see tappable options. ALWAYS use the `ask_clarifying_questions` tool for missing fields.
 </required_fields>
