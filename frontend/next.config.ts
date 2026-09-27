@@ -1,5 +1,4 @@
 import type { NextConfig } from "next";
-import withPWAInit from "@ducanh2912/next-pwa";
 import createNextIntlPlugin from "next-intl/plugin";
 
 const nextConfig: NextConfig = {
@@ -20,17 +19,23 @@ const nextConfig: NextConfig = {
         { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
       ],
     },
+    {
+      // The service worker script must never be HTTP-cached — a stale sw.js
+      // can pin a device to a broken worker for up to 24h.
+      source: "/sw.js",
+      headers: [
+        { key: "Cache-Control", value: "no-cache, no-store, must-revalidate" },
+      ],
+    },
+    {
+      source: "/manifest.json",
+      headers: [
+        { key: "Cache-Control", value: "public, max-age=0, must-revalidate" },
+      ],
+    },
   ],
 };
 
 const withNextIntl = createNextIntlPlugin("./i18n.ts");
 
-export default withNextIntl(
-  withPWAInit({
-    dest: "public",
-    register: true,
-    disable: process.env.NODE_ENV === "development",
-    cacheOnFrontEndNav: true,
-    aggressiveFrontEndNavCaching: false,
-  })(nextConfig)
-);
+export default withNextIntl(nextConfig);
