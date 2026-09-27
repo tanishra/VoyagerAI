@@ -1,6 +1,8 @@
 import type { Metadata, Viewport } from "next";
 import { GeistSans } from "geist/font/sans";
 import { GeistMono } from "geist/font/mono";
+import ChunkErrorHandler from "@/components/ChunkErrorHandler";
+import ServiceWorkerRegister from "@/components/ServiceWorkerRegister";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -31,6 +33,8 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${GeistSans.variable} ${GeistMono.variable} h-full antialiased`}>
       <body className={`${GeistSans.className} min-h-full flex flex-col bg-background text-foreground`}>
+        <ChunkErrorHandler />
+        <ServiceWorkerRegister />
         {/* impeccable:direction-contract
           THESIS: The travel magazine spread as a living interface — warm white paper, hairline typography, destination photography choreographed across the gutter, where the gutter becomes the conversation seam between user and agent. Refuses the SaaS template of centered hero + feature cards.
           OWN-WORLD: Warm white paper ground (#f7f3ed), charcoal ink (#2a2520), cinnabar red accent (#c44536), terracotta warmth, sage secondary. Hairline rules as structural dividers. Didot-style display contrast at large sizes, precise sans body. Generous negative space, rigid grid for data.
