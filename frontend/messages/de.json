@@ -575,5 +575,9 @@
       "gbp": "GBP £",
       "aud": "AUD $"
     }
+  },
+  "maintenance": {
+    "message": "Wir führen derzeit Wartungsarbeiten durch. Einige Funktionen sind vorübergehend nicht verfügbar — bald ist alles wieder da. Danke für Ihre Geduld.",
+    "dismiss": "Schließen"
   }
 }

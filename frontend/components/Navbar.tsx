@@ -98,7 +98,7 @@ export default function Navbar() {
 
   return (
     <nav
-      className={`fixed top-0 inset-x-0 z-50 transition-all duration-500 ${
+      className={`fixed top-10 inset-x-0 z-50 transition-all duration-500 ${
         scrolled
           ? 'bg-white/80 backdrop-blur-xl border-b border-border shadow-sm'
           : 'bg-transparent'
